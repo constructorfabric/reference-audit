@@ -34,3 +34,11 @@ The general plan is:
 2. Modus oprandi: the system will process cases. It will make mistakes (and be corrected). The goal is to use individual failures to improve the systems's overall realiability.
 3. When fixing a mistake, add it as a unit test. Unit tests should used mocked DB responses
 4. Maintain a DB of checks so repeated runs on the same .bib file won't trigger unnecessary LLM & DB calls
+
+# Software Design
+1. The overall system is based on https://github.com/constructorfabric/studio
+2. The part which queries the DBs should be modular (easy to change and add adapters for individual DBs)
+3. .env contains a bunch of API keys
+4. The LLM model should be configurable, by defaul use `gpt-5.4-mini`
+5. Use `uv` to manage Python dependencies
+6. Python code should be a module in `src/`, without relative imports and `sys.path.append`

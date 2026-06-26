@@ -1,0 +1,19 @@
+version = 1
+revision = 3
+requires-python = ">=3.14"
+
+[[package]]
+name = "constructor-studio"
+version = "1.5.10.dev30"
+source = { git = "https://github.com/constructorfabric/studio.git#68e4e867acc4c30a0013c7ce11cddab8d9811923" }
+
+[[package]]
+name = "reference-audit"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "constructor-studio" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "constructor-studio", git = "https://github.com/constructorfabric/studio.git" }]
