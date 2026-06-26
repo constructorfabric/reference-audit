@@ -31,7 +31,7 @@ The general plan is:
 
 # General Design Principles
 1. Databases might be incomplete and metadata can sometimes be incorrect (e. g. month). DOI & ISBN uniquely identify documents; title & author list might be spelled slightly differently but are usually correct
-2. Modus oprandi: the system will process cases. It will make mistakes (and be corrected). The goal is to use individual failures to improve the systems's overall realiability.
+2. Modus oprandi: the system will process cases. It will make mistakes (and be corrected). The goal is to use individual failures to improve the systems's overall realiability. Document the quirks of the DBs and data you encounter
 3. When fixing a mistake, add it as a unit test. Unit tests should used mocked DB responses
 4. Maintain a DB of checks so repeated runs on the same .bib file won't trigger unnecessary LLM & DB calls
 
