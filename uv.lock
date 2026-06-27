@@ -413,6 +413,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "rapidfuzz" },
     { name = "tenacity" },
+    { name = "tqdm" },
     { name = "typer" },
 ]
 
@@ -435,6 +436,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "rapidfuzz", specifier = ">=3.14.5" },
     { name = "tenacity", specifier = ">=9.1.4" },
+    { name = "tqdm", specifier = ">=4.67" },
     { name = "typer", specifier = ">=0.26.8" },
 ]
 

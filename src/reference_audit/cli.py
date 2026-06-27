@@ -6,6 +6,7 @@ report. `--no-llm`/`--fail-on` are accepted now and become load-bearing as later
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import typer
@@ -63,7 +64,14 @@ def audit(
             updates["use_llm"] = False
         config = AuditConfig().model_copy(update=updates)
         cache_path = cache or (bib.parent / ".reference_audit" / "cache.db")
-        report = run_audit(tex, bib, config=config, cache_path=cache_path, fresh=fresh)
+        report = run_audit(
+            tex,
+            bib,
+            config=config,
+            cache_path=cache_path,
+            fresh=fresh,
+            progress=sys.stderr.isatty(),
+        )
 
     if fmt in ("json", "both"):
         typer.echo(render_json(report))

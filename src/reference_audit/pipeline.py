@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from tqdm import tqdm
+
 from reference_audit.cache.store import AuditCache
 from reference_audit.config import AuditConfig
 from reference_audit.llm.client import LLMClient
@@ -168,9 +170,21 @@ class AuditPipeline:
         if self.llm is not None:
             await self.llm.aclose()
 
-    async def run(self, tex_path: str | Path | None, bib_path: str | Path) -> AuditReport:
+    async def run(
+        self, tex_path: str | Path | None, bib_path: str | Path, *, progress: bool = False
+    ) -> AuditReport:
         report = build_parse_report(tex_path, bib_path)
-        await asyncio.gather(*(self._audit_entry(a) for a in report.entries))
+        tasks = [asyncio.ensure_future(self._audit_entry(a)) for a in report.entries]
+        # Advance a bar as each entry resolves; verdicts land in-place on the audit objects, so
+        # completion order is irrelevant. `disable` keeps tests and library callers silent.
+        for task in tqdm(
+            asyncio.as_completed(tasks),
+            total=len(tasks),
+            desc="Auditing references",
+            unit="ref",
+            disable=not progress,
+        ):
+            await task
         report.summary["verdicts"] = _verdict_summary(report)
         return report
 
@@ -293,10 +307,11 @@ async def _run_async(
     bib_path: str | Path,
     config: AuditConfig,
     cache: AuditCache | None,
+    progress: bool,
 ) -> AuditReport:
     pipeline = AuditPipeline(config, cache=cache)
     try:
-        return await pipeline.run(tex_path, bib_path)
+        return await pipeline.run(tex_path, bib_path, progress=progress)
     finally:
         await pipeline.aclose()
 
@@ -308,6 +323,7 @@ def run_audit(
     config: AuditConfig | None = None,
     cache_path: str | Path | None = None,
     fresh: bool = False,
+    progress: bool = False,
 ) -> AuditReport:
     """Synchronous entry point used by the CLI: build config + cache, run, tear down."""
     config = config or AuditConfig()
@@ -319,7 +335,7 @@ def run_audit(
         if fresh:
             cache.clear()
     try:
-        return asyncio.run(_run_async(tex_path, bib_path, config, cache))
+        return asyncio.run(_run_async(tex_path, bib_path, config, cache, progress))
     finally:
         if cache is not None:
             cache.close()
