@@ -199,6 +199,18 @@ class AuditPipeline:
         return report
 
     async def _audit_entry(self, audit: EntryAudit) -> None:
+        # Isolation: a failure auditing one reference must never abort the run (or cancel the
+        # other in-flight entries). Anything unexpected leaves this entry unresolved — an error is
+        # not a 'not found', so it is retried on the next run rather than reported as a miss.
+        try:
+            await self._audit_entry_inner(audit)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            audit.verdict = None
+            audit.issues.append(f"audit failed (left unresolved, will retry next run): {exc}")
+
+    async def _audit_entry_inner(self, audit: EntryAudit) -> None:
         entry = audit.entry
         if self.cache is not None:
             cached = self.cache.get_entry_verdict(entry.content_hash)

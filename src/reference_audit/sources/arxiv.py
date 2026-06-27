@@ -18,7 +18,7 @@ from reference_audit.models import (
 )
 from reference_audit.parsing.identifiers import arxiv_to_doi
 from reference_audit.sources.base import SourceAdapter
-from reference_audit.sources.http import TransientHTTPError
+from reference_audit.sources.http import TransientHTTPError, get_text
 
 _BASE = "http://export.arxiv.org/api/query"
 _ATOM = "{http://www.w3.org/2005/Atom}"
@@ -55,14 +55,12 @@ class ArxivAdapter(SourceAdapter):
     rate_per_sec = 3.0
 
     async def _query(self, params: dict, query_kind: str) -> SourceQueryResult:
-        await self.rate_limiter.acquire()
         try:
-            resp = await self.client.get(_BASE, params=params)
-            if resp.status_code == 429 or resp.status_code >= 500:
-                raise TransientHTTPError(f"http {resp.status_code}")
-            resp.raise_for_status()
-            root = ET.fromstring(resp.text)
-        except (httpx.HTTPError, ET.ParseError) as exc:
+            # get_text rate-limits and retries 429/5xx with exponential backoff, then reraises
+            # TransientHTTPError once retries are exhausted (mapped to .error below).
+            _, text = await get_text(self.client, self.rate_limiter, _BASE, params=params)
+            root = ET.fromstring(text)
+        except (httpx.HTTPError, TransientHTTPError, ET.ParseError) as exc:
             return SourceQueryResult(source=self.name, query_kind=query_kind, error=str(exc))
         records = [_entry_to_record(e) for e in root.findall(f"{_ATOM}entry")]
         records = [r for r in records if r.title]

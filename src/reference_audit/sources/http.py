@@ -90,3 +90,26 @@ async def get_json(
         return resp.status_code, resp.json()
     except ValueError as exc:
         raise TransientHTTPError(f"invalid json: {exc}") from exc
+
+
+async def get_text(
+    client: httpx.AsyncClient,
+    limiter: MonotonicRateLimiter,
+    url: str,
+    *,
+    params: dict | None = None,
+    headers: dict | None = None,
+) -> tuple[int, str]:
+    """Rate-limited GET with retry for text/XML payloads (e.g. the arXiv Atom API).
+
+    Mirrors `get_json`: exponential backoff on 429/5xx via `_request_with_retry`, then raises
+    TransientHTTPError after exhausting retries. A 404 returns (404, "").
+    """
+    await limiter.acquire()
+    resp = await _request_with_retry(client, url, params, headers)
+    if resp.status_code == 404:
+        return 404, ""
+    if resp.status_code >= 400:
+        # non-retryable client error (e.g. 400/403) — treat as a hard error, not 'absent'
+        raise TransientHTTPError(f"http {resp.status_code}")
+    return resp.status_code, resp.text
