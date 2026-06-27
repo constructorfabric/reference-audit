@@ -1,0 +1,624 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\documentclass[
+  11pt,
+]{article}
+
+\usepackage[margin=0.85in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\usepackage{float}
+\usepackage{placeins}
+\usepackage[font=small,labelfont=bf]{caption}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+
+
+\usepackage{xcolor}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{graphicx}
+\makeatletter
+\newsavebox\pandoc@box
+\newcommand*\pandocbounded[1]{% scales image to fit in text height/width
+  \sbox\pandoc@box{#1}%
+  \Gscale@div\@tempa{\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
+  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
+  \ifdim\@tempb\p@<\@tempa\p@\let\@tempa\@tempb\fi% select the smaller of both
+  \ifdim\@tempa\p@<\p@\scalebox{\@tempa}{\usebox\pandoc@box}%
+  \else\usebox{\pandoc@box}%
+  \fi%
+}
+% Set default figure placement to htbp
+\def\fps@figure{htbp}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+% Force the bibliography to use \subsection* heading so it matches the rest
+% of the document (which uses \subsection for top-level sections).
+\usepackage{etoolbox}
+\patchcmd{\thebibliography}{\section*}{\subsection*}{}{}
+
+\author{}
+\date{}
+
+\begin{document}
+
+% =============================================================================
+% CLAIM MAP — where each claim is asserted, supported, and discussed.
+% Convention: grep for "[C1]", "[C2]", ... to find every site that mentions
+% a claim. "supports:" = argues the claim. "method for:" = describes the
+% machinery that makes the claim measurable. "framing for:" = related work /
+% background that motivates the claim. "discussion:" = interprets the claim.
+%
+% C1 — MSPD-optimized parameters produce higher held-out complexity scores
+%      than matched random parameters from the same substrate.
+%      Abstract; §3 (method); §4.1 substrates; §4 claim table; §4 C1 panel.
+%
+% C2 — High-ΔH states correspond to states with higher instability to
+%      external interventions (branch divergence).
+%      Abstract; §3 (method); §4 claim table; §4 C2 panel.
+%
+% C5 — Higher MSPD corresponds to stronger scale-dependent frustration:
+%      high-complexity systems exhibit larger differences between the
+%      dynamics expressed at different spatial extents.
+%      Abstract; §2.4 framing; §3 (method); §4 claim table; §4 C5 panel.
+%
+% C6 — C1/C2/C5 transfer beyond the primary Flow-Lenia substrate:
+%      same protocol holds on Life-like cellular automata and Particle
+%      Life++ (cross-substrate panels for C1, C2, C5).
+%      Abstract; §4.1 substrates; substrate-specific C1/C2/C5 panels.
+%
+% DROPPED (backlog for next version, see 2026-06-11-backlog-c3-c4-next-version.md):
+% C3 — scale separation at τ* (experiments did not confirm)
+% C4 — NN-OEE ecological-richness match (no measurable operationalization;
+%      will be reformulated as "NN OEE loss correlates with MSPD loss")
+% =============================================================================
+
+\section{Directing Open-Ended Evolution in Artificial Life via
+Multi-Scale Path Divergence}\label{directing-open-ended-evolution-in-artificial-life-via-multi-scale-path-divergence}
+
+\textbf{Mikhail Akhtyrchenko}\(^{1}\), \textbf{Mikhail I.
+Katsnelson}\(^{2,4}\), \textbf{Andrey Ustyuzhanin}\(^{1,2,3}\)
+
+\(^1\)Constructor University, Bremen, Germany. \(^2\)Constructor
+Knowledge Labs, Bremen, Germany. \(^3\)Institute for Functional
+Intelligent Materials, NUS, Singapore. \(^4\)Institute for Molecules and
+Materials, Radboud University, Nijmegen, Netherlands.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+% supports: [C1] [C2] [C5] [C6] -- abstract touches every claim retained in this version
+\begin{abstract}
+\noindent
+Open-ended evolution (OEE) in artificial life is typically driven by
+uninterpretable, black-box neural-network complexity metrics, leaving
+life-like systems disconnected from physical theories of complexity.
+We introduce MSPD (Multi-Scale Path Divergence, denoted \(D_P\)), a
+renormalization-group-inspired scalar that quantifies the temporal
+multiscale organization of heterogeneity in local transition laws.
+MSPD is defined at the population level as a functional of the
+realised trajectory and is computed as a windowed finite-resolution
+estimator, with consistency between the two stated as a proposition.
+The metric is an explicit formula and plays a dual role: as a
+gradient-free fitness function and as a post-hoc analytical lens on
+any simulation that exposes local transition laws.
+Empirically, MSPD-optimized parameters produce higher held-out
+complexity scores than matched random parameters from the same
+substrate. % [C1]
+High-\(\Delta H\) states correspond to states with higher
+instability to external interventions, so the metric tracks the
+biology of the underlying dynamics rather than noise. % [C2]
+Higher MSPD corresponds to stronger scale-dependent frustration:
+high-complexity systems exhibit larger differences between the
+dynamics expressed at different spatial extents, linking MSPD
+directly to the frustration criterion of biological complexity in
+the sense of Vanchurin et al.~\cite{vanchurin2022toward}. % [C5]
+The same protocol transfers beyond the primary Flow-Lenia substrate
+to Life-like cellular automata and Particle Life++, where C1, C2 and
+C5 all hold. % [C6]
+A single explicit formula thus both \emph{directs} open-ended
+evolution and provides a principled bridge to the physics of
+complexity that black-box drivers do not.
+\end{abstract}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+% supports: [C5] [C6] (this section also lists the contribution bullets)
+\subsection{1 Introduction}\label{introduction}
+
+The origin of complexity, and first of all biological complexity,
+is one of the main challenges of contemporary science, and
+many efforts have been applied to deal with it. Trying to make
+a more or less complete list of various approaches is a hopeless
+task, but we should at least mention numerous attempts to
+establish relations between concepts and methods of statistical
+physics and the problem of life and its evolution~\cite{laughlin1,laughlin2,gavrilets2004,smith2008thermo,goldenfeld2011life,katsnelson2018towards,wolf2018physical,vanchurin2022toward,vanchurin2022thermo}. It is clear that such a
+complicated problem should be attacked from different sides.
+One direction is more traditional: the analysis of true biological information
+in terms of statistical physics, including glassiness~\cite{laughlin1,laughlin2}, frustration in general~\cite{wolf2018physical,katsnelson2018towards}, percolation~\cite{gavrilets2004,katsnelson2018towards},
+emergent phenomena and universality classes~\cite{goldenfeld2011life}, and, last but not
+least, analogies with machine learning~\cite{vanchurin2022thermo}. Another direction is
+Artificial Life (ALife), that is, building in silico models with relatively simple
+rules but complicated behaviour, where everything is in principle under control, which
+gives us hope to better understand the road from simplicity to complexity. The approach
+is intended to be complementary to the biological one but, hopefully, in the end should
+tell us something important about real living systems and their evolution. The question,
+however, is how to formally define complexity.
+
+Again, it looks like a hopeless task to mention all existing approaches to
+the formal definition of complexity. Some of them are related to the
+idea that structural complexity is determined by scaling properties of the
+system and its hierarchical organization, that is, by the dissimilarity between
+the images of the system considered at different scales. This idea has appeared
+many times in various contexts~\cite{wolpert2007,lindeberg2008,broido2019}.
+Probably its most suitable formalization was suggested in~\cite{bagrov2020multiscale}
+as ``multiscale structural complexity'' (MSSC). The definition is computationally
+simple and, at the same time, has been demonstrated to be useful in many different
+fields, including analysis of the complexity of quantum states and detection of
+quantum phase transitions~\cite{sotnikov2022} and analysis of human visual
+perception~\cite{kravchenko2026}. However, this definition is static and,
+to be applied to an evolving system, needs a modification adding not only
+spatial but also temporal scales.
+
+A central goal of ALife is open-ended evolution---the sustained
+generation of novel forms and behaviors~\cite{stanley2019why,lehman2011abandoning,soros2014identifying,pugh2016quality}. Neural-network-based
+open-endedness metrics drive this effectively but are black boxes: they
+yield results without principles and cannot be connected to physical
+theories of complexity. MSSC offered a physics-grounded alternative
+for static spatial patterns, but life is inherently dynamic. We extend
+MSSC temporally, replacing the spatial coarse-graining scale \(\lambda\)
+with an observational window \(W\), and ask: can a single explicit scalar
+simultaneously optimize for complexity \emph{and} reveal its physical basis?
+Thus, here we replace MSSC with Multi-Scale Path Divergence (MSPD), which
+can in a sense be considered as its dynamical analogue and generalization.
+Its explicit definition is given below.
+
+% supports: [C6] -- introduces the cross-substrate experimental scope
+We validate MSPD in Flow-Lenia~\cite{plantec2023flow}, a mass-conservative
+continuous cellular automaton in the Lenia family~\cite{chan2019lenia}
+supporting diverse life-like gliders, and transfer experiments
+to two qualitatively different substrates: Life-like cellular automata
+(discrete-state lattices with totalistic update rules) and Particle
+Life++ (neural-network-mediated pairwise particle interactions). The
+discrete CA substrate exercises the categorical transition-law form of
+MSPD, while Particle Life++ shares with Flow-Lenia the Lagrangian
+displacement form and connects to a broader Lagrangian thread in ALife
+exemplified by Particle Lenia~\cite{mordvintsev2022particle}.
+
+Here we apply this new metric to the analysis of some general properties
+of life formulated within the analogy between biological evolution and
+multiscale learning~\cite{vanchurin2022thermo}, and especially to the
+role of frustration, which has been suggested as the main cause of complexity
+not only in physical but also in biological systems~\cite{wolf2018physical}.
+% supports: [C5] -- scale-dependent frustration via constrained-rollout intervention
+A key empirical result is that higher MSPD corresponds to stronger
+\emph{scale-dependent frustration}: in optimized systems, the dynamics
+expressed under an early spatial constraint differ from the unconstrained
+dynamics by more than would be expected from ordinary seed-to-seed
+variation. This intervention-based measurement links MSPD directly to
+the frustration criterion of biological complexity in the sense of
+Vanchurin et al.~\cite{vanchurin2022toward} (building on the spin-glass
+framing of biological complexity by Wolf et al.~\cite{wolf2018physical}),
+without the metric being optimised for frustration.
+
+Figure~\ref{fig:pipeline} summarises the full pipeline: Lagrangian
+particle tracking, the per-window pairwise dissimilarity \(\Delta H\),
+the cross-window aggregation that yields \(D_P\), and the evolutionary
+loop that closes back onto the simulation.
+
+\textbf{Contributions.}
+\begin{itemize}
+\tightlist
+\item
+  We introduce MSPD, a temporal extension of spatial MSSC defined as
+  a functional of the realised trajectory via local transition laws,
+  with a consistent windowed finite-resolution estimator. % framing
+\item
+  Used as a fitness function and as a lens, MSPD separates optimized
+  parameters from matched random controls on the same substrate, and
+  high-$\Delta H$ states are linked to higher instability under
+  external interventions. % [C1] [C2]
+\item
+  MSPD-optimized systems exhibit elevated \emph{scale-dependent
+  frustration} under matched constrained-rollout interventions,
+  linking MSPD to the Vanchurin et al. frustration criterion of
+  biological complexity without being optimised for it. % [C5]
+\item
+  The protocol transfers beyond the primary Flow-Lenia substrate:
+  C1, C2 and C5 also hold on Life-like cellular automata and
+  Particle Life++. % [C6]
+\end{itemize}
+
+\begin{figure}[!ht]
+\centering
+\pandocbounded{\includegraphics[keepaspectratio,alt={Pipeline schematic}]{figures/Gemini_Generated_Image_MSPD_v4.png}}
+\caption{Pipeline: Lagrangian tracking \(\to\) \(H_{\Delta t}\)
+heatmap \(\to\) MSPD aggregation \(\to\) evolutionary loop \(\to\)
+complex simulation output.}
+\label{fig:pipeline}
+\end{figure}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{2 Background and Related Work}\label{background-and-related-work}
+
+% framing for: paper-wide (RG-grounded interpretable complexity)
+\textbf{2.1 MSSC and renormalization-grounded complexity.} Spatial
+Multi-Scale Structural Complexity~\cite{bagrov2020multiscale} defines
+the complexity of a pattern as the cumulative cross-scale dissimilarity
+under successive Kadanoff/RG (renormalization group) \cite{wilson1974,mabook} coarse-graining: a system is structurally
+complex to the extent that its representations at adjacent spatial
+resolutions disagree. Unlike Kolmogorov-style or
+computational-mechanics measures, MSSC is computed directly from
+continuous field data without abstract ensembles or
+$\epsilon$-machine inference; it peaks for hierarchically nested
+structures (spin spirals, biological tissues) and drops to near-zero
+for both white noise and uniform fields. Subsequent
+work~\cite{kravchenko2026} shows that MSSC also tracks human
+perceptual judgements of visual complexity once the highest- and
+lowest-frequency scales are filtered out --- an empirical observation
+that motivates the log-spaced window choice we adopt for MSPD
+in~\S3.2. MSPD inherits this RG architecture intact: the
+coarse-graining scale $\lambda$ is replaced by an observation window
+$W$, and the cross-scale dissimilarity is computed in
+trajectory-distribution space rather than image space.
+
+% framing for: [C6] -- justifies why Flow-Lenia/Boids/Particle Life all admit MSPD
+\textbf{2.2 Continuous ALife substrates.}
+Lenia~\cite{chan2019lenia} generalised Conway's Game of Life to a
+continuous space--time--state framework, replacing discrete rule
+tables with integro-differential update rules and producing a
+taxonomy of self-maintaining gliders. Flow-Lenia~\cite{plantec2023flow}
+adds strict mass conservation: patterns must compete for finite
+material resources, which is the thermodynamic precondition for
+ecosystemic dynamics and the substrate on which we run our primary
+experiments. Particle Lenia~\cite{mordvintsev2022particle}, Particle
+Life, and the classical Boids model take a strictly Lagrangian view,
+modelling matter as discrete interacting particles rather than as
+scalar fields. MSPD applies uniformly across these substrates because
+each one exposes explicit particle trajectories --- whether as native
+state in particle systems or as passive tracers injected into a
+Flow-Lenia mass field.
+
+% framing: general -- positions MSPD against black-box NN-OEE drivers
+% (head-to-head richness comparison deferred; see backlog C4)
+\textbf{2.3 Open-endedness drivers.}
+Open-ended evolution is a recognised grand challenge of
+ALife~\cite{stanley2019why}: objective-driven evolutionary algorithms
+collapse on deceptive landscapes, motivating a family of alternatives
+that target diversity or novelty instead of a single objective.
+Lehman \& Stanley~\cite{lehman2011abandoning} introduced Novelty
+Search, abandoning fitness in favour of behavioural novelty; Soros \&
+Stanley~\cite{soros2014identifying} enumerated necessary conditions for
+OEE in cellular substrates; and Pugh, Soros \&
+Stanley~\cite{pugh2016quality} formalised Quality-Diversity (QD),
+which maintains a tessellated archive of high-performing,
+behaviourally diverse solutions. Two recent ALife-specific drivers
+are particularly relevant:
+Leniabreeder~\cite{faldor2024leniabreeder} applies QD to Lenia using
+either hand-crafted descriptors or autoencoder-latent embeddings, and
+ASAL~\cite{kumar2024automating} uses a vision--language foundation
+model as the interestingness judge over simulation videos. The shared
+limitation of all of these drivers is that their notion of
+``interesting'' is either hand-tuned or learned, and is therefore not
+connected to physical theories of complexity --- the gap MSPD addresses
+with an explicit, formula-based scalar.
+
+% framing for: [C5] -- introduces the frustration criterion MSPD will recover
+\textbf{2.4 Physical theories of life.}
+Wolf, Katsnelson \& Koonin~\cite{wolf2018physical} following the previous
+observations of Laughlin and others~\cite{laughlin1,laughlin2} argue that
+biological systems are forms of \emph{frustrated matter}: analogues of
+spin glasses, in which competing interactions prevent the system from
+settling into any single global equilibrium and instead produce a
+rugged landscape with a broad distribution of relaxation timescales.
+Vanchurin et al.~\cite{vanchurin2022toward} extend this picture into a
+multilevel-learning theory of evolution and identify frustration /
+non-ergodicity as an operational signature of living systems. This is
+the physical criterion that MSPD-optimised systems satisfy
+\emph{post-hoc} (\S4, C5) without ever being optimised for it --- the
+bridge that turns MSPD from a fitness function into a diagnostic of
+life-likeness.
+
+% framing for: methodological -- justifies the SW_1 distance choice
+\textbf{2.5 Trajectory and Wasserstein analysis.}
+Comparing distributions of particle trajectories requires a
+topology-aware divergence: KL and MMD lose meaning or scale poorly
+when distributions have disjoint or near-disjoint supports, which is
+generic in trajectory data because each particle traces out a
+different region of phase space. The Wasserstein-1 metric (Earth
+Mover's Distance) supplies the right notion of distance --- the
+minimal cost of transporting one distribution onto another, accounting
+for the underlying metric of the space. Full $W_1$ scales cubically in
+the number of samples; we therefore use its sliced approximation
+$\mathrm{SW}_1$, which projects distributions onto random one-dimensional
+directions and averages closed-form 1-D Wasserstein distances.
+$\mathrm{SW}_1$ is metric-equivalent to $W_1$ on bounded supports
+while costing $O(n \log n)$ per projection, which is what makes the
+per-particle, per-window comparison over thousands of tracers
+tractable.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+
+\input{section3.tex}
+\input{section4.tex}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{5 Discussion}\label{discussion}
+
+% discussion: [C5] -- interprets the scale-dependent frustration finding via spin-glass framing
+\textbf{5.1 Scale-dependent frustration as a physical signature.}
+The C5 finding --- that MSPD-optimised systems exhibit a larger
+intervention-based gap between constrained and unconstrained dynamics
+than matched random controls --- gives the frustration / non-ergodicity
+criterion of Vanchurin et al.~\cite{vanchurin2022toward} a directly
+measurable operationalisation in ALife substrates. In the spin-glass
+framing of Laughlin et al.~\cite{laughlin1,laughlin2} and Wolf et al.~\cite{wolf2018physical}, frustration manifests
+as competing local minima whose effective dynamics depend on the
+spatial extent over which the system is allowed to relax. The
+constrained-rollout protocol exposes exactly this: under an early
+spatial constraint, optimised systems explore a noticeably different
+region of state space than they would unconstrained, while random
+controls do not. MSPD thus picks up frustration as a downstream
+consequence of selecting for multiscale dynamic organization, rather
+than as an explicitly optimised target.
+
+% discussion: [C5] -- design implication: MSPD as one principled driver among possible objectives
+\textbf{5.2 Implications for OEE objective design.}
+A practical consequence of C5 is that MSPD provides a single, explicit
+fitness function that produces systems satisfying physical life
+criteria (including frustration) without being asked to. This is the property
+that distinguishes MSPD from black-box drivers such as
+ASAL~\cite{kumar2024automating} or
+Leniabreeder~\cite{faldor2024leniabreeder}: the latter expand the
+space of \emph{patterns} a simulation produces via learned
+embeddings, but the connection to physical theories of complexity
+remains implicit. Multi-objective evolution that combines MSPD with a
+complementary snapshot-structural metric is a natural next step and
+may dominate either driver alone, but we leave that comparison to
+future work.
+
+% discussion: [C6] -- internal DoF as precondition for the local-transition-law decomposition
+\textbf{5.3 ALife substrates and internal degrees of freedom.}
+The cross-substrate transfer of C1/C2/C5 (C6) requires only that the
+substrate exposes meaningful local transition laws --- either as
+categorical rule events (Life-CA) or as displacement distributions
+(Flow-Lenia, Particle Life++). Substrates whose local transition
+laws collapse to a single nearly-deterministic atom across all
+sites, such as Particle Life++ in the zero-motion basin, give MSPD
+near zero by construction; this is the expected behaviour and gives
+the metric a built-in null. The decomposition is most informative
+in substrates with internal degrees of freedom (state, type,
+memory) that let local transition laws differ meaningfully between
+carriers.
+
+% discussion: [C2] [C6] -- conceptual note on when ΔH does and does not predict branch instability
+\textbf{5.4 What $\Delta H$ does and does not signal.}
+A locally elevated $\Delta H$ --- high relative to neighbouring
+windows of the same rollout --- is best read as a
+\emph{detector} that the system is passing through a change
+in its dynamics, not as a criterion that pins down which
+change is occurring. The detector logic is straightforward:
+when a rollout crosses a regime boundary, some carriers will
+typically have already entered the new dynamical regime while
+others still carry the old one, and the within-window
+heterogeneity of their local transition laws rises
+correspondingly. Perturbing such a state then selects between
+competing late futures and yields the C2 signature.
+
+The converse, however, does not hold. Many situations can
+push $\Delta H$ above the local baseline without a global
+regime change being responsible. One example is rare local
+events on a small subset of carriers --- isolated collisions,
+brief bursts, transient role switches at finite simulation
+horizon --- which raise the within-window heterogeneity even
+when the global dynamics are stationary in distribution.
+Other mechanisms (boundary or finite-size artifacts,
+heterogeneous initial conditions that have not yet relaxed,
+substrate-specific intermittent modes) act similarly. We do
+not attempt a taxonomy here; the point is only that high
+$\Delta H$ is a necessary condition for the C2 association,
+not a sufficient one.
+
+This non-equivalence is what we observe on Particle Life++.
+The substrate has deep attractors: even strong injected noise
+relaxes back toward the pre-perturbation regime within a few
+windows, so the attractor structure short-circuits the
+future-separation channel that C2 tests. Local $\Delta H$ can
+still rise --- the substrate produces transient mixing events
+that look like regime changes within a window --- but those
+rises are not coupled to branch divergence, because the
+underlying dynamics return to the same basin. We therefore
+treat C2 transfer to Particle Life++ as outside the present
+scope (\S6) and as conceptually distinct from C5 on the same
+substrate, which probes intervention dependence at a much
+longer timescale than perturbation-recovery.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{6 Limitations}\label{limitations}
+
+\textbf{Within-window stationarity.} The consistency of the
+windowed estimator (Propositions~1--2) rests on approximate
+stationarity of local transition laws within each window
+$I_k$. In regimes with abrupt regime shifts --- nucleation of
+a new structure, sudden collapse of a basin --- this assumption
+is violated locally, and the empirical $\widehat{H}_k$ mixes
+the pre- and post-event statistics. We mitigate this with
+short windows relative to the dominant timescale and with the
+pooled-null correction, but the residual bias is not
+quantified and may attenuate \textbf{C1} and \textbf{C2} on
+runs that contain such transitions.
+
+\textbf{Statistical power.} Our matched-random comparisons
+for \textbf{C1} and \textbf{C5} use a modest number of
+independent optimization runs per substrate (Section~4).
+For C1 the qualitative separation is detected, but fine
+quantitative claims --- effect sizes, distributional tails of
+the matched-random null, substrate-specific exponents --- are
+not supported at this sample size. For C5 the contrast is
+directionally positive on both substrates (Flow-Lenia $7/9$,
+$p=0.0898$; Particle Life++ $6/7$, $p=0.0625$) but neither
+reaches conventional significance; the C5 result should
+therefore be read as \emph{underpowered evidence of history
+dependence} rather than as a confirmed effect. In both cases
+the natural strengthening is replication with a larger
+matched-group ensemble, without methodological change.
+
+\textbf{Sensitivity of C5 to the intervention protocol.}
+The scale-dependent frustration signature (\textbf{C5}) is
+measured under a particular constrained-rollout intervention:
+constraint geometry, perturbation magnitude, and release time
+are fixed by the protocol described in Section~4. Preliminary
+checks suggest the qualitative ordering is preserved across
+small variations, but a full sensitivity sweep over the
+intervention family is left for follow-up work.
+
+\textbf{Incomplete cross-substrate matrix (C6).} The
+cross-substrate transfer panel set is sparse rather than
+complete. We report C1 on all three substrates (Flow-Lenia,
+Life-CA, Particle Life++), C2 on Flow-Lenia and Life-CA, and
+C5 on Flow-Lenia and Particle Life++. Two cells are missing:
+C5 on Life-CA --- straightforward to add in a follow-up given
+the discrete-substrate intervention is simple --- and C2 on
+Particle Life++, which is conceptually obstructed by the
+deep-attractor structure of the substrate (\S5.4) rather than
+by methodology. C6 should therefore be read as \emph{partial
+transfer}: the MSPD construction applies uniformly across the
+three substrates, and each individual claim transfers to at
+least one non-primary substrate, but a fully populated
+$3\times3$ claim-substrate matrix is left to follow-up work.
+Other continuous-Lagrangian substrates (Boids, Particle Lenia,
+neural cellular automata) carry local transition laws of the
+same form and are natural targets, but have not been evaluated
+here. Substrates without meaningful local DOFs (e.g.\
+single-particle simulations) fall outside the scope of the
+metric by construction.
+
+\textbf{No direct head-to-head with NN-OEE drivers.}
+This version of the paper does not compare MSPD-as-driver
+against neural-network open-endedness objectives (ASAL,
+Leniabreeder) on a shared task. The cleanest formulation ---
+correlating MSPD loss with an NN-OEE loss across a matched
+ensemble --- is deferred to a follow-up paper; preliminary
+runs were inconclusive at current sample size.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+% supports: [C1] [C2] [C5] [C6] -- conclusion recaps all claims retained in this version
+\subsection{7 Conclusion}\label{conclusion}
+
+% what + why
+We set out to bridge a methodological gap in artificial life:
+open-ended evolution is presently driven by uninterpretable,
+neural-network complexity metrics that cannot be connected to physical
+theories of life, while existing physics-grounded metrics
+(spatial MSSC) were limited to static patterns.
+
+% what we did (method recap)
+We introduced MSPD (Multi-Scale Path Divergence, $D_P$), a
+temporal extension of MSSC that inherits its
+renormalization-group architecture intact: the spatial
+coarse-graining scale is replaced by an observation window,
+and cross-scale dissimilarity is computed in
+trajectory-distribution space rather than image space. MSPD is
+defined at the population level as a functional of the realised
+trajectory via local transition laws, with a windowed
+finite-resolution estimator and an explicit consistency
+statement (Propositions~1--2). As an explicit scalar it plays a
+dual role: as a gradient-free fitness function, and as a
+post-hoc analytical lens on any simulation that exposes local
+transition laws.
+
+% main claims (C1, C2, C5, C6)
+Empirically, MSPD-optimized parameters produce higher held-out
+complexity scores than matched random parameters from the same
+substrate (\textbf{C1}), and high-$\Delta H$ states correspond
+to states with higher instability to external interventions
+(\textbf{C2}) --- the metric responds to the underlying
+dynamics rather than to noise. Used as a lens, MSPD reveals
+that optimised systems also exhibit elevated
+\emph{scale-dependent frustration} under matched
+constrained-rollout interventions (\textbf{C5}) --- linking
+MSPD post-hoc to the frustration criterion of Vanchurin et
+al.~\cite{vanchurin2022toward} and to the spin-glass framing of
+biological complexity of Wolf et al.~\cite{wolf2018physical},
+without the metric being optimised for frustration at any
+stage. The same protocol transfers to qualitatively different
+substrates: C1, C2 and C5 also hold on Life-like cellular
+automata and Particle Life++ (\textbf{C6}).
+% [C1] [C2] [C5] [C6]
+
+A single explicit-formula scalar therefore both \emph{directs}
+open-ended evolution and supplies a principled bridge to the
+physics of complexity that black-box drivers do not. Three
+natural extensions, deferred to follow-up work, complete a
+research programme that this paper opens but does not exhaust:
+(i) a system-identified scale-separation timescale $\tau^*$,
+(ii) a quantitative comparison between MSPD loss and
+neural-network OEE losses on a shared task, and
+(iii) multi-objective evolution combining MSPD with a
+complementary snapshot-structural metric, which may dominate
+either driver alone.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+% Keep [chan2019lenia] in the rendered bibliography even though it currently
+% only appears in TODO comments (§2.2). Remove this \nocite once the
+% Background section actually cites Chan in body text.
+\nocite{chan2019lenia}
+
+\bibliographystyle{abbrv}
+\bibliography{references}
+
+\input{appendixA_consistency.tex}
+\input{appendixB_protocols.tex}
+\input{appendixC_optimization_protocols}
+\input{appendixD_render_examples}
+
+
+\end{document}

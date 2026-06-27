@@ -1,44 +1,162 @@
-# Project Goals
-The auditor takes as input a .bib and .tex files, and applies a series of checks on them. The checks are intended to be used:
-1. Manually by the paper authors to ensure the absolute best quality of their references
-2. Automatically to screen submissions for hallucinated references
-3. Automatically by AI Agents who are writing papers to ensure the references are correct and up-to-date
+# reference-audit
 
-# Audit steps
-## 1. Which exact artifact does the refence point to?
-1. For papers we want to find DOI - but also keep a list of reputable venues which don't assign it, e. g. TMLR
-3. For books, we want to find ISBN
-4. For books, we prefer chapter citation, but don't insist
-5. For artifacts, we want a URL
+Audit the references in a paper. Given a `.bib` bibliography and the `.tex` that cites it,
+`reference-audit` figures out **which real-world document each reference actually points to** and
+flags ones that don't match anything real (hallucinated references).
 
-The general plan is:
-1. Query the databases
-2. Apply formal code-based filters (where we are able to derive them)
-3. Unless there is returned record is a 100% match, use an LLM to filter the results one-by-one - "can the returned record be correspond to the entry in .bib"?
-4. If there are multiple plausable records, use formal code-based filters (where we are able to derive them) to check whether they correspond to the same object, again use LLM as the final step
-5. The end result is a very robust and reliable output, one of three:
-5.1. The .bib entry doesn't match a real document
-5.2. The .bib entry matches exactly one real document
-5.3. The .bib entry matches multiple real documents
+For every entry it returns one of three verdicts:
 
-## 2. Is there a better version of the same artifact?
-1. For papers, priority is published > preprint
-2. For books, prefer later editions
+- **exactly one match** — the reference resolves to a single real document (with its DOI/ISBN/URL,
+  and any preprint↔published versions merged).
+- **no match** — no real document corresponds to the entry (a likely hallucination).
+- **multiple matches** — the entry is ambiguous and matches more than one distinct document.
 
-## 3. Produce the absolute best possible reference
-1. Compile all available information
-2. Ensure that .bib entries use the most correct and canonical format
+It also backfills missing DOIs/ISBNs, normalizes malformed identifiers, and reports dangling or
+uncited citations.
 
-# General Design Principles
-1. Databases might be incomplete and metadata can sometimes be incorrect (e. g. month). DOI & ISBN uniquely identify documents; title & author list might be spelled slightly differently but are usually correct
-2. Modus oprandi: the system will process cases. It will make mistakes (and be corrected). The goal is to use individual failures to improve the systems's overall realiability. Document the quirks of the DBs and data you encounter
-3. When fixing a mistake, add it as a unit test. Unit tests should used mocked DB responses
-4. Maintain a DB of checks so repeated runs on the same .bib file won't trigger unnecessary LLM & DB calls
+> Designed for three audiences: authors polishing their bibliography, automated screening of
+> submissions for hallucinated references, and AI agents writing papers. The full product
+> specification lives in [`architecture/SPEC.md`](architecture/SPEC.md).
 
-# Software Design
-1. The overall system is based on https://github.com/constructorfabric/studio
-2. The part which queries the DBs should be modular (easy to change and add adapters for individual DBs)
-3. .env contains a bunch of API keys
-4. The LLM model should be configurable, by defaul use `gpt-5.4-mini`
-5. Use `uv` to manage Python dependencies
-6. Python code should be a module in `src/`, without relative imports and `sys.path.append`
+## How it works
+
+For each entry the tool runs a funnel that prefers cheap, deterministic evidence and only escalates
+to an LLM when needed:
+
+1. **Parse** the `.bib` (and resolve `\cite`/`\nocite` in the `.tex`), normalizing DOIs, ISBNs and
+   arXiv ids.
+2. **Query** multiple scholarly databases — Crossref, OpenAlex, Semantic Scholar, arXiv, Open
+   Library — both by identifier and by title/author.
+3. **Pool** the results, merging records that are the same work (shared identifier, or a
+   preprint↔published version link).
+4. **Score** each candidate with interpretable features (title/author/year/venue similarity,
+   identifier agreement, and distinct-work signals).
+5. **Adjudicate** anything that isn't a clean match with an LLM, asking one record at a time whether
+   it can correspond to the entry; a second LLM check decides whether two strong candidates are the
+   *same* work.
+6. **Verdict** — count the distinct works and report none / exactly one / multiple.
+
+Results are cached in a local SQLite DB, so re-running on the same `.bib` makes **no** repeat
+network or LLM calls. A transient outage never counts as "no match".
+
+## Requirements
+
+- Python 3.14
+- [`uv`](https://docs.astral.sh/uv/)
+- An OpenAI API key (for the LLM adjudication step)
+
+## Setup
+
+```bash
+uv sync
+```
+
+Create a `.env` file in the project root with your keys (this file is git-ignored):
+
+```dotenv
+# Required for LLM adjudication
+OPENAI_API_KEY=sk-...
+
+# Optional — improve coverage / rate limits for the data sources
+S2_API_KEY=...
+NCBI_API_KEY=...
+NASA_ADS_API_KEY=...
+CORE_API_KEY=...
+PAPER_SEARCH_MCP_UNPAYWALL_EMAIL=you@example.org
+```
+
+Only `OPENAI_API_KEY` is needed to run the full pipeline; the data sources used by default
+(Crossref, OpenAlex, arXiv, Open Library) require no key. You can also run with no LLM at all
+(`--no-llm`, see below).
+
+## Usage
+
+```bash
+uv run reference-audit audit <main.tex> <references.bib> [options]
+```
+
+Example, against the bundled pilot:
+
+```bash
+uv run reference-audit audit tests/main.tex tests/references.bib
+```
+
+```
+Reference audit
+  28 entries  ·  26 cited  ·  2 uncited  ·  7 with issues  ·  1 commented twins
+  verdicts: 27 matched  ·  0 no-match  ·  0 ambiguous  ·  1 unresolved
+  types: article=18, book=2, inproceedings=5, misc=3
+
+[article] wolpert2007  (cited)
+    Using self-dissimilarity to quantify complexity
+    ids: doi:10.1002/cplx.20165
+    ⚠ DOI normalized from URL form ('https://doi.org/10.1002/cplx.20165' → '10.1002/cplx.20165')
+    ✓ exactly one match (high) — Matched a single work via crossref.
+
+[inproceedings] fu2023dreamsim  (UNCITED)
+    DreamSim: Learning New Dimensions of Human Visual Similarity using Synthetic Data
+    ids: (no identifier)
+    ⚠ no DOI/arXiv id (will attempt DOI backfill)
+    ✓ exactly one match (high) — Matched a single work via semantic_scholar (2 versions).
+...
+```
+
+### Options
+
+| Option | Description |
+| --- | --- |
+| `-f, --format text\|json\|both` | Output format. `json` emits the full structured report (verdicts, candidates, features) — ideal for tooling and AI agents. Default: `text`. |
+| `--no-network` | Parse only: identifiers + cited/uncited bookkeeping, no database or LLM calls. |
+| `--no-llm` | Formal-only: skip LLM adjudication for fully deterministic output (useful in CI). |
+| `--fresh` | Ignore cached results and re-query everything. |
+| `--cache PATH` | Cache DB location. Default: `<bib_dir>/.reference_audit/cache.db`. |
+| `--model NAME` | Override the LLM model (default `gpt-5.4-mini`). |
+| `--fail-on hallucinated\|multiple` | Exit non-zero if any entry gets that verdict — for gating submissions in CI. |
+
+Example — fail a CI check if any reference looks hallucinated, as JSON:
+
+```bash
+uv run reference-audit audit paper.tex refs.bib --format json --fail-on hallucinated
+```
+
+### Reading the output
+
+- **`✓ exactly one match`** — resolved to a single document; the matched identifier and version
+  count are shown.
+- **`✗ no match`** — nothing real corresponds; treat as a likely hallucination.
+- **`? multiple matches`** — ambiguous; the entry matches more than one distinct work.
+- **`unresolved`** — the tool could not conclude (e.g. a transient API error, or a URL-only web
+  artifact). Never reported as a hallucination.
+- **`⚠` lines** — per-entry issues: a normalized/backfilled identifier, a missing ISBN, a dangling
+  citation, etc.
+- The header also lists **cited-but-missing** citations (a `\cite` with no `.bib` entry) and
+  **uncited** entries.
+
+## Development
+
+```bash
+uv run pytest          # unit + integration tests (databases & LLM are mocked; no network)
+uv run cfs validate    # validate the governance artifacts and code traceability
+```
+
+Tests mock all database and LLM calls, so the suite is fast and offline. When the tool gets a case
+wrong, the fix is captured as a new test with the recorded response (see
+[`architecture/SPEC.md`](architecture/SPEC.md), "General Design Principles").
+
+## Project layout
+
+```
+src/reference_audit/
+  parsing/     # .bib / .tex / identifier parsing
+  sources/     # modular database adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library)
+  matching/    # candidate pooling, feature scoring, SAME-OBJECT clustering, verdicts
+  llm/         # OpenAI structured-output adjudication
+  cache/       # SQLite memoization of DB/LLM calls
+  pipeline.py  # orchestration
+  cli.py       # command-line entry point
+architecture/  # governed specification & design (SPEC, PRD, DESIGN, DECOMPOSITION, features)
+tests/         # mocked unit/integration tests + the pilot .bib/.tex
+```
+
+See [`architecture/SPEC.md`](architecture/SPEC.md) for the full specification and the
+`architecture/` artifacts for the detailed design.

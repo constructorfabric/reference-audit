@@ -1,0 +1,38 @@
+# Constructor Studio artifacts registry
+
+[[systems]]
+name = "ReferenceAudit"
+slug = "referenceaudit"
+kit = "sdlc"
+children = []
+
+[[systems.artifacts]]
+name = "Product Requirements"
+path = "architecture/PRD.md"
+kind = "PRD"
+traceability = "FULL"
+
+[[systems.artifacts]]
+name = "Technical Design"
+path = "architecture/DESIGN.md"
+kind = "DESIGN"
+traceability = "FULL"
+
+[[systems.artifacts]]
+name = "Decomposition"
+path = "architecture/DECOMPOSITION.md"
+kind = "DECOMPOSITION"
+traceability = "FULL"
+
+[[systems.artifacts]]
+name = "Parsing Feature"
+path = "architecture/features/parsing.md"
+kind = "FEATURE"
+traceability = "FULL"
+
+[[systems.codebase]]
+name = "Reference Audit Source"
+path = "src/reference_audit"
+extensions = [".py"]
+singleLineComments = ["#"]
+multiLineComments = [{start = '"""', end = '"""'}]
