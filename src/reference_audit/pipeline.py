@@ -43,6 +43,10 @@ _NEEDS_ISBN = {EntryType.BOOK, EntryType.INCOLLECTION}
 _NEEDS_DOI = {EntryType.ARTICLE, EntryType.INPROCEEDINGS}
 
 
+class EmptyBibliographyError(ValueError):
+    """Raised when the .bib parses to zero auditable entries — nothing to audit."""
+
+
 def _parse_issues(entry: BibEntry) -> list[str]:
     """Deterministic, no-network issues visible from the .bib alone."""
     issues: list[str] = []
@@ -71,6 +75,12 @@ def build_parse_report(tex_path: str | Path | None, bib_path: str | Path) -> Aud
     """
     # @cpt-begin:cpt-referenceaudit-flow-parsing-build-report:p1:inst-parse-bib
     entries, twins = parse_bib(bib_path)
+    if not entries:
+        detail = f" ({len(twins)} commented-out twin(s) ignored)" if twins else ""
+        raise EmptyBibliographyError(
+            f"No auditable bibliography entries found in {bib_path}{detail}. "
+            "Is it a valid .bib file, and are the .bib/.tex arguments in the right order?"
+        )
     bib_keys = {e.key for e in entries}
     # @cpt-end:cpt-referenceaudit-flow-parsing-build-report:p1:inst-parse-bib
 

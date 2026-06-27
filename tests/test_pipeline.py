@@ -1,6 +1,8 @@
 """Parse-only report assembly (M1) over the real pilot."""
 
-from reference_audit.pipeline import build_parse_report
+import pytest
+
+from reference_audit.pipeline import EmptyBibliographyError, build_parse_report
 
 
 def _audit(report, key):
@@ -48,3 +50,10 @@ def test_bib_only_has_no_uncited(pilot_bib):
     report = build_parse_report(None, pilot_bib)
     assert report.uncited == []
     assert report.summary["total_entries"] == 28
+
+
+def test_empty_bib_raises(pilot_tex):
+    # passing a non-.bib (e.g. swapped args, so the .tex is read as the bib) yields zero
+    # auditable entries — this must raise, not silently report an all-zero audit.
+    with pytest.raises(EmptyBibliographyError):
+        build_parse_report(None, pilot_tex)

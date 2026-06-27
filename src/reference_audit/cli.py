@@ -12,7 +12,7 @@ from pathlib import Path
 import typer
 
 from reference_audit.config import AuditConfig
-from reference_audit.pipeline import build_parse_report, run_audit
+from reference_audit.pipeline import EmptyBibliographyError, build_parse_report, run_audit
 from reference_audit.report import render_json, render_text
 
 app = typer.Typer(
@@ -54,24 +54,28 @@ def audit(
     if fmt not in ("text", "json", "both"):
         raise typer.BadParameter("format must be one of: text, json, both")
 
-    if no_network:
-        report = build_parse_report(tex, bib)
-    else:
-        updates: dict = {}
-        if model:
-            updates["model"] = model
-        if no_llm:
-            updates["use_llm"] = False
-        config = AuditConfig().model_copy(update=updates)
-        cache_path = cache or (bib.parent / ".reference_audit" / "cache.db")
-        report = run_audit(
-            tex,
-            bib,
-            config=config,
-            cache_path=cache_path,
-            fresh=fresh,
-            progress=sys.stderr.isatty(),
-        )
+    try:
+        if no_network:
+            report = build_parse_report(tex, bib)
+        else:
+            updates: dict = {}
+            if model:
+                updates["model"] = model
+            if no_llm:
+                updates["use_llm"] = False
+            config = AuditConfig().model_copy(update=updates)
+            cache_path = cache or (bib.parent / ".reference_audit" / "cache.db")
+            report = run_audit(
+                tex,
+                bib,
+                config=config,
+                cache_path=cache_path,
+                fresh=fresh,
+                progress=sys.stderr.isatty(),
+            )
+    except EmptyBibliographyError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
 
     if fmt in ("json", "both"):
         typer.echo(render_json(report))
