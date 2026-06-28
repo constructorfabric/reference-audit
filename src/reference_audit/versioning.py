@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 
 from reference_audit.models import BibEntry, EntryType, MatchedArtifact
+from reference_audit.parsing.identifiers import arxiv_submission_year, extract_arxiv_id
 
 _PREPRINT_DOI_PREFIX = "10.48550/arxiv"
 
@@ -35,6 +36,15 @@ def _entry_cites_preprint(entry: BibEntry) -> bool:
     return bool(entry.ids.arxiv_id)
 
 
+def cited_arxiv_id(entry: BibEntry) -> str | None:
+    """The arXiv id the entry cites, given directly (`eprint`) or via a 10.48550/arXiv.* DOI."""
+    if entry.ids.arxiv_id:
+        return entry.ids.arxiv_id
+    if entry.ids.doi and _is_preprint_doi(entry.ids.doi):
+        return extract_arxiv_id(None, fallback_text=entry.ids.doi)
+    return None
+
+
 def _find_published_doi(artifact: MatchedArtifact) -> str | None:
     """Return the first real published DOI found across all artifact versions."""
     for record in artifact.versions:
@@ -54,6 +64,28 @@ def _parse_edition_num(s: str) -> int | None:
     return _ORDINALS.get(first_word)
 
 
+def _newer_preprint_version_note(entry: BibEntry, artifact: MatchedArtifact) -> str | None:
+    """A preprint with no published version may still have been *updated*: the cited year is the
+    original arXiv submission year (encoded in the id), so a later canonical year means a newer
+    arXiv version exists. Gated on the cited year actually being the original-version year — a
+    genuinely wrong year is left to the field check, not mislabeled as 'newer version available'.
+    """
+    arxiv_id = cited_arxiv_id(entry)
+    if arxiv_id is None or entry.year is None:
+        return None
+    submitted = arxiv_submission_year(arxiv_id)
+    if submitted is None or entry.year != submitted:
+        return None
+    best = artifact.best_record
+    latest = best.year if best is not None else None
+    if latest is not None and latest > entry.year:
+        return (
+            f"citing the original arXiv version ({entry.year}); a newer version "
+            f"({latest}) is available — refresh the citation metadata"
+        )
+    return None
+
+
 def better_version_notes(entry: BibEntry, artifact: MatchedArtifact) -> list[str]:
     """Return upgrade notices for this entry (empty list means best version is already cited).
 
@@ -66,6 +98,10 @@ def better_version_notes(entry: BibEntry, artifact: MatchedArtifact) -> list[str
         pub_doi = _find_published_doi(artifact)
         if pub_doi:
             notes.append(f"citing preprint; published version available: doi:{pub_doi}")
+        else:
+            newer = _newer_preprint_version_note(entry, artifact)
+            if newer:
+                notes.append(newer)
 
     if entry.entry_type in _BOOK_TYPES:
         best = artifact.best_record

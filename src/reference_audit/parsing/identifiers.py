@@ -104,6 +104,26 @@ def arxiv_to_doi(arxiv_id: str) -> str:
     return f"10.48550/arxiv.{arxiv_id.lower()}"
 
 
+def arxiv_submission_year(arxiv_id: str | None) -> int | None:
+    """Year an arXiv id was first submitted — encoded in the id itself, so it pins the *original*
+    version (v1) independent of any later updates.
+
+    New scheme `YYMM.NNNNN` (since 2007-04) → 2000+YY. Old scheme `archive/YYMMNNN` (1991-2007) →
+    19YY for YY>=91 else 20YY. Returns None when the id matches neither shape.
+    """
+    if not arxiv_id:
+        return None
+    s = _strip_arxiv_version(arxiv_id.strip())
+    new = re.match(r"^(\d{2})\d{2}\.\d{4,5}$", s)
+    if new:
+        return 2000 + int(new.group(1))
+    old = re.match(r"^[a-z-]+(?:\.[a-z]{2})?/(\d{2})\d{5}$", s, re.IGNORECASE)
+    if old:
+        yy = int(old.group(1))
+        return 1900 + yy if yy >= 91 else 2000 + yy
+    return None
+
+
 def normalize_url(text: str | None) -> str | None:
     if not text:
         return None

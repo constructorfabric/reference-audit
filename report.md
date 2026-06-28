@@ -53,7 +53,7 @@ Reference audit
     Automating the Search for Artificial Life with Foundation Models
     ids: arXiv:2412.17799
     ⚠ DOI found via semantic_scholar: 10.48550/arxiv.2412.17799
-    ⚠ field 'year' needs review: '2024' vs canonical '2025' [arxiv, crossref, openalex, semantic_scholar] — differs by one from canonical 2025 (often online vs print year)
+    ⚠ citing the original arXiv version (2024); a newer version (2025) is available — refresh the citation metadata
     ✓ exactly one match (high) — Matched a single work via semantic_scholar.
       matched: doi:10.48550/arxiv.2412.17799  (semantic_scholar)
 
@@ -160,7 +160,7 @@ Reference audit
 [article] goldenfeld2011life  (cited)
     Life is Physics: Evolution as a Collective Phenomenon Far From Equilibrium
     ids: doi:10.1146/annurev-conmatphys-062910-140509
-    ⚠ (LLM) field 'journal/venue' looks wrong: 'Annual Review Condensed Matter Physics' vs canonical 'Annual Review of Condensed Matter Physics' [arxiv, crossref, openalex, semantic_scholar] — The .bib venue omits the word 'of', changing the journal name from 'Annual Review of Condensed Matter Physics' to an incorrect title. This is not just formatting or abbreviation.
+    ⚠ (LLM) field 'journal/venue' looks wrong: 'Annual Review Condensed Matter Physics' vs canonical 'Annual Review of Condensed Matter Physics' [arxiv, crossref, openalex, semantic_scholar] — The .bib venue omits the word 'of', which changes the journal name from 'Annual Review of Condensed Matter Physics' to a different, incomplete title. This is not just abbreviation or punctuation; it's a missing word in the venue name.
     ⚠ field 'number' looks wrong: '-' vs canonical '1' [arxiv, crossref, openalex, semantic_scholar] — number is empty or a placeholder ('-'); canonical number is '1'
     ✓ exactly one match (high) — Matched a single work via openalex.
       matched: doi:10.1146/annurev-conmatphys-062910-140509  (openalex)
@@ -183,7 +183,7 @@ Reference audit
     ⚠ book has no ISBN (will attempt ISBN backfill)
     ⚠ DOI found via crossref: 10.1515/9780691187051
     ⚠ ISBN found via crossref: 9780691187051
-    ⚠ (LLM) field 'publisher' looks wrong: 'Princeton Un iversity Press' vs canonical 'Princeton University Press' [crossref, openalex, openlibrary] — The .bib publisher has a split/misspelled word: 'Un iversity' instead of 'University'. This is not just formatting; it changes the word itself and is a genuine mistake.
+    ⚠ (LLM) field 'publisher' looks wrong: 'Princeton Un iversity Press' vs canonical 'Princeton University Press' [crossref, openalex, openlibrary] — The .bib publisher has a split/misspelled word: 'Un iversity' instead of 'University'. This is not a formatting difference; it changes the word itself.
     · 1 field formatting nit(s) (not mistakes; see field_findings)
     ✓ exactly one match (high) — Matched a single work via crossref.
       matched: doi:10.1515/9780691187051  (openalex)
@@ -209,7 +209,7 @@ Reference audit
     ⚠ DOI found via crossref: 10.4324/9780429498886
     ⚠ ISBN found via crossref: 9780429967436
     ⚠ field 'year' needs review: '1976' vs canonical '2018' [crossref, openalex, openlibrary, semantic_scholar] — differs from matched edition (2018); verify the edition/printing
-    ⚠ (LLM) field 'publisher' looks wrong: 'W. A. Benjamin' vs canonical 'Routledge' [crossref, openalex, openlibrary, semantic_scholar] — The publisher names are different organizations: the .bib entry says W. A. Benjamin, while the authoritative databases give Routledge. This is not a formatting difference or abbreviation; it is a substantive mismatch in publisher.
+    ⚠ (LLM) field 'publisher' looks wrong: 'W. A. Benjamin' vs canonical 'Routledge' [crossref, openalex, openlibrary, semantic_scholar] — The publisher names are different organizations: the .bib entry says 'W. A. Benjamin' while the authoritative databases give 'Routledge'. This is not a formatting difference or abbreviation; it is a substantive mismatch in publisher.
     ✓ exactly one match (high) — Matched a single work via crossref.
       matched: doi:10.4324/9780429498886  (semantic_scholar)
 

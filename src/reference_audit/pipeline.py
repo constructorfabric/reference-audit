@@ -230,9 +230,12 @@ class AuditPipeline:
             if cached is not None:
                 audit.verdict = cached
                 audit.from_cache = True
-                # Field findings aren't part of the cached verdict; recompute them from the cached
-                # artifact records (deterministic, and per-field LLM decisions are themselves cached).
+                # Issues/field findings aren't part of the cached verdict; recompute them from the
+                # cached artifact records (all deterministic, and per-field LLM decisions are
+                # themselves cached) so a cached run reports identically to a --fresh one.
                 await self._enrich_artifact(audit, cached)
+                self._note_backfill(audit, cached)
+                self._note_better_version(audit, cached)
                 await self._check_fields(audit, cached)
                 return
         route = route_entry(entry, self.adapters)

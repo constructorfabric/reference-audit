@@ -29,11 +29,13 @@ def _entry(
     doi: str | None = None,
     arxiv_id: str | None = None,
     raw_fields: dict | None = None,
+    year: int | None = None,
 ) -> BibEntry:
     return BibEntry(
         key="k",
         entry_type=entry_type,
         title="T",
+        year=year,
         ids=Identifiers(doi=doi, arxiv_id=arxiv_id),
         raw_fields=raw_fields or {},
     )
@@ -45,10 +47,12 @@ def _record(
     arxiv_id: str | None = None,
     is_preprint: bool = False,
     edition: int | None = None,
+    year: int | None = None,
 ) -> SourceRecord:
     return SourceRecord(
         source="test",
         title="T",
+        year=year,
         ids=Identifiers(doi=doi, arxiv_id=arxiv_id),
         is_preprint=is_preprint,
         edition=edition,
@@ -156,6 +160,39 @@ def test_published_doi_entry_no_note():
 def test_preprint_only_artifact_no_note():
     e = _entry(arxiv_id="2401.12345")
     art = _artifact(_record(arxiv_id="2401.12345", is_preprint=True))
+    assert better_version_notes(e, art) == []
+
+
+# ── better_version_notes: newer arXiv version (no published DOI) ───────────────
+
+def test_newer_arxiv_version_flagged():
+    # kumar2024automating: cites v1 (2024 = id-encoded submission year); canonical/latest is 2025.
+    e = _entry(entry_type=EntryType.MISC, arxiv_id="2412.17799", year=2024)
+    art = _artifact(_record(arxiv_id="2412.17799", is_preprint=True, year=2025))
+    notes = better_version_notes(e, art)
+    assert len(notes) == 1
+    assert "newer version" in notes[0]
+    assert "2025" in notes[0]
+
+
+def test_newer_arxiv_version_via_arxiv_doi():
+    e = _entry(entry_type=EntryType.MISC, doi="10.48550/arxiv.2412.17799", year=2024)
+    art = _artifact(_record(doi="10.48550/arxiv.2412.17799", is_preprint=True, year=2025))
+    assert any("newer version" in n for n in better_version_notes(e, art))
+
+
+def test_preprint_same_year_no_newer_version_note():
+    # Canonical year equals the cited (original) version year → nothing newer to upgrade to.
+    e = _entry(entry_type=EntryType.MISC, arxiv_id="2412.17799", year=2024)
+    art = _artifact(_record(arxiv_id="2412.17799", is_preprint=True, year=2024))
+    assert better_version_notes(e, art) == []
+
+
+def test_preprint_year_not_original_no_version_note():
+    # Cited year (2020) is not the id-encoded submission year (2024): a possible bib error, left to
+    # the field check — not mislabeled here as "newer version available".
+    e = _entry(entry_type=EntryType.MISC, arxiv_id="2412.17799", year=2020)
+    art = _artifact(_record(arxiv_id="2412.17799", is_preprint=True, year=2025))
     assert better_version_notes(e, art) == []
 
 

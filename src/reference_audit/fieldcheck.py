@@ -42,6 +42,8 @@ from reference_audit.models import (
     MatchedArtifact,
     SourceRecord,
 )
+from reference_audit.parsing.identifiers import arxiv_submission_year
+from reference_audit.versioning import cited_arxiv_id
 
 _BOOK_TYPES = {EntryType.BOOK, EntryType.INCOLLECTION}
 
@@ -229,6 +231,20 @@ def _year_check(entry: BibEntry, records: list[SourceRecord]) -> _Check | None:
     delta = abs(entry.year - canonical_year)
     if delta == 0:
         return chk
+    # Preprint cited by its arXiv id: the .bib year is the original version's submission year
+    # (encoded in the id). arXiv updates push the canonical/latest year forward, so a *later*
+    # canonical year is a newer VERSION of the same preprint, not a wrong year — the record is valid
+    # for the version cited (the newer-version advisory is emitted by versioning.better_version_notes).
+    # A cited year that does NOT equal the id-encoded submission year falls through and is still flagged.
+    arxiv_id = cited_arxiv_id(entry)
+    if arxiv_id is not None and canonical_year > entry.year:
+        submitted = arxiv_submission_year(arxiv_id)
+        if submitted is not None and entry.year == submitted:
+            chk.detail = (
+                f"matches the cited arXiv version ({submitted}); canonical {canonical_year} is a "
+                "later version of the same preprint"
+            )
+            return chk  # status stays 'ok' — valid for the version cited
     if entry.entry_type in _BOOK_TYPES:
         # Books have edition-specific years; the match may be a different printing, so a year gap
         # is a prompt to verify the edition — not, on its own, a bib mistake.

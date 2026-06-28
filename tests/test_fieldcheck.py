@@ -211,6 +211,48 @@ def test_book_year_gap_is_uncertain_not_error():
     assert "edition" in y.detail
 
 
+def test_preprint_cited_version_year_is_valid_not_uncertain():
+    # kumar2024automating: .bib cites arXiv v1 (2024); canonical/latest version is 2025. The cited
+    # year is the original submission year (encoded in 2412.*) → valid, not "needs review".
+    e = _entry(
+        entry_type=EntryType.MISC, venue="", year=2024,
+        ids=Identifiers(arxiv_id="2412.17799"),
+    )
+    art = _artifact(_rec(source="semantic_scholar", year=2025))
+    y = _by_field(deterministic_field_checks(e, art))["year"]
+    assert y.status == "ok"
+    assert "later version" in y.detail
+
+
+def test_preprint_arxiv_doi_cited_version_year_is_valid():
+    e = _entry(
+        entry_type=EntryType.MISC, venue="", year=2024,
+        ids=Identifiers(doi="10.48550/arxiv.2412.17799"),
+    )
+    art = _artifact(_rec(source="openalex", year=2025))
+    assert _by_field(deterministic_field_checks(e, art))["year"].status == "ok"
+
+
+def test_preprint_year_not_matching_submission_still_flagged():
+    # Cited year (2020) is NOT the id-encoded submission year (2024) → a real discrepancy, flagged.
+    e = _entry(
+        entry_type=EntryType.MISC, venue="", year=2020,
+        ids=Identifiers(arxiv_id="2412.17799"),
+    )
+    art = _artifact(_rec(source="semantic_scholar", year=2025))
+    assert _by_field(deterministic_field_checks(e, art))["year"].status == "error"
+
+
+def test_preprint_year_ahead_of_canonical_still_flagged():
+    # Canonical (2024) is earlier than the cited year (2025): not a "newer version" case → flagged.
+    e = _entry(
+        entry_type=EntryType.MISC, venue="", year=2025,
+        ids=Identifiers(arxiv_id="2412.17799"),
+    )
+    art = _artifact(_rec(source="semantic_scholar", year=2024))
+    assert _by_field(deterministic_field_checks(e, art))["year"].status == "uncertain"
+
+
 # ── volume ───────────────────────────────────────────────────────────────────
 
 
