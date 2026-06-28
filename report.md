@@ -18,6 +18,7 @@ Reference audit
 [article] lehman2011abandoning  (cited)
     Abandoning Objectives: Evolution Through the Search for Novelty Alone
     ids: doi:10.1162/evco_a_00025
+    ⚠ authority of record not auto-retrievable (field check may be incomplete) — publisher citation export not retrievable (http 403): https://direct.mit.edu/Citation/Download?resourceId=1365&resourceType=3&citationFormat=2
     ✓ exactly one match (high) — Matched a single work via semantic_scholar.
       matched: doi:10.1162/evco_a_00025  (semantic_scholar)
 
@@ -26,8 +27,9 @@ Reference audit
     ids: (no identifier)
     ⚠ no DOI/arXiv id (will attempt DOI backfill)
     ⚠ DOI found via semantic_scholar: 10.1162/isal_a_00651
-    ⚠ field 'year' needs review: '2023' vs canonical '2022' [openalex, semantic_scholar] — differs by one from canonical 2022 (often online vs print year)
-    ⚠ could not verify field(s) journal/venue, pages (no authoritative source returned them)
+    ⚠ authority of record not auto-retrievable (field check may be incomplete) — publisher citation export not retrievable (http 403): https://direct.mit.edu/Citation/Download?resourceId=116921&resourceType=3&citationFormat=2
+    ⚠ could not verify field(s) pages — not present in the metadata from arxiv, crossref, openalex, semantic_scholar
+    · 1 field formatting nit(s) (not mistakes; see field_findings)
     ✓ exactly one match (high) — Matched a single work via semantic_scholar.
       matched: doi:10.1162/isal_a_00651  (semantic_scholar)
 
@@ -36,15 +38,14 @@ Reference audit
     ids: (no identifier)
     ⚠ no DOI/arXiv id (will attempt DOI backfill)
     ⚠ DOI found via semantic_scholar: 10.7551/978-0-262-32621-6-ch128
-    ⚠ field 'pages' looks wrong: '306--313' vs canonical '793-800' [crossref, semantic_scholar] — pages '306--313' do not match canonical '793-800'
+    ⚠ field 'pages' looks wrong: '306--313' vs canonical '793-800' [crossref, openalex] — pages '306--313' do not match canonical '793-800'
     · 3 field formatting nit(s) (not mistakes; see field_findings)
-    ✓ exactly one match (high) — Matched a single work via semantic_scholar.
-      matched: doi:10.7551/978-0-262-32621-6-ch128  (semantic_scholar)
+    ✓ exactly one match (high) — Matched a single work via semantic_scholar (2 versions).
+      matched: doi:10.1162/978-0-262-32621-6-ch128  (openalex)
 
 [article] vanchurin2022toward  (cited)
     Toward a theory of evolution as multilevel learning
     ids: doi:10.1073/pnas.2120037119
-    ⚠ could not verify field(s) pages (no authoritative source returned them)
     ✓ exactly one match (high) — Matched a single work via openalex.
       matched: doi:10.1073/pnas.2120037119  (openalex)
 
@@ -52,7 +53,7 @@ Reference audit
     Automating the Search for Artificial Life with Foundation Models
     ids: arXiv:2412.17799
     ⚠ DOI found via semantic_scholar: 10.48550/arxiv.2412.17799
-    ⚠ field 'year' needs review: '2024' vs canonical '2025' [openalex, semantic_scholar] — differs by one from canonical 2025 (often online vs print year)
+    ⚠ field 'year' needs review: '2024' vs canonical '2025' [arxiv, crossref, openalex, semantic_scholar] — differs by one from canonical 2025 (often online vs print year)
     ✓ exactly one match (high) — Matched a single work via semantic_scholar.
       matched: doi:10.48550/arxiv.2412.17799  (semantic_scholar)
 
@@ -66,13 +67,14 @@ Reference audit
 [article] pugh2016quality  (cited)
     Quality Diversity: A New Frontier for Evolutionary Computation
     ids: doi:10.3389/frobt.2016.00040
-    ⚠ could not verify field(s) pages (no authoritative source returned them)
+    ⚠ could not verify field(s) pages — not present in the metadata from crossref, openalex, semantic_scholar
     ✓ exactly one match (high) — Matched a single work via semantic_scholar.
       matched: doi:10.3389/frobt.2016.00040  (semantic_scholar)
 
 [article] stanley2019why  (cited)
     Why Open-Endedness Matters
     ids: doi:10.1162/artl_a_00294
+    ⚠ authority of record not auto-retrievable (field check may be incomplete) — publisher citation export not retrievable (http 403): https://direct.mit.edu/Citation/Download?resourceId=2917&resourceType=3&citationFormat=2
     ✓ exactly one match (high) — Matched a single work via semantic_scholar.
       matched: doi:10.1162/artl_a_00294  (semantic_scholar)
 
@@ -93,7 +95,7 @@ Reference audit
     ids: (no identifier)
     ⚠ no DOI/arXiv id (will attempt DOI backfill)
     ⚠ DOI found via semantic_scholar: 10.1109/cvpr.2018.00068
-    ⚠ could not verify field(s) journal/venue (no authoritative source returned them)
+    · 1 field formatting nit(s) (not mistakes; see field_findings)
     ✓ exactly one match (high) — Matched a single work via semantic_scholar.
       matched: doi:10.1109/cvpr.2018.00068  (semantic_scholar)
 
@@ -103,7 +105,7 @@ Reference audit
     ⚠ no DOI/arXiv id (will attempt DOI backfill)
     ⚠ DOI found via semantic_scholar: 10.5555/3666122.3668330
     · 1 field formatting nit(s) (not mistakes; see field_findings)
-    ✓ exactly one match (high) — Matched a single work via semantic_scholar (2 versions).
+    ✓ exactly one match (high) — Matched a single work via semantic_scholar.
       matched: doi:10.5555/3666122.3668330  (semantic_scholar)
 
 [article] katsnelson2018towards  (cited)
@@ -115,7 +117,6 @@ Reference audit
 [article] vanchurin2022thermo  (cited)
     Thermodynamics of evolution and the origin of life
     ids: doi:10.1073/pnas.2120042119
-    ⚠ could not verify field(s) pages (no authoritative source returned them)
     · 1 field formatting nit(s) (not mistakes; see field_findings)
     ✓ exactly one match (high) — Matched a single work via openalex.
       matched: doi:10.1073/pnas.2120042119  (openalex)
@@ -123,7 +124,6 @@ Reference audit
 [article] broido2019  (cited)
     Scale-free networks are rare
     ids: doi:10.1038/s41467-019-08746-5
-    ⚠ could not verify field(s) journal/venue (no authoritative source returned them)
     ✓ exactly one match (high) — Matched a single work via semantic_scholar.
       matched: doi:10.1038/s41467-019-08746-5  (semantic_scholar)
 
@@ -145,15 +145,14 @@ Reference audit
 [article] sotnikov2022  (cited)
     Certification of quantum states with hidden structure of their bitstrings
     ids: doi:10.1038/s41534-022-00559-7
-    ⚠ field 'number' looks wrong: '' vs canonical '1' [crossref, openalex, semantic_scholar] — number is empty or a placeholder (''); canonical number is '1'
-    ⚠ could not verify field(s) pages (no authoritative source returned them)
+    ⚠ field 'number' looks wrong: '' vs canonical '1' [arxiv, crossref, openalex, semantic_scholar] — number is empty or a placeholder (''); canonical number is '1'
     ✓ exactly one match (high) — Matched a single work via semantic_scholar.
       matched: doi:10.1038/s41534-022-00559-7  (semantic_scholar)
 
 [article] kravchenko2026  (cited)
     Multiscale structural complexity as a quantitative measure of visual complexity
     ids: doi:10.1177/03010066251384492
-    ⚠ field 'year' needs review: '2026' vs canonical '2025' [crossref, openalex, semantic_scholar] — differs by one from canonical 2025 (often online vs print year)
+    ⚠ field 'year' needs review: '2026' vs canonical '2025' [arxiv, crossref, openalex, semantic_scholar] — differs by one from canonical 2025 (often online vs print year)
     · 1 field formatting nit(s) (not mistakes; see field_findings)
     ✓ exactly one match (high) — Matched a single work via crossref.
       matched: doi:10.1177/03010066251384492  (crossref)
@@ -161,8 +160,8 @@ Reference audit
 [article] goldenfeld2011life  (cited)
     Life is Physics: Evolution as a Collective Phenomenon Far From Equilibrium
     ids: doi:10.1146/annurev-conmatphys-062910-140509
-    ⚠ (LLM) field 'journal/venue' looks wrong: 'Annual Review Condensed Matter Physics' vs canonical 'Annual Review of Condensed Matter Physics' [crossref, openalex, semantic_scholar] — The .bib venue omits the word 'of', which changes the journal name from 'Annual Review of Condensed Matter Physics' to a different, incomplete title. This is not just a formatting difference.
-    ⚠ field 'number' looks wrong: '-' vs canonical '1' [crossref, openalex, semantic_scholar] — number is empty or a placeholder ('-'); canonical number is '1'
+    ⚠ (LLM) field 'journal/venue' looks wrong: 'Annual Review Condensed Matter Physics' vs canonical 'Annual Review of Condensed Matter Physics' [arxiv, crossref, openalex, semantic_scholar] — The .bib venue omits the word 'of', changing the journal name from 'Annual Review of Condensed Matter Physics' to an incorrect title. This is not just formatting or abbreviation.
+    ⚠ field 'number' looks wrong: '-' vs canonical '1' [arxiv, crossref, openalex, semantic_scholar] — number is empty or a placeholder ('-'); canonical number is '1'
     ✓ exactly one match (high) — Matched a single work via openalex.
       matched: doi:10.1146/annurev-conmatphys-062910-140509  (openalex)
 
@@ -184,10 +183,10 @@ Reference audit
     ⚠ book has no ISBN (will attempt ISBN backfill)
     ⚠ DOI found via crossref: 10.1515/9780691187051
     ⚠ ISBN found via crossref: 9780691187051
-    ⚠ (LLM) field 'publisher' looks wrong: 'Princeton Un iversity Press' vs canonical 'Princeton University Press' [crossref, openlibrary] — The .bib publisher contains a split/garbled word: 'Un iversity' instead of 'University'. This is not a formatting difference; it is a substantive spelling error in the publisher name.
+    ⚠ (LLM) field 'publisher' looks wrong: 'Princeton Un iversity Press' vs canonical 'Princeton University Press' [crossref, openalex, openlibrary] — The .bib publisher has a split/misspelled word: 'Un iversity' instead of 'University'. This is not just formatting; it changes the word itself and is a genuine mistake.
     · 1 field formatting nit(s) (not mistakes; see field_findings)
     ✓ exactly one match (high) — Matched a single work via crossref.
-      matched: doi:10.1515/9780691187051  (crossref)
+      matched: doi:10.1515/9780691187051  (openalex)
 
 [article] smith2008thermo  (cited)
     Thermodynamics of natural selection I: Energy flow and the limits on organization
@@ -209,10 +208,10 @@ Reference audit
     ⚠ book has no ISBN (will attempt ISBN backfill)
     ⚠ DOI found via crossref: 10.4324/9780429498886
     ⚠ ISBN found via crossref: 9780429967436
-    ⚠ field 'year' needs review: '1976' vs canonical '2018' [crossref, openlibrary] — differs from matched edition (2018); verify the edition/printing
-    ⚠ (LLM) field 'publisher' looks wrong: 'W. A. Benjamin' vs canonical 'Routledge' [crossref, openlibrary] — W. A. Benjamin and Routledge are different publishers, not formatting variants of the same name.
+    ⚠ field 'year' needs review: '1976' vs canonical '2018' [crossref, openalex, openlibrary, semantic_scholar] — differs from matched edition (2018); verify the edition/printing
+    ⚠ (LLM) field 'publisher' looks wrong: 'W. A. Benjamin' vs canonical 'Routledge' [crossref, openalex, openlibrary, semantic_scholar] — The publisher names are different organizations: the .bib entry says W. A. Benjamin, while the authoritative databases give Routledge. This is not a formatting difference or abbreviation; it is a substantive mismatch in publisher.
     ✓ exactly one match (high) — Matched a single work via crossref.
-      matched: doi:10.4324/9780429498886  (crossref)
+      matched: doi:10.4324/9780429498886  (semantic_scholar)
 
 UNRESOLVED \input/\include (citation coverage incomplete — 'uncited' below may be cited inside these):
     appendixA_consistency.tex

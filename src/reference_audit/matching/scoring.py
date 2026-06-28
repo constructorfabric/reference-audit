@@ -30,10 +30,20 @@ def bucket(features: FeatureVector, config: AuditConfig, *, entry_has_id: bool =
         features.author_set_jaccard < config.author_set_distinct_jaccard
         and not features.author_subset
     )
-    forced_adjudicate = (
-        features.title_prefix_trap or features.pages_conflict or author_set_distinct
-    )
     authors_ok = features.author_overlap >= config.author_accept or features.author_subset
+
+    # A disjoint page range in the same venue normally signals a DISTINCT work (laughlin T2c: two
+    # different-titled papers on consecutive pages). But when the title is a near-exact match AND the
+    # authors agree, two different works is not a credible explanation — the likely one is a wrong
+    # `pages` field in the citation (soros2014: cited 306--313 vs the identical paper's canonical
+    # 793--800). Treat that as a field error to be REPORTED by the field check downstream, not as
+    # grounds to call a real, title-and-author-identical paper a possible hallucination. (prefix_trap
+    # stays load-bearing: it fires on divergent title TAILS, i.e. when the titles are NOT near-exact.)
+    title_authors_lock = features.title_ratio >= config.title_backfill and authors_ok
+    pages_conflict_distinct = features.pages_conflict and not title_authors_lock
+    forced_adjudicate = (
+        features.title_prefix_trap or pages_conflict_distinct or author_set_distinct
+    )
 
     # Path A — entry has an identifier that the candidate matches (authoritative; README: IDs
     # uniquely identify). Accept even if the DB holds a subset of authors (wilson1974/Kogut); the

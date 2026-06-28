@@ -76,6 +76,53 @@ def test_pages_conflict_detected():
     assert f.author_set_jaccard < 1.0  # laughlin/pines ⊂ 5-author set
 
 
+def test_wrong_pages_does_not_block_exact_title_author_match():
+    # soros2014: the citation has WRONG pages (306--313) for a paper that is actually at 793--800.
+    # Title + authors are identical and the entry carries no id, so this is a backfill (Path B). The
+    # page disagreement is a field error to report, NOT grounds to force adjudication / reject the
+    # paper as a possible hallucination.
+    e = _entry(
+        title="Identifying Necessary Conditions for the Emergence of Open-Ended Evolution "
+        "Through the Artificial Life World of Chromaria",
+        authors=["Soros, Lisa B.", "Stanley, Kenneth O."],
+        year=2014,
+        venue="Proceedings of the Fourteenth International Conference on the Synthesis and "
+        "Simulation of Living Systems (ALIFE 14)",
+        pages="306--313",
+    )
+    r = SourceRecord(
+        source="crossref",
+        title="Identifying Necessary Conditions for Open-Ended Evolution through the "
+        "Artificial Life World of Chromaria",
+        authors=["L. Soros", "Kenneth O. Stanley"],
+        year=2014,
+        venue="Artificial Life 14: Proceedings of the Fourteenth International Conference on "
+        "the Synthesis and Simulation of Living Systems",
+        pages="793-800",
+        ids=Identifiers(doi="10.1162/978-0-262-32621-6-ch128"),
+    )
+    f = compute_features(e, r, tail_threshold=TT)
+    assert f.pages_conflict is True  # raw signal still fires (the citation's pages are wrong)
+    assert f.title_ratio >= CFG.title_backfill and f.author_overlap >= CFG.author_accept
+    # ...but it must NOT veto a title+author-identical backfill match.
+    assert bucket(f, CFG, entry_has_id=False) == "auto_accept"
+
+
+def test_pages_conflict_still_vetoes_when_titles_differ():
+    # Guard the laughlin T2c case: when the titles are NOT near-exact, a disjoint page range in the
+    # same venue still forces adjudication (the relaxation above is title+author gated).
+    e = _entry(title="The Theory of Everything", authors=["Laughlin, R. B.", "Pines, David"],
+               year=2000, venue="Proceedings of the National Academy of Sciences",
+               pages="28--31")
+    r = SourceRecord(source="crossref", title="The Middle Way",
+                     authors=["R. B. Laughlin", "David Pines"], year=2000,
+                     venue="Proceedings of the National Academy of Sciences", pages="32-37",
+                     ids=Identifiers(doi="10.1073/pnas.97.1.32"))
+    f = compute_features(e, r, tail_threshold=TT)
+    assert f.pages_conflict is True
+    assert bucket(f, CFG, entry_has_id=False) != "auto_accept"
+
+
 def test_db_missing_author_still_accepts_on_doi_and_title():
     # wilson1974: Crossref drops the 2nd author (Kogut); exact DOI + title should still accept
     e = _entry(title="The renormalization group and the epsilon expansion",
