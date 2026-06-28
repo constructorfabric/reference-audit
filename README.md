@@ -36,6 +36,12 @@ to an LLM when needed:
    *same* work.
 6. **Verdict** — count the distinct works and report none / exactly one / multiple.
 
+A reference identified only by a URL (a `@misc` blog post, software or project page that no scholarly
+database indexes) is verified against the page itself: the tool fetches the URL, checks the page's
+own HTML metadata (Open Graph / `citation_*` / `<title>` + authors) against the citation, and falls
+back to the LLM when that metadata is missing or inconclusive. A dead link or a page that cannot be
+confirmed is reported, never silently passed.
+
 Results are cached in a local SQLite DB, so re-running on the same `.bib` makes **no** repeat
 network or LLM calls. A transient outage never counts as "no match".
 
@@ -141,8 +147,8 @@ uv run reference-audit audit paper.tex refs.bib --format json --fail-on hallucin
   count are shown.
 - **`✗ no match`** — nothing real corresponds; treat as a likely hallucination.
 - **`? multiple matches`** — ambiguous; the entry matches more than one distinct work.
-- **`unresolved`** — the tool could not conclude (e.g. a transient API error, or a URL-only web
-  artifact). Never reported as a hallucination.
+- **`unresolved`** — the tool could not conclude (e.g. a transient API error, or a cited web page
+  that is a dead link or could not be confirmed). Never reported as a hallucination.
 - **`⚠` lines** — per-entry issues: a normalized/backfilled identifier, a missing ISBN, a dangling
   citation, etc.
 - The header also lists **cited-but-missing** citations (a `\cite` with no `.bib` entry) and

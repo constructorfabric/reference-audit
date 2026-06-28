@@ -144,7 +144,7 @@ class SourceQueryResult(BaseModel):
     an outage must never be cached/treated as 'not found'."""
 
     source: str
-    query_kind: Literal["id", "metadata", "editions"]
+    query_kind: Literal["id", "metadata", "editions", "web"]
     records: list[SourceRecord] = Field(default_factory=list)
     error: str | None = None
 
@@ -179,6 +179,18 @@ class SameWorkResult(BaseModel):
     relation: Literal[
         "same_artifact", "versions_of_same_work", "distinct_works", "uncertain"
     ]
+    confidence: Literal["high", "medium", "low"]
+    reason: str
+
+
+class WebMatchResult(BaseModel):
+    """LLM verdict on whether a fetched web page IS the resource a URL-only @misc entry cites
+    (strict json_schema). Affirmative polarity: ``corresponds`` is true only on positive evidence
+    the page is that resource, false only on positive evidence it is something else (a different
+    article, a homepage/index, a login/paywall/404 notice); otherwise low confidence.
+    """
+
+    corresponds: bool
     confidence: Literal["high", "medium", "low"]
     reason: str
 

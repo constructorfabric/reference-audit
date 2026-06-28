@@ -1,0 +1,320 @@
+"""Web-artifact verification: HTML-metadata extraction, the fetch adapter, the funnel, and the
+pipeline integration over a URL-only @misc (mordvintsev2022particle, the development oracle case).
+
+The page fetch is injected (no network); the LLM is the in-memory FakeLLM. The reliability contract
+is asserted at each stage: a transport error / dead link never becomes a false 'no match'.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from reference_audit.cache.store import AuditCache
+from reference_audit.config import AuditConfig
+from reference_audit.llm.client import LLMError
+from reference_audit.matching.webcheck import check_web_reference
+from reference_audit.models import BibEntry, EntryType, Identifiers, WebMatchResult
+from reference_audit.pipeline import AuditPipeline
+from reference_audit.sources.base import SourceAdapter
+from reference_audit.sources.http import TransientHTTPError
+from reference_audit.models import SourceQueryResult
+from reference_audit.sources.web import WebAdapter, extract_web_metadata
+
+CFG = AuditConfig(model="t")
+
+_URL = "https://google-research.github.io/self-organising-systems/particle-lenia/"
+
+# A trimmed copy of the real Particle Lenia page head (Open Graph + article:author + <title>).
+_LENIA_HTML = """<!doctype html><html><head>
+<meta charset="utf-8">
+<title>Particle Lenia and the energy-based formulation</title>
+<meta name="description" content="Simple particle-based artificial life-form"/>
+<meta property="og:title" content="Particle Lenia and the energy-based formulation">
+<meta property="og:site_name" content="Self-Organising Systems">
+<meta property="article:author" content="Alexander Mordvintsev">
+<meta property="article:author" content="Eyvind Niklasson">
+<meta property="article:author" content="Ettore Randazzo">
+<meta name="citation_publication_date" content="2022/12/23">
+</head><body>
+<h1>Particle Lenia and the energy-based formulation</h1>
+<script>var ignore = 1;</script>
+<p>Particle Lenia is a particle-based artificial life model.</p>
+</body></html>"""
+
+
+def _entry(title="Particle Lenia and the energy-based formulation",
+           authors=("Mordvintsev, Alexander", "Niklasson, Eyvind", "Randazzo, Ettore")):
+    return BibEntry(
+        key="mordvintsev2022particle",
+        entry_type=EntryType.MISC,
+        title=title,
+        authors=list(authors),
+        year=2022,
+        ids=Identifiers(url=_URL),
+    )
+
+
+def _stub_fetch(status=200, final_url=_URL, html=_LENIA_HTML, exc=None):
+    async def fetch(_url):
+        if exc is not None:
+            raise exc
+        return status, final_url, html
+    return fetch
+
+
+class FakeLLM:
+    """Programmable stand-in for LLMClient. `decider(user)` → WebMatchResult | 'raise'."""
+
+    def __init__(self, decider):
+        self.decider = decider
+        self.calls = 0
+
+    async def structured(self, system, user, schema_model, schema_name):
+        self.calls += 1
+        out = self.decider(user)
+        if out == "raise":
+            raise LLMError("boom")
+        return out
+
+    async def aclose(self):
+        pass
+
+
+# ── metadata extraction (no network) ─────────────────────────────────────────
+
+
+def test_extract_metadata_og_and_authors():
+    rec = extract_web_metadata(_LENIA_HTML, _URL)
+    assert rec.source == "web"
+    assert rec.title == "Particle Lenia and the energy-based formulation"
+    assert rec.authors == ["Alexander Mordvintsev", "Eyvind Niklasson", "Ettore Randazzo"]
+    assert rec.year == 2022
+    assert rec.raw["site_name"] == "Self-Organising Systems"
+    assert rec.raw["description"] == "Simple particle-based artificial life-form"
+    assert "particle-based artificial life model" in rec.raw["text"]
+    assert "var ignore" not in rec.raw["text"]  # <script> stripped before text extraction
+    assert rec.ids.url == _URL
+
+
+def test_extract_metadata_title_fallback_no_meta():
+    rec = extract_web_metadata("<html><head><title>Just A Title</title></head><body>x</body></html>", _URL)
+    assert rec.title == "Just A Title"
+    assert rec.authors == []
+
+
+def test_extract_metadata_empty_page():
+    rec = extract_web_metadata("<html><body></body></html>", _URL)
+    assert rec.title == ""
+    assert rec.authors == []
+    assert rec.raw["dead"] is False
+
+
+# ── fetch adapter (injected fetcher) ─────────────────────────────────────────
+
+
+async def test_adapter_live_page_extracts_record():
+    res = await WebAdapter(fetch=_stub_fetch()).fetch_page(_URL)
+    assert res.query_kind == "web" and res.error is None
+    assert len(res.records) == 1
+    assert res.records[0].title == "Particle Lenia and the energy-based formulation"
+
+
+async def test_adapter_dead_link_is_record_not_error():
+    res = await WebAdapter(fetch=_stub_fetch(status=404, html="")).fetch_page(_URL)
+    assert res.error is None                      # a 404 is a finding, not an outage
+    assert res.records[0].raw["dead"] is True
+    assert res.records[0].raw["status"] == 404
+
+
+async def test_adapter_transport_error_is_reported_not_absent():
+    res = await WebAdapter(fetch=_stub_fetch(exc=TransientHTTPError("http 403"))).fetch_page(_URL)
+    assert res.records == []
+    assert res.error is not None and "could not fetch" in res.error
+
+
+async def test_adapter_empty_url_is_empty_not_error():
+    res = await WebAdapter().fetch_page("")
+    assert res.records == [] and res.error is None
+
+
+# ── the funnel ───────────────────────────────────────────────────────────────
+
+
+async def _check(entry, fetch_result, llm):
+    return await check_web_reference(entry, fetch_result, llm, CFG, None)
+
+
+async def test_funnel_metadata_confirms_without_llm():
+    res = await WebAdapter(fetch=_stub_fetch()).fetch_page(_URL)
+    verdict, issues = await _check(_entry(), res, None)   # llm=None: metadata alone must confirm
+    assert verdict.kind == "exactly_one"
+    assert verdict.artifacts[0].best_record.source == "web"
+    # A clean confirm carries its rationale on the verdict, NOT as a needs-attention issue.
+    assert "HTML metadata matches" in verdict.rationale
+    assert issues == []
+
+
+async def test_funnel_metadata_mismatch_then_llm_affirms():
+    # No metadata title (so step 2 cannot confirm) → LLM affirms from the page text.
+    res = await WebAdapter(fetch=_stub_fetch(html="<html><body>Particle Lenia demo</body></html>")).fetch_page(_URL)
+    llm = FakeLLM(lambda u: WebMatchResult(corresponds=True, confidence="high", reason="same topic"))
+    verdict, issues = await _check(_entry(), res, llm)
+    assert verdict.kind == "exactly_one"
+    assert llm.calls == 1
+    assert "LLM-verified" in verdict.rationale
+    assert issues == []
+
+
+async def test_funnel_llm_high_confidence_reject_is_none():
+    res = await WebAdapter(fetch=_stub_fetch(html="<html><title>Some other site</title><body>login</body></html>")).fetch_page(_URL)
+    llm = FakeLLM(lambda u: WebMatchResult(corresponds=False, confidence="high", reason="login page"))
+    verdict, issues = await _check(_entry(), res, llm)
+    assert verdict.kind == "none"
+    assert any("does NOT correspond" in i for i in issues)
+
+
+async def test_funnel_llm_low_confidence_stays_unresolved():
+    res = await WebAdapter(fetch=_stub_fetch(html="<html><body>ambiguous</body></html>")).fetch_page(_URL)
+    llm = FakeLLM(lambda u: WebMatchResult(corresponds=False, confidence="low", reason="too little content"))
+    verdict, issues = await _check(_entry(), res, llm)
+    assert verdict is None
+    assert any("could not be confirmed" in i for i in issues)
+
+
+async def test_funnel_no_llm_unresolved_on_metadata_miss():
+    res = await WebAdapter(fetch=_stub_fetch(html="<html><body>no metadata here</body></html>")).fetch_page(_URL)
+    verdict, issues = await _check(_entry(), res, None)
+    assert verdict is None
+    assert any("LLM check is disabled" in i for i in issues)
+
+
+async def test_funnel_dead_link_unresolved_with_flag():
+    res = await WebAdapter(fetch=_stub_fetch(status=404, html="")).fetch_page(_URL)
+    verdict, issues = await _check(_entry(), res, FakeLLM(lambda u: "raise"))
+    assert verdict is None
+    assert any("dead link" in i for i in issues)
+
+
+async def test_funnel_fetch_error_unresolved():
+    res = await WebAdapter(fetch=_stub_fetch(exc=TransientHTTPError("timeout"))).fetch_page(_URL)
+    verdict, issues = await _check(_entry(), res, None)
+    assert verdict is None
+    assert any("retry next run" in i for i in issues)
+
+
+async def test_funnel_llm_error_unresolved():
+    res = await WebAdapter(fetch=_stub_fetch(html="<html><body>x</body></html>")).fetch_page(_URL)
+    verdict, issues = await _check(_entry(), res, FakeLLM(lambda u: "raise"))
+    assert verdict is None
+    assert any("LLM check failed" in i for i in issues)
+
+
+# ── pipeline integration ─────────────────────────────────────────────────────
+
+_BIB = (
+    "@misc{mordvintsev2022particle,\n"
+    "  title = {Particle {L}enia and the energy-based formulation},\n"
+    "  author = {Mordvintsev, Alexander and Niklasson, Eyvind and Randazzo, Ettore},\n"
+    "  year = {2022},\n"
+    f"  url = {{{_URL}}}\n"
+    "}\n"
+)
+
+
+def _write_bib(tmp_path):
+    bib = tmp_path / "r.bib"
+    bib.write_text(_BIB, encoding="utf-8")
+    return bib
+
+
+async def test_pipeline_web_only_confirms_via_metadata(tmp_path):
+    pipe = AuditPipeline(CFG, adapters=[WebAdapter(fetch=_stub_fetch())], llm=None)
+    report = await pipe.run(None, _write_bib(tmp_path))
+    await pipe.aclose()
+    audit = report.entries[0]
+    assert audit.verdict.kind == "exactly_one"
+    assert "confirmed via web page" in audit.verdict.rationale
+    # A clean confirm is not flagged: no ⚠ issues at all (it lands in the report's NO-ISSUES group).
+    assert audit.issues == []
+
+
+async def test_pipeline_web_confirm_renders_under_no_issues(tmp_path):
+    # Regression: a confirmed web page must NOT be flagged as an issue (⚠) — the success belongs on
+    # the verdict line, and the entry belongs in the NO-ISSUES group.
+    from reference_audit.report import render_text
+
+    pipe = AuditPipeline(CFG, adapters=[WebAdapter(fetch=_stub_fetch())], llm=None)
+    report = await pipe.run(None, _write_bib(tmp_path))
+    await pipe.aclose()
+    text = render_text(report)
+    assert "NO ISSUES (1)" in text
+    assert "— problems, possible hallucinations" not in text  # no needs-attention group at all
+    assert "⚠" not in text                                    # the confirmation is never a ⚠ line
+    assert "matched: url:" in text                            # the matched URL is shown on the verdict line
+
+
+async def test_pipeline_web_dead_link_left_unresolved(tmp_path):
+    pipe = AuditPipeline(CFG, adapters=[WebAdapter(fetch=_stub_fetch(status=404, html=""))], llm=None)
+    report = await pipe.run(None, _write_bib(tmp_path))
+    await pipe.aclose()
+    audit = report.entries[0]
+    assert audit.verdict is None                  # never a false 'no match'
+    assert any("dead link" in i for i in audit.issues)
+
+
+async def test_pipeline_web_cached_run_makes_no_refetch(tmp_path):
+    cache = AuditCache(tmp_path / "c.db", pipeline_version=CFG.pipeline_version, model="t")
+    fetch = _stub_fetch()
+    calls = {"n": 0}
+
+    async def counting_fetch(url):
+        calls["n"] += 1
+        return await fetch(url)
+
+    bib = _write_bib(tmp_path)
+    pipe1 = AuditPipeline(CFG, cache=cache, adapters=[WebAdapter(fetch=counting_fetch)], llm=None)
+    r1 = await pipe1.run(None, bib)
+    await pipe1.aclose()
+    assert r1.entries[0].verdict.kind == "exactly_one"
+    assert calls["n"] == 1
+
+    # Second run: verdict from cache, fetch served from the source-query cache → no new fetch, and
+    # the confirm issue is re-derived identically.
+    pipe2 = AuditPipeline(CFG, cache=cache, adapters=[WebAdapter(fetch=counting_fetch)], llm=None)
+    r2 = await pipe2.run(None, bib)
+    await pipe2.aclose()
+    assert r2.entries[0].from_cache is True
+    assert r2.entries[0].verdict.kind == "exactly_one"
+    assert "confirmed via web page" in r2.entries[0].verdict.rationale
+    assert r2.entries[0].issues == []
+    assert calls["n"] == 1
+    cache.close()
+
+
+class _EmptyScholarly(SourceAdapter):
+    """A scholarly adapter that finds nothing — so a URL-only @misc takes the *main* pipeline path
+    (non-empty route → empty candidates → web fallback), not the reduced-adapter early return."""
+
+    name = "crossref"  # @misc routes by-metadata to crossref, so this makes the route non-empty
+
+    async def search_by_metadata(self, entry, limit=10):
+        return SourceQueryResult(source=self.name, query_kind="metadata", records=[])
+
+
+async def test_pipeline_web_main_path_when_scholarly_empty(tmp_path):
+    pipe = AuditPipeline(
+        CFG, adapters=[_EmptyScholarly(), WebAdapter(fetch=_stub_fetch())], llm=None
+    )
+    report = await pipe.run(None, _write_bib(tmp_path))
+    await pipe.aclose()
+    audit = report.entries[0]
+    assert audit.verdict.kind == "exactly_one"
+    assert "confirmed via web page" in audit.verdict.rationale
+
+
+@pytest.mark.parametrize("status", [404, 410])
+async def test_pipeline_web_gone_statuses(tmp_path, status):
+    pipe = AuditPipeline(CFG, adapters=[WebAdapter(fetch=_stub_fetch(status=status, html=""))], llm=None)
+    report = await pipe.run(None, _write_bib(tmp_path))
+    await pipe.aclose()
+    assert report.entries[0].verdict is None

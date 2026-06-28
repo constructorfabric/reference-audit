@@ -23,6 +23,7 @@ from reference_audit.matching.pool import pool_candidates
 from reference_audit.matching.sameobject import cluster_accepted
 from reference_audit.matching.scoring import bucket
 from reference_audit.matching.verdict import build_verdict
+from reference_audit.matching.webcheck import check_web_reference
 from reference_audit.models import (
     AuditReport,
     BibEntry,
@@ -182,6 +183,15 @@ def _shares_strong_id(a: Identifiers, b: Identifiers) -> bool:
     )
 
 
+def _is_url_only_web(entry: BibEntry) -> bool:
+    """A web @misc identified ONLY by a URL (no DOI/arXiv/ISBN) — the `web.py` check's domain."""
+    return bool(
+        entry.entry_type == EntryType.MISC
+        and entry.ids.url
+        and not (entry.ids.doi or entry.ids.arxiv_id or entry.ids.isbn13)
+    )
+
+
 class AuditPipeline:
     """Async audit pipeline.
 
@@ -266,13 +276,23 @@ class AuditPipeline:
                 await self._note_backfill(audit, cached)
                 self._note_better_version(audit, cached)
                 await self._check_fields(audit, cached)
+                # Web @misc: re-derive the page-check issues (the fetch + any LLM decision are cached,
+                # so this re-runs against the caches and reproduces the same verdict it discards).
+                await self._resolve_web(audit, cached)
                 # Books: re-derive the Open Library edition findings (editions are cached, so this is
                 # the same single fetch a --fresh run made) and report them identically.
                 await self._report_book(audit, await self._resolve_book(audit))
                 return
         route = route_entry(entry, self.adapters)
         if not route.id_adapters and not route.metadata_adapters:
-            return  # nothing queryable (e.g. a URL-only @misc — handled in a later milestone)
+            # No scholarly source routed (the default set always routes @misc to the aggregators, so
+            # this is a reduced-adapter configuration). A URL-only web @misc is still verifiable
+            # against its own page; anything else is simply left unresolved.
+            verdict = await self._resolve_web(audit, None)
+            audit.verdict = verdict
+            if self.cache is not None and verdict is not None:
+                self.cache.put_entry_verdict(entry.content_hash, verdict)
+            return
 
         records, errored = await self._gather_candidates(entry, route)
         pooled = pool_candidates(records)
@@ -287,7 +307,10 @@ class AuditPipeline:
             llm_errored = await adjudicate_entry(audit, self.llm, self.config, self.cache)
             verdict = await self._verdict(audit, errored=errored or llm_errored)
 
-        verdict = self._guard_web_artifact(entry, audit, verdict)
+        # URL-only web @misc (a blog/software page no scholarly DB indexes): fetch the cited page and
+        # verify it via its HTML metadata, then an LLM fallback. Runs only when the DB path found
+        # nothing real, so it never overrides a genuine scholarly match.
+        verdict = await self._resolve_web(audit, verdict)
 
         # Books: Open Library is the authority of record for identity. It is edition-aware, so it can
         # confirm a real book the article-centric matcher rejected (a 1976 original whose only
@@ -438,19 +461,45 @@ class AuditPipeline:
             bucket=bucket(features, self.config, entry_has_id=entry_has_id),
         )
 
-    def _guard_web_artifact(self, entry: BibEntry, audit: EntryAudit, verdict):
-        """A URL-only @misc (e.g. a blog/software page) is not a hallucination just because no
-        scholarly DB indexes it. Leave it unresolved with a note; URL liveness is a later milestone.
+    async def _resolve_web(self, audit: EntryAudit, verdict):
+        """Verify a URL-only @misc by fetching its cited page (HTML metadata, then an LLM fallback).
+
+        A URL-only web artifact (a blog/software page) is not a hallucination just because no
+        scholarly DB indexes it, so this steps in precisely when the DB path found nothing real
+        (verdict None or `none`). A genuine scholarly match is left untouched. Idempotent over the
+        caches (fetch + any LLM decision are cached), so the cached fast path re-runs it to re-derive
+        the same issues; see `check_web_reference` for the funnel and the verdict semantics.
         """
-        url_only = (
-            entry.entry_type == EntryType.MISC
-            and entry.ids.url
-            and not (entry.ids.doi or entry.ids.arxiv_id or entry.ids.isbn13)
-        )
-        if url_only and (verdict is None or verdict.kind == "none"):
-            audit.issues.append("URL-only web artifact; liveness check is a later milestone")
+        entry = audit.entry
+        if not _is_url_only_web(entry):
+            return verdict
+        # A real scholarly match (or ambiguity) stands; only own the None/`none` outcome — except a
+        # prior web match, which we re-derive (the cached fast path passes the cached web verdict in).
+        if verdict is not None and verdict.kind in ("exactly_one", "multiple"):
+            best = verdict.artifacts[0].best_record if verdict.artifacts else None
+            if not (best and best.source == "web"):
+                return verdict
+        web = next((a for a in self.adapters if a.name == "web"), None)
+        if web is None:
+            audit.issues.append("URL-only web reference not checked (web adapter not configured)")
             return None
-        return verdict
+        fetched = await self._fetch_web(entry, web)
+        web_verdict, issues = await check_web_reference(
+            entry, fetched, self.llm, self.config, self.cache
+        )
+        audit.issues.extend(issues)
+        return web_verdict
+
+    async def _fetch_web(self, entry: BibEntry, web: SourceAdapter) -> SourceQueryResult:
+        """Fetch the entry's cited URL (cached per entry, like any source query)."""
+        if self.cache is not None:
+            cached = self.cache.get_source_query(entry.content_hash, web.name, "web")
+            if cached is not None:
+                return cached
+        result = await web.fetch_page(entry.ids.url)
+        if self.cache is not None:
+            self.cache.put_source_query(entry.content_hash, result)
+        return result
 
     async def _note_backfill(self, audit: EntryAudit, verdict) -> None:
         """Record identifiers discovered for an entry that lacked them (T3 backfill)."""
@@ -545,6 +594,11 @@ class AuditPipeline:
         if not self.config.check_fields:
             return
         if verdict is None or verdict.kind != "exactly_one" or not verdict.artifacts:
+            return
+        # A URL-only web @misc is confirmed against the page itself (`_resolve_web`); the page's
+        # self-declared og/citation metadata is not an authoritative bibliographic record, so running
+        # the article field check against it only yields spurious "could not verify" noise. Skip it.
+        if _is_url_only_web(audit.entry):
             return
         # Advisory step: a field-check failure must never clear the (already-decided) verdict or
         # abort the entry, so isolate it here rather than letting it reach `_audit_entry`.

@@ -28,6 +28,19 @@ SAME_WORK_SYSTEM = (
     "'versions' ONLY with positive evidence. Respond in strict JSON."
 )
 
+WEB_MATCH_SYSTEM = (
+    "A bibliography entry cites a WEB PAGE by URL — a blog post, a software/project page, "
+    "documentation, a dataset, or another non-journal resource. You are given the .bib entry and the "
+    "title, metadata, and text of the page actually fetched from that URL. Decide whether the fetched "
+    "page IS the resource the entry cites. Set corresponds=true ONLY if you can affirmatively conclude "
+    "the page is that resource — its title/topic/authors match the citation, allowing for spelling, "
+    "abbreviation, transliteration, or an appended site name. Set corresponds=false ONLY with positive "
+    "evidence the page is something else: a different article, a site homepage or index/listing, a "
+    "login/paywall wall, a 'page not found'/error notice, or an unrelated topic. When the page has too "
+    "little content to tell, or it is ambiguous, use low confidence rather than guessing. Respond in "
+    "strict JSON."
+)
+
 FIELD_CHECK_SYSTEM = (
     "A bibliography entry has already been matched, by identifier, to a specific real publication, "
     "so the two refer to the SAME work. You judge ONE field of that entry against the authoritative "
@@ -122,4 +135,29 @@ def same_work_user(a: SourceRecord, b: SourceRecord) -> str:
         "RECORD A:\n" + _fmt_record(a) + "\n\n"
         "RECORD B:\n" + _fmt_record(b) + "\n\n"
         "What is the relation between record A and record B?"
+    )
+
+
+# Cap the fetched page text fed to the model: enough to judge identity, bounded for cost.
+WEB_PAGE_TEXT_LIMIT = 4000
+
+
+def web_match_user(entry: BibEntry, page: SourceRecord) -> str:
+    raw = page.raw or {}
+    text = (raw.get("text") or "").strip()[:WEB_PAGE_TEXT_LIMIT]
+    return (
+        "CITED REFERENCE (.bib):\n"
+        f"  title:     {entry.title or '(none)'}\n"
+        f"  authors:   {'; '.join(entry.authors) or '(none)'}\n"
+        f"  year:      {entry.year or '(none)'}\n"
+        f"  cited url: {entry.ids.url or '(none)'}\n\n"
+        "FETCHED PAGE (from the cited URL):\n"
+        f"  final url:    {page.ids.url or '(none)'}\n"
+        f"  meta title:   {page.title or '(none)'}\n"
+        f"  meta authors: {'; '.join(page.authors) or '(none)'}\n"
+        f"  site name:    {raw.get('site_name') or '(none)'}\n"
+        f"  description:  {raw.get('description') or '(none)'}\n\n"
+        "PAGE TEXT (truncated):\n"
+        f"{text or '(no extractable text)'}\n\n"
+        "Is the fetched page the same resource the .bib entry cites?"
     )

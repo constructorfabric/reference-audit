@@ -40,6 +40,8 @@ def _verdict_line(audit) -> str | None:
             line += f"\n      matched: doi:{br.ids.doi}  ({br.source})"
         elif br.ids.isbn13:
             line += f"\n      matched: isbn:{br.ids.isbn13}  ({br.source})"
+        elif br.ids.url:
+            line += f"\n      matched: url:{br.ids.url}  ({br.source})"
     return line
 
 

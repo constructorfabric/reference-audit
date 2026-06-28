@@ -56,9 +56,12 @@ class AuditConfig(BaseSettings):
     # --- Step 3: field correctness ---
     check_fields: bool = True             # verify each field of an exactly-one match is correct
 
+    # --- Web artifacts (URL-only @misc): HTML-metadata check before the LLM fallback ---
+    web_title_accept: float = 0.85        # page meta-title vs cited-title floor for a deterministic confirm
+
     # --- Cache / pipeline ---
     cache_path: Path | None = None        # default: <bib_dir>/.reference_audit/cache.db
-    pipeline_version: str = "0.6"         # bump when thresholds/prompts/rules change
+    pipeline_version: str = "0.7"         # bump when thresholds/prompts/rules change
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

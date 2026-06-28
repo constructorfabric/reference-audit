@@ -124,6 +124,30 @@ async def get_text(
     return resp.status_code, resp.text
 
 
+async def get_html(
+    client: httpx.AsyncClient,
+    limiter: MonotonicRateLimiter,
+    url: str,
+    *,
+    headers: dict | None = None,
+) -> tuple[int, str, str]:
+    """Rate-limited GET of an HTML page, returning (status, final_url, text).
+
+    Unlike `get_text`, the *final* URL (after redirects) is returned too, so a web-artifact check can
+    record where the citation actually landed. A dead link — HTTP 404 or 410 (Gone) — returns
+    (status, final_url, "") so the caller can report it as a dead link rather than an outage; any
+    other 4xx (e.g. a 403 bot-wall) raises TransientHTTPError so it is reported as a block, never a
+    false 'page absent'.
+    """
+    await limiter.acquire()
+    resp = await _request_with_retry(client, url, None, headers)
+    if resp.status_code in (404, 410):
+        return resp.status_code, str(resp.url), ""
+    if resp.status_code >= 400:
+        raise TransientHTTPError(f"http {resp.status_code}")
+    return resp.status_code, str(resp.url), resp.text
+
+
 def new_impersonate_session(timeout: float = DEFAULT_TIMEOUT) -> AsyncSession:
     """A browser-TLS-impersonating session (libcurl via curl_cffi) for Cloudflare-fingerprint-walled
     endpoints. Reused across calls so the issued `__cf_bm` cookie persists. See DEFAULT_IMPERSONATE.

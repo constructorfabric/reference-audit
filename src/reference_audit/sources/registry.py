@@ -18,6 +18,7 @@ from reference_audit.sources.openalex import OpenAlexAdapter
 from reference_audit.sources.openlibrary import OpenLibraryAdapter
 from reference_audit.sources.publisher import PublisherAdapter
 from reference_audit.sources.semantic_scholar import SemanticScholarAdapter
+from reference_audit.sources.web import WebAdapter
 
 # Reputable venues that legitimately mint no DOI — a no-DOI match here is not a defect (README 1.1).
 VENUE_ALLOWLIST_NO_DOI = ("tmlr", "transactions on machine learning research")
@@ -32,6 +33,7 @@ def build_default_adapters(config: AuditConfig) -> list[SourceAdapter]:
         ArxivAdapter(),
         OpenLibraryAdapter(),
         PublisherAdapter(),
+        WebAdapter(),
     ]
 
 
