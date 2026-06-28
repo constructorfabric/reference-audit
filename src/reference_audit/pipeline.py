@@ -34,6 +34,7 @@ from reference_audit.models import (
 from reference_audit.parsing.bib import parse_bib
 from reference_audit.parsing.tex import parse_cited_keys
 from reference_audit.sources.base import SourceAdapter
+from reference_audit.versioning import better_version_notes
 from reference_audit.sources.registry import (
     build_default_adapters,
     route_entry,
@@ -238,6 +239,7 @@ class AuditPipeline:
 
         verdict = self._guard_web_artifact(entry, audit, verdict)
         self._note_backfill(audit, verdict)
+        self._note_better_version(audit, verdict)
         audit.verdict = verdict
         if self.cache is not None and verdict is not None:
             self.cache.put_entry_verdict(entry.content_hash, verdict)
@@ -328,6 +330,13 @@ class AuditPipeline:
                 audit.issues.append(
                     f"author '{wrong}' not found in {best.source} record (possible wrong name)"
                 )
+
+    def _note_better_version(self, audit: EntryAudit, verdict) -> None:
+        """Step 2: report if a better version of the matched artifact is available."""
+        if verdict is None or verdict.kind != "exactly_one" or not verdict.artifacts:
+            return
+        for note in better_version_notes(audit.entry, verdict.artifacts[0]):
+            audit.issues.append(note)
 
 
 async def _run_async(
