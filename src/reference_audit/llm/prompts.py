@@ -28,6 +28,52 @@ SAME_WORK_SYSTEM = (
     "'versions' ONLY with positive evidence. Respond in strict JSON."
 )
 
+FIELD_CHECK_SYSTEM = (
+    "A bibliography entry has already been matched, by identifier, to a specific real publication, "
+    "so the two refer to the SAME work. You judge ONE field of that entry against the authoritative "
+    "database value and decide whether the entry's value is merely formatted differently or is a "
+    "genuine mistake.\n"
+    "Classify 'formatting_variant' (NOT a mistake) for: capitalization; punctuation; accents and "
+    "transliteration (Müller/Mueller); LaTeX braces; standard abbreviations vs full forms of a "
+    "journal or conference (e.g. 'J. Theor. Biol.' = 'Journal of Theoretical Biology', 'NeurIPS' = "
+    "'Advances in Neural Information Processing Systems'); an added or dropped 'Proceedings of'/year/"
+    "edition qualifier on a conference series; en-dash vs hyphen; 'and' vs '&'; word-order in a "
+    "series name.\n"
+    "Classify 'error' for a substantively different value: a different number; a wrong, misspelled, "
+    "or split word (e.g. 'Un iversity'); a missing word that changes the name (e.g. a journal "
+    "written 'Annual Review Condensed Matter Physics', dropping 'of'); a truncated or different "
+    "title or venue; a value that belongs to a different field.\n"
+    "Databases are themselves sometimes wrong or incomplete, and the bibliography value is usually "
+    "correct: \n"
+    "- If the database VENUE is a preprint server, institutional repository, or aggregator "
+    "('arXiv', 'bioRxiv', 'medRxiv', 'SSRN', 'ResearchGate', 'Radboud Repository', 'HAL', a "
+    "university or 'Technical Reports Server') while the entry names a journal or conference, the "
+    "database simply indexed a different copy — classify 'formatting_variant', not 'error'.\n"
+    "- If the database value looks like a TRUNCATION or substring of the entry's value (e.g. "
+    "database 'Complex' vs entry 'Complexity'), the entry is the fuller, correct form — classify "
+    "'formatting_variant' or 'uncertain', never 'error'.\n"
+    "If the entry's value is plausibly correct and the database merely differs, prefer 'uncertain' "
+    "over 'error'. Use 'uncertain' whenever you cannot affirmatively decide. Respond in strict JSON."
+)
+
+
+def field_check_user(
+    field: str, bib_value: str, canonical_value: str, sources: list[str], entry: BibEntry
+) -> str:
+    src = ", ".join(sources) if sources else "database"
+    return (
+        f"FIELD UNDER REVIEW: {field}\n"
+        f"  citation (.bib) value:  {bib_value or '(empty)'}\n"
+        f"  authoritative value:    {canonical_value or '(empty)'}   [source: {src}]\n\n"
+        "CONTEXT — the same work, confirmed by identifier (for grounding only):\n"
+        f"  title:   {entry.title}\n"
+        f"  authors: {'; '.join(entry.authors) or '(none)'}\n"
+        f"  year:    {entry.year or '(none)'}\n"
+        f"  type:    {entry.entry_type.value}\n\n"
+        f"Is the .bib {field} value the same as the authoritative value apart from formatting, "
+        "or is it a genuine mistake?"
+    )
+
 
 def _fmt_entry(entry: BibEntry) -> str:
     ids = entry.ids

@@ -74,6 +74,9 @@ def render_text(report: AuditReport) -> str:
         lines.append(f"    ids: {_ids_str(a)}")
         for issue in a.issues:
             lines.append(f"    ⚠ {issue}")
+        n_fmt = sum(1 for f in a.field_findings if f.status == "formatting")
+        if n_fmt:
+            lines.append(f"    · {n_fmt} field formatting nit(s) (not mistakes; see field_findings)")
         vline = _verdict_line(a)
         if vline:
             lines.append(vline)

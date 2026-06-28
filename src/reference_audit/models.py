@@ -126,7 +126,10 @@ class SourceRecord(BaseModel):
     authors: list[str] = Field(default_factory=list)
     year: int | None = None
     venue: str = ""
+    volume: str = ""
+    issue: str = ""                   # the canonical issue/number
     pages: str = ""
+    publisher: str = ""
     ids: Identifiers = Field(default_factory=Identifiers)
     is_preprint: bool = False
     edition: int | None = None
@@ -180,6 +183,41 @@ class SameWorkResult(BaseModel):
     reason: str
 
 
+class FieldJudgment(BaseModel):
+    """LLM classification of one ambiguous field discrepancy (strict json_schema).
+
+    `formatting_variant` = the .bib value denotes the same thing as the database value, differing
+    only in style (abbreviation, capitalization, accents, punctuation, braces). `error` = the .bib
+    value is genuinely wrong (a different/garbled/truncated value). `uncertain` when neither can be
+    affirmatively concluded — the entry is then surfaced for manual review, never silently passed.
+    """
+
+    classification: Literal["formatting_variant", "error", "uncertain"]
+    confidence: Literal["high", "medium", "low"]
+    reason: str
+
+
+class FieldFinding(BaseModel):
+    """Step-3 correctness check of one .bib field against the identified canonical record.
+
+    Runs only on an `exactly_one` match (the artifact is confirmed to be the cited work), so a
+    difference is a property of the *field*, not evidence about identity. `status`:
+      - ``ok``           value agrees with the canonical record (after normalization).
+      - ``formatting``   differs only in formatting/style — not a mistake, a cosmetic fix at most.
+      - ``error``        a genuine mistake (wrong, garbled, or empty/placeholder value).
+      - ``uncertain``    could not be classified confidently — surfaced for manual review.
+      - ``unverifiable`` the .bib has a value but no source returned this field to check it against.
+    """
+
+    field: str
+    bib_value: str = ""
+    canonical_value: str = ""
+    sources: list[str] = Field(default_factory=list)  # source(s) carrying the canonical value
+    status: Literal["ok", "formatting", "error", "uncertain", "unverifiable"]
+    detail: str = ""
+    via_llm: bool = False
+
+
 class CandidateAssessment(BaseModel):
     record: SourceRecord
     features: FeatureVector
@@ -209,6 +247,7 @@ class EntryAudit(BaseModel):
     entry: BibEntry
     candidates: list[CandidateAssessment] = Field(default_factory=list)
     verdict: Verdict | None = None          # None until step-1 matching has run
+    field_findings: list[FieldFinding] = Field(default_factory=list)  # step 3 field correctness
     canonical_bibtex: str = ""              # step 3 (follow-on)
     issues: list[str] = Field(default_factory=list)
     from_cache: bool = False

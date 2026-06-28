@@ -4,9 +4,11 @@ from reference_audit.matching.pool import pool_candidates
 from reference_audit.models import Identifiers, SourceRecord
 
 
-def _rec(source, doi=None, arxiv=None, links=None, oa=None, cites=0, title="T", authors=None):
+def _rec(source, doi=None, arxiv=None, links=None, oa=None, cites=0, title="T", authors=None,
+         venue="", volume="", issue="", pages="", publisher="", year=None):
     return SourceRecord(
         source=source, title=title, authors=authors or ["A B"], citation_count=cites,
+        venue=venue, volume=volume, issue=issue, pages=pages, publisher=publisher, year=year,
         ids=Identifiers(doi=doi, arxiv_id=arxiv), version_links=links or [], openalex_work_id=oa,
     )
 
@@ -79,3 +81,34 @@ def test_records_without_ids_stay_separate():
     a = _rec("x", title="Some paper")
     b = _rec("y", title="Another paper")
     assert len(pool_candidates([a, b])) == 2
+
+
+def test_representative_compiles_best_metadata_across_sources():
+    # wolpert: S2 is the citation-richest record but truncates the venue ('Complex') and omits
+    # volume/issue; crossref carries the full, correct metadata. The merged candidate must compile
+    # crossref's values rather than inherit S2's poorer ones.
+    s2 = _rec("semantic_scholar", doi="10.1/x", cites=99, venue="Complex")
+    crossref = _rec("crossref", doi="10.1/x", cites=4, venue="Complexity",
+                    volume="12", issue="3", pages="77-85")
+    [rep] = pool_candidates([s2, crossref])
+    assert rep.citation_count == 99       # identity still the richest record
+    assert rep.venue == "Complexity"      # but venue compiled from crossref
+    assert (rep.volume, rep.issue, rep.pages) == ("12", "3", "77-85")
+
+
+def test_representative_fills_pages_from_openalex_when_crossref_blank():
+    crossref = _rec("crossref", doi="10.1/x", cites=4, venue="PNAS", volume="115", issue="37")
+    openalex = _rec("openalex", doi="10.1/x", cites=9, venue="PNAS", pages="E8678--E8687")
+    [rep] = pool_candidates([crossref, openalex])
+    assert rep.pages == "E8678--E8687"    # crossref had no pages → filled from openalex
+    assert rep.volume == "115"            # crossref outranks openalex where both present
+
+
+def test_representative_year_from_registrant_not_richest_record():
+    # chan2019 'Lenia': S2 is citation-richest but reports the online year 2018; Crossref (the DOI
+    # registrant) says 2019. The representative must carry 2019, not S2's 2018.
+    s2 = _rec("semantic_scholar", doi="10.1/x", cites=500, year=2018)
+    crossref = _rec("crossref", doi="10.1/x", cites=10, year=2019)
+    [rep] = pool_candidates([s2, crossref])
+    assert rep.citation_count == 500  # identity still the richest record
+    assert rep.year == 2019           # but the year is the registrant's

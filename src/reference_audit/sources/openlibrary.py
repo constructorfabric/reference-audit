@@ -17,7 +17,7 @@ from reference_audit.sources.http import TransientHTTPError, get_json
 from reference_audit.sources.normalize import openlibrary_doc_to_record
 
 _SEARCH = "https://openlibrary.org/search.json"
-_FIELDS = "key,title,author_name,first_publish_year,isbn,edition_count"
+_FIELDS = "key,title,author_name,first_publish_year,isbn,edition_count,publisher"
 
 
 class OpenLibraryAdapter(SourceAdapter):

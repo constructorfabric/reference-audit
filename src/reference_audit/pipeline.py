@@ -31,6 +31,7 @@ from reference_audit.models import (
     SourceQueryResult,
     SourceRecord,
 )
+from reference_audit.fieldcheck import finding_note, resolve_field_findings
 from reference_audit.parsing.bib import parse_bib
 from reference_audit.parsing.tex import parse_cited_keys
 from reference_audit.sources.base import SourceAdapter
@@ -219,6 +220,9 @@ class AuditPipeline:
             if cached is not None:
                 audit.verdict = cached
                 audit.from_cache = True
+                # Field findings aren't part of the cached verdict; recompute them from the cached
+                # artifact records (deterministic, and per-field LLM decisions are themselves cached).
+                await self._check_fields(audit, cached)
                 return
         route = route_entry(entry, self.adapters)
         if not route.id_adapters and not route.metadata_adapters:
@@ -243,6 +247,7 @@ class AuditPipeline:
         audit.verdict = verdict
         if self.cache is not None and verdict is not None:
             self.cache.put_entry_verdict(entry.content_hash, verdict)
+        await self._check_fields(audit, verdict)
 
     async def _verdict(self, audit: EntryAudit, *, errored: bool):
         """Cluster the accepted candidates into artifacts (SAME-OBJECT), then count them."""
@@ -337,6 +342,41 @@ class AuditPipeline:
             return
         for note in better_version_notes(audit.entry, verdict.artifacts[0]):
             audit.issues.append(note)
+
+    async def _check_fields(self, audit: EntryAudit, verdict) -> None:
+        """Step 3: verify each field of an exactly-one match against the canonical record.
+
+        Advisory only — never alters the verdict. Errors / could-not-verify findings are surfaced
+        as issues; the full per-field result (including benign formatting variants) stays on
+        `audit.field_findings` for machine consumers.
+        """
+        if not self.config.check_fields:
+            return
+        if verdict is None or verdict.kind != "exactly_one" or not verdict.artifacts:
+            return
+        # Advisory step: a field-check failure must never clear the (already-decided) verdict or
+        # abort the entry, so isolate it here rather than letting it reach `_audit_entry`.
+        try:
+            findings = await resolve_field_findings(
+                audit.entry, verdict.artifacts[0], self.llm, self.config, self.cache
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — advisory; report, don't fail the entry
+            audit.issues.append(f"field correctness check failed (verdict unaffected): {exc}")
+            return
+        audit.field_findings = findings
+        for f in findings:
+            if f.status in ("error", "uncertain"):
+                audit.issues.append(finding_note(f))
+        # Collapse the (often several) could-not-verify fields into a single line to keep the report
+        # readable while still reporting the gap (reliability: never silently pass an unchecked field).
+        unverifiable = [f.field for f in findings if f.status == "unverifiable"]
+        if unverifiable:
+            audit.issues.append(
+                f"could not verify field(s) {', '.join(unverifiable)} "
+                "(no authoritative source returned them)"
+            )
 
 
 async def _run_async(

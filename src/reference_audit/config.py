@@ -53,6 +53,9 @@ class AuditConfig(BaseSettings):
     llm_concurrency: int = 8
     llm_max_candidates: int = 8           # cap CAN_CORRESPOND calls per entry (cost control)
 
+    # --- Step 3: field correctness ---
+    check_fields: bool = True             # verify each field of an exactly-one match is correct
+
     # --- Cache / pipeline ---
     cache_path: Path | None = None        # default: <bib_dir>/.reference_audit/cache.db
     pipeline_version: str = "0.4"         # bump when thresholds/prompts/rules change

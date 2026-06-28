@@ -69,6 +69,49 @@ def _richness(rec: SourceRecord) -> tuple[int, int, int]:
     return (1 if rec.ids.doi else 0, rec.citation_count, len(rec.authors))
 
 
+# Bibliographic fields are filled on the merged representative from the most authoritative source
+# that carries them, independent of which record is the citation-richest. Crossref/OpenAlex (the
+# registration-grade sources) outrank Semantic Scholar, whose venue strings are often truncated
+# ('Complexity' → 'Complex') and which omits volume/issue/pages. This realizes the SPEC's "compile
+# all available information" so downstream field checks compare against complete, correct metadata.
+_FIELD_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
+    "venue": ("crossref", "openalex", "openlibrary"),
+    "volume": ("crossref", "openalex"),
+    "issue": ("crossref", "openalex"),
+    "pages": ("crossref", "openalex"),
+    "publisher": ("crossref", "openlibrary", "openalex"),
+}
+
+
+_YEAR_SOURCE_PRIORITY = ("crossref", "openalex")
+
+
+def _rank(source: str, priority: tuple[str, ...]) -> int:
+    return priority.index(source) if source in priority else len(priority)
+
+
+def _best_field(recs: list[SourceRecord], attr: str, priority: tuple[str, ...]) -> str:
+    """Most authoritative non-empty value for `attr` across a same-work group ('' if none has it)."""
+    for r in sorted(recs, key=lambda r: _rank(r.source, priority)):
+        value = (getattr(r, attr) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _best_year(recs: list[SourceRecord]) -> int | None:
+    """Publication year from the registration-grade source (Crossref/OpenAlex) when available.
+
+    Semantic Scholar often reports the online/preprint year (it gave 2018 for the 2019 Complex
+    Systems 'Lenia' DOI whose Crossref record is 2019), so its richer-citation record must not
+    override the DOI registrant's year.
+    """
+    for r in sorted(recs, key=lambda r: _rank(r.source, _YEAR_SOURCE_PRIORITY)):
+        if r.year:
+            return r.year
+    return None
+
+
 def pool_candidates(records: list[SourceRecord]) -> list[SourceRecord]:
     """Group records into same-work candidates; return one representative per group."""
     groups: list[dict] = []  # {"own": set, "links": set, "records": list}
@@ -111,6 +154,14 @@ def _representative(recs: list[SourceRecord]) -> SourceRecord:
         if r.openalex_work_id and not merged.openalex_work_id:
             merged.openalex_work_id = r.openalex_work_id
         merged.is_preprint = merged.is_preprint and r.is_preprint
+    # Compile the best bibliographic metadata across the group (not just the richest record's).
+    for attr, priority in _FIELD_SOURCE_PRIORITY.items():
+        value = _best_field(recs, attr, priority)
+        if value:
+            setattr(merged, attr, value)
+    best_year = _best_year(recs)
+    if best_year is not None:
+        merged.year = best_year
     merged.raw = {"merged_from": sorted({r.source for r in recs})}
     return merged
 

@@ -77,7 +77,10 @@ def crossref_item_to_record(item: dict) -> SourceRecord:
         authors=_crossref_authors(item),
         year=_crossref_year(item),
         venue=venue,
+        volume=(item.get("volume") or "").strip(),
+        issue=(item.get("issue") or "").strip(),
         pages=(item.get("page") or "").strip(),
+        publisher=(item.get("publisher") or "").strip(),
         ids=Identifiers(doi=doi, isbn13=isbn13, arxiv_id=arxiv),
         is_preprint=(item.get("type") == "posted-content"),
         citation_count=int(item.get("is-referenced-by-count") or 0),
@@ -109,6 +112,15 @@ def _openalex_version_links(work: dict) -> list[str]:
     return links
 
 
+def _openalex_pages(biblio: dict) -> str:
+    """OpenAlex stores first/last page separately; recombine into a '--' range."""
+    first = (str(biblio.get("first_page") or "")).strip()
+    last = (str(biblio.get("last_page") or "")).strip()
+    if first and last:
+        return first if first == last else f"{first}--{last}"
+    return first or last
+
+
 def openalex_work_to_record(work: dict) -> SourceRecord:
     ids_block = work.get("ids") or {}
     doi = normalize_doi(work.get("doi") or ids_block.get("doi"))
@@ -117,6 +129,7 @@ def openalex_work_to_record(work: dict) -> SourceRecord:
     primary = work.get("primary_location") or {}
     source_block = primary.get("source") or {}
     venue = (source_block.get("display_name") or "").strip()
+    biblio = work.get("biblio") or {}
     version_links = _openalex_version_links(work)
     pmid = ids_block.get("pmid")
     if pmid:
@@ -130,6 +143,9 @@ def openalex_work_to_record(work: dict) -> SourceRecord:
         authors=_openalex_authors(work),
         year=work.get("publication_year"),
         venue=venue,
+        volume=(str(biblio.get("volume") or "")).strip(),
+        issue=(str(biblio.get("issue") or "")).strip(),
+        pages=_openalex_pages(biblio),
         ids=Identifiers(doi=doi, arxiv_id=arxiv, pmid=pmid),
         is_preprint=(work.get("type") == "preprint" or source_block.get("type") == "repository"),
         citation_count=int(work.get("cited_by_count") or 0),
@@ -166,12 +182,14 @@ def openlibrary_doc_to_record(doc: dict) -> SourceRecord:
     isbns = doc.get("isbn") or []
     isbn13 = next((normalize_isbn13(i) for i in isbns if normalize_isbn13(i)), None)
     authors = doc.get("author_name") or []
+    publishers = doc.get("publisher") or []
     return SourceRecord(
         source="openlibrary",
         source_native_id=(doc.get("key") or "").strip(),
         title=(doc.get("title") or "").strip(),
         authors=[a.strip() for a in authors if a],
         year=doc.get("first_publish_year"),
+        publisher=(publishers[0].strip() if publishers else ""),
         ids=Identifiers(isbn13=isbn13),
         edition=doc.get("edition_count"),
         raw=doc,

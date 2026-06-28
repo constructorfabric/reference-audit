@@ -31,6 +31,7 @@ _SELECT = ",".join(
         "authorships",
         "primary_location",
         "locations",
+        "biblio",
         "cited_by_count",
     ]
 )
