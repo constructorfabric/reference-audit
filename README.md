@@ -95,7 +95,12 @@ Reference audit
   verdicts: 27 matched  ·  0 no-match  ·  0 ambiguous  ·  1 unresolved
   types: article=18, book=2, inproceedings=5, misc=3
 
-ISSUES (7) — problems, possible hallucinations, or could-not-verify:
+CAPITAL OFFENCES — No hallucinated citations
+
+UNABLE TO VERIFY (1) — could not conclusively rule out a hallucination (network/LLM error, unfamiliar entry type, dead link, …):
+...
+
+ISSUES (6) — other problems to review:
 
 [article] wolpert2007  (cited)
     Using self-dissimilarity to quantify complexity
@@ -142,6 +147,20 @@ uv run reference-audit audit paper.tex refs.bib --format json --fail-on hallucin
 ```
 
 ### Reading the output
+
+The text report leads with two headline categories:
+
+- **`CAPITAL OFFENCES`** — hallucinated citations: entries that conclusively resolve to **no** real
+  document (verdict *no match*). When there are none, the report says so explicitly
+  (*No hallucinated citations*).
+- **`UNABLE TO VERIFY`** — entries we could **not** conclusively clear of being a hallucination, for
+  any reason: a transient network/LLM error, an unfamiliar `.bib` type, a dead link, an
+  adjudication left unsettled. This is the catch-all that keeps an inconclusive check from masquerading
+  as a clean pass. When it is empty the report states that for every other reference *at least one
+  matching artifact was positively identified*.
+
+The remaining entries (at least one match found) are then split into `ISSUES`, `FORMATTING NITS`, and
+`NO ISSUES`. Per-entry verdict glyphs:
 
 - **`✓ exactly one match`** — resolved to a single document; the matched identifier and version
   count are shown.

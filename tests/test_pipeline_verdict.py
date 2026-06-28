@@ -86,6 +86,85 @@ async def test_real_and_hallucinated_verdicts(tmp_path):
 
 
 @respx.mock
+async def test_report_capital_offences_and_unable_to_verify(tmp_path):
+    """The text report leads with the two headline categories: hallucinations (verdict `none`) under
+    CAPITAL OFFENCES, transient/unsettled entries (verdict None) under UNABLE TO VERIFY."""
+    from reference_audit.report import render_text
+
+    # `good` resolves (exactly_one), `halluc` is a conclusive miss; add a third entry whose lookups
+    # 503 so it is left unresolved (unable-to-verify), distinct from the conclusive hallucination.
+    respx.get(url__regex=r"https://api\.crossref\.org/works/10\.1073").mock(
+        return_value=httpx.Response(200, json={"message": REAL_ITEM})
+    )
+    respx.get(url__regex=ID_RE).mock(return_value=httpx.Response(404))
+    respx.get(url__regex=SEARCH_RE).mock(
+        side_effect=lambda req: httpx.Response(
+            200,
+            json={"message": {"items": [REAL_ITEM] if "multilevel" in str(req.url) else []}},
+        )
+        if "outage" not in str(req.url)
+        else httpx.Response(503)
+    )
+    bib = _bib(
+        tmp_path,
+        BIB + "\n@article{outage, title={A paper about outage resilience}, "
+        "author={Doe, Jane}, journal={Journal of Nowhere}, year={2020}, doi={10.1234/outage.1}}",
+    )
+    cache = AuditCache(tmp_path / "c.db", model="test")
+    pipe = _pipeline(cache)
+    report = await pipe.run(None, bib)
+    await pipe.aclose()
+    cache.close()
+
+    by = {a.entry.key: a for a in report.entries}
+    assert by["halluc"].verdict.kind == "none"
+    assert by["outage"].verdict is None
+
+    text = render_text(report)
+    assert "CAPITAL OFFENCES (1) — hallucinated citations" in text
+    assert "UNABLE TO VERIFY (1)" in text
+    # the right entry lands in each headline category
+    cap = text.index("CAPITAL OFFENCES (1)")
+    unv = text.index("UNABLE TO VERIFY (1)")
+    issues = text.index("NO ISSUES")  # `good` is clean
+    assert text.index("] halluc", cap) < unv      # halluc under CAPITAL OFFENCES
+    assert text.index("] outage", unv) < issues   # outage under UNABLE TO VERIFY
+    # the reassuring empty-category lines are absent when the category is populated
+    assert "No hallucinated citations" not in text
+
+
+@respx.mock
+async def test_report_clean_run_states_categories_empty(tmp_path):
+    """A run with nothing wrong still prints both headline reassurances explicitly."""
+    from reference_audit.report import render_text
+
+    respx.get(url__regex=ID_RE).mock(return_value=httpx.Response(200, json={"message": REAL_ITEM}))
+    respx.get(url__regex=SEARCH_RE).mock(
+        return_value=httpx.Response(200, json={"message": {"items": [REAL_ITEM]}})
+    )
+    bib = _bib(
+        tmp_path,
+        "@article{good, title={Toward a theory of evolution as multilevel learning}, "
+        "author={Vanchurin, Vitaly and Wolf, Yuri I. and Katsnelson, Mikhail I. and "
+        "Koonin, Eugene V.}, journal={Proceedings of the National Academy of Sciences}, "
+        "year={2022}, doi={10.1073/pnas.2120037119}}",
+    )
+    cache = AuditCache(tmp_path / "c.db", model="test")
+    pipe = _pipeline(cache)
+    report = await pipe.run(None, bib)
+    await pipe.aclose()
+    cache.close()
+
+    assert report.entries[0].verdict.kind == "exactly_one"
+    text = render_text(report)
+    assert "CAPITAL OFFENCES — No hallucinated citations" in text
+    assert (
+        "UNABLE TO VERIFY — For all other references at least one matching artifact "
+        "was positively identified" in text
+    )
+
+
+@respx.mock
 async def test_cache_prevents_second_query(tmp_path):
     id_route = respx.get(url__regex=ID_RE).mock(
         return_value=httpx.Response(200, json={"message": REAL_ITEM})

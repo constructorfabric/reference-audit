@@ -88,6 +88,18 @@ def _entry_block(a: EntryAudit) -> list[str]:
     return block
 
 
+def _category_section(bucket: list[EntryAudit], heading: str, empty_message: str) -> list[str]:
+    """A named report category: the full entry block for each member, or — when none qualify — a
+    single explicit line saying so (a clean run states it plainly rather than going silent)."""
+    if not bucket:
+        return [empty_message, ""]
+    out = [heading.format(n=len(bucket)), ""]
+    for a in bucket:
+        out.extend(_entry_block(a))
+        out.append("")
+    return out
+
+
 def render_text(report: AuditReport) -> str:
     s = report.summary
     verdicts = s.get("verdicts")
@@ -113,23 +125,48 @@ def render_text(report: AuditReport) -> str:
         lines.append("  types: " + ", ".join(f"{k}={v}" for k, v in sorted(by_type.items())))
     lines.append("")
 
-    # Group entries so the reader sees the actionable ones first: issues, then entries whose only
-    # finding is a cosmetic formatting nit, then the clean ones. (`network` gates the verdict-aware
-    # half of the issue test — in --no-network mode there are no verdicts to read.)
+    # Group entries so the reader sees the gravest first. The two headline categories lead, each its
+    # own section: CAPITAL OFFENCES (conclusive hallucinations — verdict `none`, no real document
+    # corresponds) and UNABLE TO VERIFY (we could not conclusively rule a hallucination out — the
+    # verdict was left None by a transient network/LLM error, an unfamiliar .bib type, a dead link,
+    # or an adjudication we could not settle). Both are verdict-aware, so they apply only once the
+    # network has run; in --no-network mode there are no verdicts and every entry falls through to
+    # the issue/nit/clean split. The remaining entries — at least one artifact positively identified
+    # — are then split into issues, formatting-nits-only, and clean.
     network = verdicts is not None
+    capital_offences: list[EntryAudit] = []
+    unable_to_verify: list[EntryAudit] = []
     with_issues: list[EntryAudit] = []
     nits_only: list[EntryAudit] = []
     clean: list[EntryAudit] = []
     for a in report.entries:
-        if _has_issues(a, network=network):
+        if network and a.verdict is not None and a.verdict.kind == "none":
+            capital_offences.append(a)
+        elif network and a.verdict is None:
+            unable_to_verify.append(a)
+        elif _has_issues(a, network=network):
             with_issues.append(a)
         elif _formatting_nits(a):
             nits_only.append(a)
         else:
             clean.append(a)
 
+    if network:
+        lines.extend(_category_section(
+            capital_offences,
+            "CAPITAL OFFENCES ({n}) — hallucinated citations (no real document corresponds):",
+            "CAPITAL OFFENCES — No hallucinated citations",
+        ))
+        lines.extend(_category_section(
+            unable_to_verify,
+            "UNABLE TO VERIFY ({n}) — could not conclusively rule out a hallucination "
+            "(network/LLM error, unfamiliar entry type, dead link, …):",
+            "UNABLE TO VERIFY — For all other references at least one matching artifact "
+            "was positively identified",
+        ))
+
     groups = [
-        (with_issues, "ISSUES ({n}) — problems, possible hallucinations, or could-not-verify:"),
+        (with_issues, "ISSUES ({n}) — other problems to review:"),
         (nits_only, "FORMATTING NITS ({n}) — verified; only cosmetic field fixes:"),
         (clean, "NO ISSUES ({n}) — verified, nothing to fix:"),
     ]
