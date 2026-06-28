@@ -89,6 +89,8 @@ Reference audit
   verdicts: 27 matched  ·  0 no-match  ·  0 ambiguous  ·  1 unresolved
   types: article=18, book=2, inproceedings=5, misc=3
 
+ISSUES (7) — problems, possible hallucinations, or could-not-verify:
+
 [article] wolpert2007  (cited)
     Using self-dissimilarity to quantify complexity
     ids: doi:10.1002/cplx.20165
@@ -100,6 +102,18 @@ Reference audit
     ids: (no identifier)
     ⚠ no DOI/arXiv id (will attempt DOI backfill)
     ✓ exactly one match (high) — Matched a single work via semantic_scholar (2 versions).
+...
+
+FORMATTING NITS (3) — verified; only cosmetic field fixes:
+
+[article] goldenfeld1992lectures  (cited)
+    Lectures on Phase Transitions and the Renormalization Group
+    ids: doi:10.1201/9780429493492
+    · formatting nit in 'pages'='185-–197' — non-standard page separator in '185-–197'; use '--' [crossref]
+    ✓ exactly one match (high) — Matched a single work via crossref.
+...
+
+NO ISSUES (18) — verified, nothing to fix:
 ...
 ```
 

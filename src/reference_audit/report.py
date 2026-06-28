@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from reference_audit.models import AuditReport, EntryAudit
+from reference_audit.models import AuditReport, EntryAudit, FieldFinding
 
 
 def render_json(report: AuditReport) -> str:
@@ -43,6 +43,49 @@ def _verdict_line(audit) -> str | None:
     return line
 
 
+def _nit_line(f: FieldFinding) -> str:
+    """One formatting nit (a cosmetic, not-a-mistake field difference) spelled out."""
+    tag = "(LLM) " if f.via_llm else ""
+    src = f" [{', '.join(f.sources)}]" if f.sources else ""
+    return f"    · {tag}formatting nit in '{f.field}'='{f.bib_value}' — {f.detail}{src}"
+
+
+def _formatting_nits(a: EntryAudit) -> list[FieldFinding]:
+    return [f for f in a.field_findings if f.status == "formatting"]
+
+
+def _has_issues(a: EntryAudit, *, network: bool) -> bool:
+    """Does this entry need attention? An issue, or (once the network ran) a verdict that is not a
+    clean single match — a possible hallucination, an ambiguous multi-match, or an unresolved entry
+    we could not check. Formatting nits alone do NOT count as issues (they are cosmetic)."""
+    if a.issues:
+        return True
+    if network:
+        v = a.verdict
+        if v is None or v.kind in ("none", "multiple"):
+            return True
+    return False
+
+
+def _entry_block(a: EntryAudit) -> list[str]:
+    """The full report block for one entry: header, ids, issues, formatting nits, verdict."""
+    e = a.entry
+    flag = "cited" if e.cited else "UNCITED"
+    block = [
+        f"[{e.entry_type.value}] {e.key}  ({flag})",
+        f"    {e.title or '(no title)'}",
+        f"    ids: {_ids_str(a)}",
+    ]
+    for issue in a.issues:
+        block.append(f"    ⚠ {issue}")
+    for f in _formatting_nits(a):
+        block.append(_nit_line(f))
+    vline = _verdict_line(a)
+    if vline:
+        block.append(vline)
+    return block
+
+
 def render_text(report: AuditReport) -> str:
     s = report.summary
     verdicts = s.get("verdicts")
@@ -68,21 +111,34 @@ def render_text(report: AuditReport) -> str:
         lines.append("  types: " + ", ".join(f"{k}={v}" for k, v in sorted(by_type.items())))
     lines.append("")
 
+    # Group entries so the reader sees the actionable ones first: issues, then entries whose only
+    # finding is a cosmetic formatting nit, then the clean ones. (`network` gates the verdict-aware
+    # half of the issue test — in --no-network mode there are no verdicts to read.)
+    network = verdicts is not None
+    with_issues: list[EntryAudit] = []
+    nits_only: list[EntryAudit] = []
+    clean: list[EntryAudit] = []
     for a in report.entries:
-        e = a.entry
-        flag = "cited" if e.cited else "UNCITED"
-        lines.append(f"[{e.entry_type.value}] {e.key}  ({flag})")
-        lines.append(f"    {e.title or '(no title)'}")
-        lines.append(f"    ids: {_ids_str(a)}")
-        for issue in a.issues:
-            lines.append(f"    ⚠ {issue}")
-        n_fmt = sum(1 for f in a.field_findings if f.status == "formatting")
-        if n_fmt:
-            lines.append(f"    · {n_fmt} field formatting nit(s) (not mistakes; see field_findings)")
-        vline = _verdict_line(a)
-        if vline:
-            lines.append(vline)
+        if _has_issues(a, network=network):
+            with_issues.append(a)
+        elif _formatting_nits(a):
+            nits_only.append(a)
+        else:
+            clean.append(a)
+
+    groups = [
+        (with_issues, "ISSUES ({n}) — problems, possible hallucinations, or could-not-verify:"),
+        (nits_only, "FORMATTING NITS ({n}) — verified; only cosmetic field fixes:"),
+        (clean, "NO ISSUES ({n}) — verified, nothing to fix:"),
+    ]
+    for bucket, heading in groups:
+        if not bucket:
+            continue
+        lines.append(heading.format(n=len(bucket)))
         lines.append("")
+        for a in bucket:
+            lines.extend(_entry_block(a))
+            lines.append("")
 
     if report.cited_but_missing:
         lines.append("CITED BUT MISSING FROM .bib (error — dangling citation):")
