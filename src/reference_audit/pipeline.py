@@ -28,10 +28,11 @@ from reference_audit.models import (
     CandidateAssessment,
     EntryAudit,
     EntryType,
+    Identifiers,
     SourceQueryResult,
     SourceRecord,
 )
-from reference_audit.fieldcheck import finding_note, resolve_field_findings
+from reference_audit.fieldcheck import consulted_sources, finding_note, resolve_field_findings
 from reference_audit.parsing.bib import parse_bib
 from reference_audit.parsing.tex import parse_cited_keys
 from reference_audit.sources.base import SourceAdapter
@@ -143,6 +144,15 @@ def _verdict_summary(report: AuditReport) -> dict[str, int]:
     return counts
 
 
+def _shares_strong_id(a: Identifiers, b: Identifiers) -> bool:
+    """True if two identifier sets agree on any strong identifier (DOI / ISBN13 / arXiv)."""
+    return bool(
+        (a.doi and a.doi == b.doi)
+        or (a.isbn13 and a.isbn13 == b.isbn13)
+        or (a.arxiv_id and a.arxiv_id == b.arxiv_id)
+    )
+
+
 class AuditPipeline:
     """Async audit pipeline.
 
@@ -222,6 +232,7 @@ class AuditPipeline:
                 audit.from_cache = True
                 # Field findings aren't part of the cached verdict; recompute them from the cached
                 # artifact records (deterministic, and per-field LLM decisions are themselves cached).
+                await self._enrich_artifact(audit, cached)
                 await self._check_fields(audit, cached)
                 return
         route = route_entry(entry, self.adapters)
@@ -244,6 +255,9 @@ class AuditPipeline:
         verdict = self._guard_web_artifact(entry, audit, verdict)
         self._note_backfill(audit, verdict)
         self._note_better_version(audit, verdict)
+        # Enrich BEFORE caching the verdict, so the cached artifact already carries the authoritative
+        # by-id / publisher-of-record records (identity is settled; this only improves field sourcing).
+        await self._enrich_artifact(audit, verdict)
         audit.verdict = verdict
         if self.cache is not None and verdict is not None:
             self.cache.put_entry_verdict(entry.content_hash, verdict)
@@ -285,6 +299,84 @@ class AuditPipeline:
                 errored = True
             records.extend(res.records)
         return records, errored
+
+    async def _gather_by_id(
+        self, entry: BibEntry, ids: Identifiers, adapters: list[SourceAdapter]
+    ) -> tuple[list[SourceRecord], list[str]]:
+        """Query the given adapters by `ids` (cached per entry). Returns (records, error notes)."""
+
+        async def one(adapter: SourceAdapter) -> SourceQueryResult:
+            cached = (
+                self.cache.get_source_query(entry.content_hash, adapter.name, "id")
+                if self.cache is not None
+                else None
+            )
+            if cached is not None:
+                return cached
+            result = await adapter.lookup_by_id(ids)
+            if self.cache is not None:
+                self.cache.put_source_query(entry.content_hash, result)
+            return result
+
+        results = await asyncio.gather(*(one(a) for a in adapters))
+        records: list[SourceRecord] = []
+        errors: list[str] = []
+        for res in results:
+            records.extend(res.records)
+            if res.error:
+                errors.append(res.error)
+        return records, errors
+
+    async def _enrich_artifact(self, audit: EntryAudit, verdict) -> None:
+        """Step 2.5 (advisory): enrich an exactly-one artifact with authoritative by-id records — the
+        publisher-of-record citation export and any DOI-keyed registration records the initial
+        metadata search missed — before field checking.
+
+        Identity is already settled (exactly_one), so enrichment only improves *field canonicalization*
+        and never changes the verdict. A discovered identifier (T3 backfill) is the most authoritative
+        key we will ever have for the entry; here it is finally used to query, not merely reported. A
+        blocked authority of record is surfaced (reliability: report the gap, never guess).
+        """
+        if not self.config.check_fields:
+            return
+        if verdict is None or verdict.kind != "exactly_one" or not verdict.artifacts:
+            return
+        artifact = verdict.artifacts[0]
+        ids = artifact.merged_ids
+        if not (ids.doi or ids.isbn13):
+            return  # no strong identifier to enrich by
+        probe = BibEntry(
+            key=audit.entry.key, entry_type=audit.entry.entry_type, title=audit.entry.title, ids=ids
+        )
+        # Authoritative by-id sources for the (now-known) identifier, plus the publisher of record —
+        # which lives only here, never in identity routing (a blocked publisher must not affect the
+        # verdict).
+        id_adapters = list(route_entry(probe, self.adapters).id_adapters)
+        publisher = next((a for a in self.adapters if a.name == "publisher"), None)
+        if publisher is not None and ids.doi and publisher not in id_adapters:
+            id_adapters.append(publisher)
+        if not id_adapters:
+            return
+        try:
+            new_records, errors = await self._gather_by_id(audit.entry, ids, id_adapters)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — advisory; report, never fail the entry
+            audit.issues.append(f"metadata enrichment skipped (verdict unaffected): {exc}")
+            return
+        for err in errors:
+            audit.issues.append(f"authority of record not auto-retrievable (field check may be incomplete) — {err}")
+        if not new_records:
+            return
+        pooled = pool_candidates(list(artifact.records) + new_records)
+        # Identity is fixed; keep the representative(s) that still carry the matched identifier.
+        matched = [r for r in pooled if _shares_strong_id(r.ids, ids)] or pooled
+        artifact.records = matched
+        artifact.versions = matched
+        artifact.best_record = max(
+            matched,
+            key=lambda r: (0 if r.is_preprint else 1, 1 if r.ids.doi else 0, r.citation_count),
+        )
 
     def _assess(
         self, entry: BibEntry, record: SourceRecord, *, entry_has_id: bool
@@ -373,9 +465,12 @@ class AuditPipeline:
         # readable while still reporting the gap (reliability: never silently pass an unchecked field).
         unverifiable = [f.field for f in findings if f.status == "unverifiable"]
         if unverifiable:
+            # Name the sources we actually consulted — never claim universal absence (a null field on
+            # the sources we reached is not proof the datum does not exist; cf. the publisher export).
+            where = ", ".join(consulted_sources(verdict.artifacts[0])) or "any source we could reach"
             audit.issues.append(
-                f"could not verify field(s) {', '.join(unverifiable)} "
-                "(no authoritative source returned them)"
+                f"could not verify field(s) {', '.join(unverifiable)} — "
+                f"not present in the metadata from {where}"
             )
 
 

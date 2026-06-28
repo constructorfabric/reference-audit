@@ -69,30 +69,46 @@ def _richness(rec: SourceRecord) -> tuple[int, int, int]:
     return (1 if rec.ids.doi else 0, rec.citation_count, len(rec.authors))
 
 
+def _underlying_sources(rec: SourceRecord) -> list[str]:
+    """Sources actually behind a record: the merge set if it is a pooled representative, else its own
+    source. Pooling must be idempotent — re-pooling an already-merged record (the enrichment pass)
+    must not lose provenance. (The prior two-phase pooling rebuilt representatives from earlier
+    representatives and ranked them by a single lossy `.source` label, so a preprint copy could
+    outrank a richer published record hidden inside another representative — the Flow-Lenia bug.)"""
+    merged_from = rec.raw.get("merged_from") if isinstance(rec.raw, dict) else None
+    return list(merged_from) if merged_from else [rec.source]
+
+
 # Bibliographic fields are filled on the merged representative from the most authoritative source
-# that carries them, independent of which record is the citation-richest. Crossref/OpenAlex (the
+# that carries them, independent of which record is the citation-richest. The publisher of record
+# (the DOI landing-page citation export) outranks the aggregators; Crossref/OpenAlex (the
 # registration-grade sources) outrank Semantic Scholar, whose venue strings are often truncated
-# ('Complexity' → 'Complex') and which omits volume/issue/pages. This realizes the SPEC's "compile
-# all available information" so downstream field checks compare against complete, correct metadata.
+# ('Complexity' → 'Complex') and which omits volume/issue/pages. Records are ranked by their *best
+# underlying* source, so a pooled representative is ranked by the richest source inside it — not by
+# its lossy `.source` label. This realizes the SPEC's "compile all available information".
 _FIELD_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
-    "venue": ("crossref", "openalex", "openlibrary"),
-    "volume": ("crossref", "openalex"),
-    "issue": ("crossref", "openalex"),
-    "pages": ("crossref", "openalex"),
-    "publisher": ("crossref", "openlibrary", "openalex"),
+    "venue": ("publisher", "crossref", "openalex", "openlibrary"),
+    "volume": ("publisher", "crossref", "openalex"),
+    "issue": ("publisher", "crossref", "openalex"),
+    "pages": ("publisher", "crossref", "openalex"),
+    "publisher": ("publisher", "crossref", "openlibrary", "openalex"),
 }
 
 
-_YEAR_SOURCE_PRIORITY = ("crossref", "openalex")
+_YEAR_SOURCE_PRIORITY = ("publisher", "crossref", "openalex")
 
 
-def _rank(source: str, priority: tuple[str, ...]) -> int:
-    return priority.index(source) if source in priority else len(priority)
+def _rank(rec: SourceRecord, priority: tuple[str, ...]) -> int:
+    """Priority rank of a record by its best (lowest-rank) underlying source."""
+    return min(
+        (priority.index(s) if s in priority else len(priority))
+        for s in _underlying_sources(rec)
+    )
 
 
 def _best_field(recs: list[SourceRecord], attr: str, priority: tuple[str, ...]) -> str:
     """Most authoritative non-empty value for `attr` across a same-work group ('' if none has it)."""
-    for r in sorted(recs, key=lambda r: _rank(r.source, priority)):
+    for r in sorted(recs, key=lambda r: _rank(r, priority)):
         value = (getattr(r, attr) or "").strip()
         if value:
             return value
@@ -100,47 +116,69 @@ def _best_field(recs: list[SourceRecord], attr: str, priority: tuple[str, ...]) 
 
 
 def _best_year(recs: list[SourceRecord]) -> int | None:
-    """Publication year from the registration-grade source (Crossref/OpenAlex) when available.
+    """Publication year from the registration-grade source (publisher/Crossref/OpenAlex) when
+    available.
 
     Semantic Scholar often reports the online/preprint year (it gave 2018 for the 2019 Complex
     Systems 'Lenia' DOI whose Crossref record is 2019), so its richer-citation record must not
     override the DOI registrant's year.
     """
-    for r in sorted(recs, key=lambda r: _rank(r.source, _YEAR_SOURCE_PRIORITY)):
+    for r in sorted(recs, key=lambda r: _rank(r, _YEAR_SOURCE_PRIORITY)):
         if r.year:
             return r.year
     return None
 
 
 def pool_candidates(records: list[SourceRecord]) -> list[SourceRecord]:
-    """Group records into same-work candidates; return one representative per group."""
-    groups: list[dict] = []  # {"own": set, "links": set, "records": list}
+    """Merge records that describe the same work into one representative candidate each.
 
-    for rec in records:
-        own = _own_keys(rec)
-        links = _link_keys(rec)
-        if not own:
-            # No identifier: cannot be safely merged here — keep separate (M5 may merge via LLM).
-            groups.append({"own": set(), "links": links, "records": [rec]})
-            continue
-        # Merge into a group if our ids overlap its ids, OR either side's version links bridge them.
-        hit = next(
-            (
-                g
-                for g in groups
-                if (own & g["own"]) or (own & g["links"]) or (links & g["own"])
-            ),
-            None,
-        )
-        if hit is None:
-            groups.append({"own": set(own), "links": set(links), "records": [rec]})
-        else:
-            hit["own"] |= own
-            hit["links"] |= links
-            hit["records"].append(rec)
+    A single union-find over all records with two kinds of (transitively closed) edge:
+      * identifier edge — both records carry ids and they overlap, or one side's version link
+        bridges the other's id (shared DOI/arXiv/ISBN13/OpenAlex id; the arXiv↔published edge).
+        Grounded in identifiers, never title fuzz.
+      * version edge — `_same_work_version`: a preprint and its published version, or two editions of
+        one book, agreeing on title+authors. This is the *only* place title similarity is allowed,
+        and only to UNITE versions of one work — two distinct published DOIs are still held apart by
+        the V1 veto inside `_same_work_version`.
 
-    representatives = [_representative(g["records"]) for g in groups]
-    return _merge_preprint_published(representatives)
+    Transitive closure (order-independent union-find) is essential and is why this replaced the
+    earlier greedy first-match grouping: a Semantic Scholar record that carries BOTH the arXiv id and
+    the published DOI must fuse the preprint group and the published group into one candidate. When
+    they stayed split, canonical fields were sourced from the preprint copy (the Flow-Lenia bug).
+    """
+    n = len(records)
+    if n <= 1:
+        return list(records)
+
+    own = [_own_keys(r) for r in records]
+    links = [_link_keys(r) for r in records]
+    parent = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        parent[find(j)] = find(i)
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if find(i) == find(j):
+                continue
+            id_edge = bool(
+                own[i]
+                and own[j]
+                and ((own[i] & own[j]) or (own[i] & links[j]) or (links[i] & own[j]))
+            )
+            if id_edge or _same_work_version(records[i], records[j]):
+                union(i, j)
+
+    clusters: dict[int, list[SourceRecord]] = {}
+    for idx in range(n):
+        clusters.setdefault(find(idx), []).append(records[idx])
+    return [_representative(g) if len(g) > 1 else g[0] for g in clusters.values()]
 
 
 def _representative(recs: list[SourceRecord]) -> SourceRecord:
@@ -162,7 +200,7 @@ def _representative(recs: list[SourceRecord]) -> SourceRecord:
     best_year = _best_year(recs)
     if best_year is not None:
         merged.year = best_year
-    merged.raw = {"merged_from": sorted({r.source for r in recs})}
+    merged.raw = {"merged_from": sorted({s for r in recs for s in _underlying_sources(r)})}
     return merged
 
 
@@ -204,24 +242,3 @@ def _same_work_version(a: SourceRecord, b: SourceRecord) -> bool:
         return True
     pa, pb = _published_doi(a), _published_doi(b)
     return not (pa and pb and pa != pb)  # R2: merge unless two distinct published DOIs
-
-
-def _merge_preprint_published(reps: list[SourceRecord]) -> list[SourceRecord]:
-    """Second pass: union representatives that are preprint↔published versions of one work."""
-    parent = list(range(len(reps)))
-
-    def find(i: int) -> int:
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-
-    for i in range(len(reps)):
-        for j in range(i + 1, len(reps)):
-            if find(i) != find(j) and _same_work_version(reps[i], reps[j]):
-                parent[find(j)] = find(i)
-
-    clusters: dict[int, list[SourceRecord]] = {}
-    for idx, rec in enumerate(reps):
-        clusters.setdefault(find(idx), []).append(rec)
-    return [_representative(group) if len(group) > 1 else group[0] for group in clusters.values()]

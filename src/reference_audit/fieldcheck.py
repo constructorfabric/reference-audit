@@ -60,8 +60,16 @@ _REPOSITORY_VENUE_RE = re.compile(
 # goldenfeld `number={-}`). Compared after stripping braces/whitespace and lowercasing.
 _PLACEHOLDERS = {"", "-", "--", "–", "—", "n/a", "n.a.", "na", "none", "null", "tbd", "?", "..."}
 
-# Source preference for sourcing a canonical field value: the rich bibliographic records first.
-_SOURCE_RANK = {"crossref": 0, "openalex": 1, "openlibrary": 2, "semantic_scholar": 3, "arxiv": 4}
+# Source preference for sourcing a canonical field value: the publisher of record first, then the
+# rich registration-grade bibliographic records.
+_SOURCE_RANK = {
+    "publisher": 0,
+    "crossref": 1,
+    "openalex": 2,
+    "openlibrary": 3,
+    "semantic_scholar": 4,
+    "arxiv": 5,
+}
 
 _DASH_RUN = re.compile(r"\s*[-–—‐]+\s*")
 _RANGE = re.compile(r"\w-\w")
@@ -267,7 +275,16 @@ def _pages_check(entry: BibEntry, records: list[SourceRecord]) -> _Check | None:
         return chk
     if _norm_pages(entry.pages) != _norm_pages(canonical):
         chk.status = "error"
-        chk.detail = f"pages '{_strip(entry.pages)}' do not match canonical '{canonical}'"
+        cano, ent = _norm_pages(canonical), _norm_pages(entry.pages)
+        if "-" not in cano and "-" in ent and ent.split("-", 1)[0] == cano:
+            # canonical is a single article number (e.g. an article-numbered proceedings); the entry
+            # turned it into a range, inventing an end page that no source confirms.
+            chk.detail = (
+                f"canonical lists a single article number '{canonical}'; the entry's range "
+                f"'{_strip(entry.pages)}' adds an end page no source confirms"
+            )
+        else:
+            chk.detail = f"pages '{_strip(entry.pages)}' do not match canonical '{canonical}'"
         return chk
     # Same page numbers: only the separator style may differ.
     if _RANGE.search(_norm_pages(entry.pages)) and not _pages_clean_range(entry.pages):
@@ -364,6 +381,13 @@ async def resolve_field_findings(
     )
     escalated_iter = iter(escalated)
     return [next(escalated_iter) if c.needs_llm else c.finding() for c in checks]
+
+
+def consulted_sources(artifact: MatchedArtifact) -> list[str]:
+    """Every source actually behind the matched artifact's records — i.e. exactly what the field
+    checks compared against. Used to report an unverifiable field as "not present in {these
+    sources}", never as the unprovable claim that no authoritative source has it."""
+    return sorted({s for r in artifact.records for s in _rec_sources(r)})
 
 
 def finding_note(f: FieldFinding) -> str:

@@ -104,6 +104,29 @@ def test_representative_fills_pages_from_openalex_when_crossref_blank():
     assert rep.volume == "115"            # crossref outranks openalex where both present
 
 
+def test_transitive_merge_sources_published_venue_not_preprint():
+    # Flow-Lenia (the provenance bug): the Semantic Scholar record carries BOTH the published DOI and
+    # the arXiv id, so it bridges the published records and the arXiv-preprint record into ONE
+    # candidate. Transitive closure must merge all four, and canonical venue/year must come from the
+    # published side (crossref) — never the arXiv repository copy that the old greedy/2-phase pooling
+    # let win.
+    title = "Flow-Lenia: Towards open-ended evolution in cellular automata"
+    au = ["Erwan Plantec", "Bert Chan"]
+    cr = _rec("crossref", doi="10.1162/isal_a_00651", title=title, authors=au,
+              venue="The 2023 Conference on Artificial Life", year=2023)
+    oa_pub = _rec("openalex", doi="10.1162/isal_a_00651", title=title, authors=au, venue="", year=2023)
+    oa_pre = _rec("openalex", doi="10.48550/arxiv.2212.07906", arxiv="2212.07906", title=title,
+                  authors=au, venue="arXiv (Cornell University)", year=2022)
+    s2 = _rec("semantic_scholar", doi="10.1162/isal_a_00651", arxiv="2212.07906", title=title,
+              authors=au, venue="The 2023 Conference on Artificial Life", year=2022, cites=80)
+    pooled = pool_candidates([cr, oa_pub, oa_pre, s2])
+    assert len(pooled) == 1
+    rep = pooled[0]
+    assert rep.venue == "The 2023 Conference on Artificial Life"  # published, not the arXiv repo
+    assert rep.year == 2023                                       # registrant year, not preprint 2022
+    assert set(rep.raw["merged_from"]) == {"crossref", "openalex", "semantic_scholar"}
+
+
 def test_representative_year_from_registrant_not_richest_record():
     # chan2019 'Lenia': S2 is citation-richest but reports the online year 2018; Crossref (the DOI
     # registrant) says 2019. The representative must carry 2019, not S2's 2018.

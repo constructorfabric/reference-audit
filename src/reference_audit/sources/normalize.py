@@ -7,6 +7,12 @@ OpenAlex/S2 normalizers are added in M3 with `locations[]` → `version_links` +
 
 from __future__ import annotations
 
+import re
+
+import bibtexparser
+from bibtexparser.bparser import BibTexParser
+from bibtexparser.customization import convert_to_unicode
+
 from reference_audit.models import Identifiers, SourceRecord
 from reference_audit.parsing.identifiers import (
     extract_arxiv_id,
@@ -79,7 +85,9 @@ def crossref_item_to_record(item: dict) -> SourceRecord:
         venue=venue,
         volume=(item.get("volume") or "").strip(),
         issue=(item.get("issue") or "").strip(),
-        pages=(item.get("page") or "").strip(),
+        # Article-numbered venues (many proceedings/e-journals) register the sequence number under
+        # `article-number` with no page range; fall back to it so it isn't reported unverifiable.
+        pages=(item.get("page") or item.get("article-number") or "").strip(),
         publisher=(item.get("publisher") or "").strip(),
         ids=Identifiers(doi=doi, isbn13=isbn13, arxiv_id=arxiv),
         is_preprint=(item.get("type") == "posted-content"),
@@ -174,6 +182,67 @@ def s2_paper_to_record(paper: dict) -> SourceRecord:
         is_preprint=bool(arxiv and not doi),
         citation_count=int(paper.get("citationCount") or 0),
         raw=paper,
+    )
+
+
+# ── Publisher of record (DOI landing-page citation export) ────────────────────
+def _bib_clean(s: str | None) -> str:
+    return re.sub(r"\s+", " ", (s or "").replace("{", "").replace("}", "")).strip()
+
+
+def _bib_authors(field: str | None) -> list[str]:
+    if not field:
+        return []
+    return [_bib_clean(p) for p in re.split(r"\s+and\s+", field.strip()) if _bib_clean(p)]
+
+
+def _bib_year(field: str | None) -> int | None:
+    m = re.search(r"\d{4}", field or "")
+    return int(m.group(0)) if m else None
+
+
+# A `volume` that is really a proceedings *title* (Silverchair @proceedings exports put the volume
+# title here) rather than a number — don't expose it as a numeric volume to compare against.
+_NUMERICISH_VOLUME = re.compile(r"^[\w.\-/]{1,16}$")
+
+
+def publisher_bibtex_to_record(bibtex: str, *, source: str = "publisher") -> SourceRecord | None:
+    """Parse a publisher's citation-export BibTeX (the authority of record) into a SourceRecord.
+
+    Its value is the registration-grade fields the aggregators lack — notably pages/article number
+    for article-numbered venues (e.g. MIT Press/Silverchair proceedings, where Crossref's `page` is
+    null but the export carries `pages={131}`). Returns None when the text is not BibTeX (e.g. a
+    bot-challenge HTML page), so the caller reports a clean gap instead of a guess.
+    """
+    parser = BibTexParser(common_strings=True)
+    parser.customization = convert_to_unicode
+    parser.ignore_nonstandard_types = False
+    try:
+        db = bibtexparser.loads(bibtex, parser)
+    except Exception:  # noqa: BLE001 — malformed/HTML payload is a clean "not retrievable"
+        return None
+    if not db.entries:
+        return None
+    rec = db.entries[0]
+    f = {k.lower(): v for k, v in rec.items() if k not in ("ID", "ENTRYTYPE")}
+    doi = normalize_doi(f.get("doi")) or normalize_doi(f.get("url"))
+    volume = _bib_clean(f.get("volume"))
+    if volume and not _NUMERICISH_VOLUME.match(volume):
+        volume = ""  # a proceedings-title volume, not a number
+    return SourceRecord(
+        source=source,
+        source_native_id=doi or "",
+        title=_bib_clean(f.get("title")),
+        authors=_bib_authors(f.get("author")),
+        year=_bib_year(f.get("year")),
+        venue=_bib_clean(f.get("journal") or f.get("booktitle")),
+        volume=volume,
+        issue=_bib_clean(f.get("number") or f.get("issue")),
+        pages=_bib_clean(f.get("pages")),
+        publisher=_bib_clean(f.get("publisher")),
+        ids=Identifiers(doi=doi),
+        is_preprint=False,
+        raw={"merged_from": [source]},
     )
 
 

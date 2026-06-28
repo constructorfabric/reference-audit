@@ -16,6 +16,7 @@ from reference_audit.sources.base import SourceAdapter
 from reference_audit.sources.crossref import CrossrefAdapter
 from reference_audit.sources.openalex import OpenAlexAdapter
 from reference_audit.sources.openlibrary import OpenLibraryAdapter
+from reference_audit.sources.publisher import PublisherAdapter
 from reference_audit.sources.semantic_scholar import SemanticScholarAdapter
 
 # Reputable venues that legitimately mint no DOI — a no-DOI match here is not a defect (README 1.1).
@@ -30,6 +31,7 @@ def build_default_adapters(config: AuditConfig) -> list[SourceAdapter]:
         SemanticScholarAdapter(api_key=config.s2_api_key),
         ArxivAdapter(),
         OpenLibraryAdapter(),
+        PublisherAdapter(),
     ]
 
 
@@ -53,6 +55,9 @@ def route_entry(entry: BibEntry, adapters: list[SourceAdapter]) -> Route:
         id_adapters += present("arxiv", "openalex", "semantic_scholar")
     if entry.ids.isbn13:
         id_adapters += present("openlibrary")
+    # NOTE: `publisher` (the DOI landing-page citation export) is deliberately NOT an identity
+    # source. It is queried only in the advisory enrichment pass — a bot-walled/blocked publisher
+    # must never set the `errored` flag and mask a hallucinated DOI as 'unresolved' vs 'no match'.
 
     if entry.entry_type in (EntryType.BOOK, EntryType.INCOLLECTION):
         metadata_adapters = present("openlibrary", "crossref")

@@ -312,6 +312,16 @@ def test_pages_unverifiable_when_canonical_missing():
     assert _by_field(deterministic_field_checks(e, art))["pages"].status == "unverifiable"
 
 
+def test_pages_single_article_number_vs_range_is_error():
+    # plantec: the canonical 'page' is a single article number (131); the entry inflated it into a
+    # range '131--144', inventing an end page no source confirms.
+    e = _entry(pages="131--144")
+    art = _artifact(_rec(pages="131"))
+    p = _by_field(deterministic_field_checks(e, art))["pages"]
+    assert p.status == "error"
+    assert "article number" in p.detail and "131" in p.detail
+
+
 # ── publisher ────────────────────────────────────────────────────────────────
 
 
@@ -419,6 +429,16 @@ async def test_llm_decision_is_cached(tmp_path):
 
 
 # ── finding_note rendering ───────────────────────────────────────────────────
+
+
+def test_consulted_sources_unions_underlying_sources():
+    # A pooled representative records every source behind it; consulted_sources reports exactly what
+    # the field checks compared against (so an 'unverifiable' names sources, not universal absence).
+    from reference_audit.fieldcheck import consulted_sources
+
+    rep = _rec(source="semantic_scholar", raw={"merged_from": ["crossref", "openalex"]})
+    pub = _rec(source="publisher")
+    assert consulted_sources(_artifact(rep, pub)) == ["crossref", "openalex", "publisher"]
 
 
 def test_finding_note_error_mentions_values():
