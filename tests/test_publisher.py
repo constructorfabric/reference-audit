@@ -7,12 +7,28 @@ from reference_audit.config import AuditConfig
 from reference_audit.models import Identifiers
 from reference_audit.pipeline import AuditPipeline
 from reference_audit.sources.crossref import CrossrefAdapter
+from reference_audit.sources.http import TransientHTTPError
 from reference_audit.sources.normalize import publisher_bibtex_to_record
 from reference_audit.sources.publisher import (
     PublisherAdapter,
     _atypon_export_url,
     _silverchair_export_url,
 )
+
+
+def _fake_export(result):
+    """Build an injectable `export_fetch` for PublisherAdapter that returns a fixed (status, text),
+    or raises if `result` is an exception. Replaces respx mocking of the citation-export endpoint,
+    which now goes through the browser-impersonating curl_cffi client (libcurl, invisible to respx).
+    The DOI/landing redirects still flow through httpx and stay mocked via respx.
+    """
+
+    async def fetch(_url):
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+    return fetch
 
 # A trimmed Silverchair @proceedings export (MIT Press "Cite" → BibTeX). Note: pages is a single
 # article number, and `volume` holds the proceedings *title*, not a number.
@@ -112,10 +128,7 @@ async def test_publisher_fetches_and_parses_export():
         return_value=httpx.Response(302, headers={"Location": _LANDING})
     )
     respx.get(_LANDING).mock(return_value=httpx.Response(403, text=_CHALLENGE))  # body bot-walled
-    respx.get(url__startswith="https://direct.mit.edu/Citation/Download").mock(
-        return_value=httpx.Response(200, text=_EXPORT)
-    )
-    ad = PublisherAdapter()
+    ad = PublisherAdapter(export_fetch=_fake_export((200, _EXPORT)))
     res = await ad.lookup_by_id(Identifiers(doi="10.1162/isal_a_00651"))
     await ad.aclose()
     assert res.error is None
@@ -132,10 +145,8 @@ async def test_publisher_bot_walled_export_is_reported_error_not_absent():
         return_value=httpx.Response(302, headers={"Location": _LANDING})
     )
     respx.get(_LANDING).mock(return_value=httpx.Response(403, text=_CHALLENGE))
-    respx.get(url__startswith="https://direct.mit.edu/Citation/Download").mock(
-        return_value=httpx.Response(403, text=_CHALLENGE)
-    )
-    ad = PublisherAdapter()
+    # Export endpoint itself is bot-walled (403) → the impersonating fetcher raises TransientHTTPError.
+    ad = PublisherAdapter(export_fetch=_fake_export(TransientHTTPError("http 403")))
     res = await ad.lookup_by_id(Identifiers(doi="10.1/x"))
     await ad.aclose()
     assert res.records == []
@@ -150,10 +161,7 @@ async def test_publisher_fetches_sage_atypon_export():
         return_value=httpx.Response(302, headers={"Location": _SAGE_LANDING})
     )
     respx.get(_SAGE_LANDING).mock(return_value=httpx.Response(200, text="<html>landing</html>"))
-    respx.get(url__startswith="https://journals.sagepub.com/action/downloadCitation").mock(
-        return_value=httpx.Response(200, text=_SAGE_EXPORT)
-    )
-    ad = PublisherAdapter()
+    ad = PublisherAdapter(export_fetch=_fake_export((200, _SAGE_EXPORT)))
     res = await ad.lookup_by_id(Identifiers(doi="10.1177/03010066251384492"))
     await ad.aclose()
     assert res.error is None
@@ -171,10 +179,9 @@ async def test_publisher_sage_cloudflare_challenge_is_reported_not_absent():
         return_value=httpx.Response(302, headers={"Location": _SAGE_LANDING})
     )
     respx.get(_SAGE_LANDING).mock(return_value=httpx.Response(200, text="<html>landing</html>"))
-    respx.get(url__startswith="https://journals.sagepub.com/action/downloadCitation").mock(
-        return_value=httpx.Response(200, text=_CHALLENGE)
-    )
-    ad = PublisherAdapter()
+    # Impersonation passes the TLS fingerprint but the platform serves an escalated JS challenge
+    # body (HTTP 200, not BibTeX) → reported error, never a silent 'absent' or guessed year.
+    ad = PublisherAdapter(export_fetch=_fake_export((200, _CHALLENGE)))
     res = await ad.lookup_by_id(Identifiers(doi="10.1177/03010066251384492"))
     await ad.aclose()
     assert res.records == []
@@ -224,13 +231,12 @@ async def test_enrichment_uses_backfilled_doi_to_flag_fabricated_pages(tmp_path)
         return_value=httpx.Response(302, headers={"Location": _LANDING})
     )
     respx.get(_LANDING).mock(return_value=httpx.Response(403, text=_CHALLENGE))
-    respx.get(url__startswith="https://direct.mit.edu/Citation/Download").mock(
-        return_value=httpx.Response(200, text=_EXPORT)
-    )
     bib = tmp_path / "r.bib"
     bib.write_text(_DOILESS_BIB, encoding="utf-8")
     pipe = AuditPipeline(
-        AuditConfig(model="t"), adapters=[CrossrefAdapter(), PublisherAdapter()], llm=None
+        AuditConfig(model="t"),
+        adapters=[CrossrefAdapter(), PublisherAdapter(export_fetch=_fake_export((200, _EXPORT)))],
+        llm=None,
     )
     report = await pipe.run(None, bib)
     await pipe.aclose()

@@ -10,6 +10,8 @@ import asyncio
 import time
 
 import httpx
+from curl_cffi.requests import AsyncSession
+from curl_cffi.requests.exceptions import RequestException as ImpersonateRequestError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -19,6 +21,13 @@ from tenacity import (
 
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_USER_AGENT = "reference-audit/0.1 (https://github.com/; mailto:reference-audit@example.org)"
+
+# Some publisher platforms (Silverchair direct.mit.edu, Atypon journals.sagepub.com) sit behind
+# Cloudflare, which fingerprints the TLS ClientHello (JA3/JA4). httpx's fingerprint is flagged as a
+# bot and 403'd even with a full browser header set + HTTP/2; curl/Firefox pass. curl_cffi replays a
+# real browser's ClientHello, so the export resolves. Used ONLY for those publisher fetches —
+# the clean-API sources stay on httpx.
+DEFAULT_IMPERSONATE = "chrome"
 
 
 class TransientHTTPError(Exception):
@@ -111,5 +120,47 @@ async def get_text(
         return 404, ""
     if resp.status_code >= 400:
         # non-retryable client error (e.g. 400/403) — treat as a hard error, not 'absent'
+        raise TransientHTTPError(f"http {resp.status_code}")
+    return resp.status_code, resp.text
+
+
+def new_impersonate_session(timeout: float = DEFAULT_TIMEOUT) -> AsyncSession:
+    """A browser-TLS-impersonating session (libcurl via curl_cffi) for Cloudflare-fingerprint-walled
+    endpoints. Reused across calls so the issued `__cf_bm` cookie persists. See DEFAULT_IMPERSONATE.
+    """
+    return AsyncSession(timeout=timeout, impersonate=DEFAULT_IMPERSONATE)
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=8),
+    retry=retry_if_exception_type(TransientHTTPError),
+    reraise=True,
+)
+async def _impersonate_get_with_retry(session: AsyncSession, url: str):
+    try:
+        resp = await session.get(url)
+    except ImpersonateRequestError as exc:  # network/DNS/timeout/TLS
+        raise TransientHTTPError(f"transport: {exc}") from exc
+    if resp.status_code == 429 or resp.status_code >= 500:
+        raise TransientHTTPError(f"http {resp.status_code}")
+    return resp
+
+
+async def get_text_impersonate(
+    session: AsyncSession,
+    limiter: MonotonicRateLimiter,
+    url: str,
+) -> tuple[int, str]:
+    """Browser-impersonating counterpart of `get_text` for Cloudflare-fingerprint-walled publisher
+    exports. Same contract: rate-limited, exponential backoff on transport/429/5xx, then raises
+    TransientHTTPError after exhausting retries; a 404 returns (404, ""); any other 4xx (e.g. a 403
+    bot-wall) raises TransientHTTPError so the caller reports a block rather than a false 'absent'.
+    """
+    await limiter.acquire()
+    resp = await _impersonate_get_with_retry(session, url)
+    if resp.status_code == 404:
+        return 404, ""
+    if resp.status_code >= 400:
         raise TransientHTTPError(f"http {resp.status_code}")
     return resp.status_code, resp.text

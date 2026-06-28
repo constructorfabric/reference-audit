@@ -8,6 +8,7 @@ dependencies = [
     "anyascii>=0.3.3",
     "bibtexparser>=1.4,<2",
     "constructor-studio",
+    "curl-cffi>=0.7",
     "httpx>=0.28.1",
     "loguru>=0.7.3",
     "openai>=2.44.0",

@@ -11,9 +11,12 @@ Resolution is deliberately conservative and reliability-first:
   2. derive the platform's citation-export URL (Silverchair: `/Citation/Download?...` keyed by the
      numeric resource id in the landing path);
   3. fetch + parse the BibTeX.
-If any step fails — unknown platform, a Cloudflare/JS bot-challenge instead of BibTeX, a transport
-error — the result is a reported gap (empty records, or an `error` for a transient block), never a
-guess and never cached as "absent". A browser-backed fetcher can later be slotted in behind step 3.
+The export fetch (step 3) goes through a browser-TLS-impersonating client (`get_text_impersonate`),
+because these platforms sit behind Cloudflare, which fingerprints httpx's TLS ClientHello and 403s it
+even with browser headers; replaying a real browser's ClientHello passes. If any step fails — unknown
+platform, an escalated JS/interactive bot-challenge instead of BibTeX, a transport error — the result
+is a reported gap (empty records, or an `error` for a transient block), never a guess and never
+cached as "absent".
 """
 
 from __future__ import annotations
@@ -24,7 +27,11 @@ import httpx
 
 from reference_audit.models import EntryType, Identifiers, SourceQueryResult
 from reference_audit.sources.base import SourceAdapter
-from reference_audit.sources.http import TransientHTTPError, get_text
+from reference_audit.sources.http import (
+    TransientHTTPError,
+    get_text_impersonate,
+    new_impersonate_session,
+)
 from reference_audit.sources.normalize import publisher_bibtex_to_record
 
 _DOI_RESOLVER = "https://doi.org/"
@@ -38,9 +45,8 @@ _SILVERCHAIR_HOSTS = ("direct.mit.edu",)
 # Atypon-hosted publishers (Sage, …) expose a citation download keyed directly by the DOI:
 #   {scheme}://{host}/action/downloadCitation?doi={DOI}&format=bibtex&include=cit  (BibTeX)
 # Unlike Silverchair, no landing-path resource id is needed — the DOI alone derives the URL.
-# NOTE: these endpoints are typically Cloudflare-challenged for non-browser clients, so the fetch
-# surfaces a reported 'not retrievable'/'not a citation export' error (never 'absent'); a
-# browser-backed fetcher slotted in behind get_text() would make the export resolve.
+# Like Silverchair, these endpoints are Cloudflare-walled, so the export fetch goes through the
+# browser-impersonating client; an *escalated* interactive challenge still surfaces a reported error.
 _ATYPON_HOSTS = ("journals.sagepub.com",)
 
 
@@ -79,6 +85,29 @@ class PublisherAdapter(SourceAdapter):
         EntryType.MISC,
     }
     rate_per_sec = 2.0  # be gentle on publisher sites
+
+    def __init__(self, *, export_fetch=None, **kwargs):
+        """`export_fetch` (async `(url) -> (status, text)`) overrides the citation-export fetcher;
+        injected by tests. In production it defaults to a lazily-created browser-impersonating
+        session (curl_cffi), kept separate from `self.client` (httpx) which still serves the DOI
+        resolution. DOI resolution stays on httpx because it reads only the redirect target, never a
+        Cloudflare-walled body.
+        """
+        super().__init__(**kwargs)
+        self._export_fetch = export_fetch
+        self._imp_session = None
+
+    async def _fetch_export(self, url: str) -> tuple[int, str]:
+        if self._export_fetch is not None:
+            return await self._export_fetch(url)
+        if self._imp_session is None:
+            self._imp_session = new_impersonate_session()
+        return await get_text_impersonate(self._imp_session, self.rate_limiter, url)
+
+    async def aclose(self) -> None:
+        if self._imp_session is not None:
+            await self._imp_session.close()
+        await super().aclose()
 
     async def _landing_url(self, doi: str) -> str:
         """Final URL the DOI resolves to (redirect only; the page body may be bot-protected)."""
@@ -126,7 +155,7 @@ class PublisherAdapter(SourceAdapter):
             return SourceQueryResult(source=self.name, query_kind="id", records=[])
 
         try:
-            status, text = await get_text(self.client, self.rate_limiter, export_url)
+            status, text = await self._fetch_export(export_url)
         except TransientHTTPError as exc:
             # Most commonly a Cloudflare/JS bot-challenge (HTTP 403). Surfaced as an error — a
             # human-retrievable datum we could not auto-fetch — so it is reported, not treated as
