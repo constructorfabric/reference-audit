@@ -309,8 +309,18 @@ def _pages_check(entry: BibEntry, records: list[SourceRecord]) -> _Check | None:
     return chk
 
 
-def deterministic_field_checks(entry: BibEntry, artifact: MatchedArtifact) -> list[_Check]:
-    """All per-field rule outcomes for a matched entry (pure, no network/LLM)."""
+def deterministic_field_checks(
+    entry: BibEntry,
+    artifact: MatchedArtifact,
+    *,
+    skip_fields: frozenset[str] = frozenset(),
+) -> list[_Check]:
+    """All per-field rule outcomes for a matched entry (pure, no network/LLM).
+
+    `skip_fields` drops named fields — used for books, whose `year`/`publisher` are edition-specific
+    and verified separately against the cited Open Library edition (see `check_book_edition_fields`),
+    not against the pooled artifact (which may hold a newer edition).
+    """
     records = _ordered_records(artifact)
     checks: list[_Check | None] = [
         _title_check(entry, records),
@@ -334,7 +344,7 @@ def deterministic_field_checks(entry: BibEntry, artifact: MatchedArtifact) -> li
         canonical, sources = _canonical(records, lambda r: r.publisher)
         checks.append(_string_field("publisher", entry.publisher, canonical, sources))
 
-    return [c for c in checks if c is not None]
+    return [c for c in checks if c is not None and c.field not in skip_fields]
 
 
 # ── LLM escalation ───────────────────────────────────────────────────────────
@@ -389,14 +399,68 @@ async def resolve_field_findings(
     llm: LLMClient | None,
     config: AuditConfig,
     cache: AuditCache | None,
+    *,
+    skip_fields: frozenset[str] = frozenset(),
 ) -> list[FieldFinding]:
     """Full step-3 result for one matched entry: deterministic rules + LLM tie-break, in order."""
-    checks = deterministic_field_checks(entry, artifact)
+    checks = deterministic_field_checks(entry, artifact, skip_fields=skip_fields)
     escalated = await asyncio.gather(
         *(_judge_field(entry, c, llm, cache) for c in checks if c.needs_llm)
     )
     escalated_iter = iter(escalated)
     return [next(escalated_iter) if c.needs_llm else c.finding() for c in checks]
+
+
+def _book_publisher_check(entry: BibEntry, canonical: str, sources: list[str]) -> _Check:
+    """Publisher check against the cited edition's publisher.
+
+    A folded-substring relationship ('W. A. Benjamin' ⊆ 'W. A. Benjamin, Advanced Book Program') is a
+    shortened-but-correct imprint name → `formatting`, settled without the LLM. A genuinely different
+    string (a typo like 'Princeton Un iversity Press', or a different publisher) still escalates so it
+    is judged, not silently passed.
+    """
+    bib = _strip(entry.publisher)
+    chk = _Check("publisher", bib, canonical, sources)
+    if not canonical:
+        chk.status, chk.detail = "unverifiable", "the matched Open Library edition lists no publisher"
+        return chk
+    if bib == _strip(canonical):
+        return chk
+    a, b = _fold(bib), _fold(canonical)
+    if a and b and (a in b or b in a):
+        chk.status = "formatting"
+        chk.detail = f"a shortened form of the edition's publisher '{canonical}'"
+        return chk
+    chk.status, chk.needs_llm = "needs_llm", True
+    return chk
+
+
+async def check_book_edition_fields(
+    entry: BibEntry,
+    matched_edition: SourceRecord,
+    llm: LLMClient | None,
+    config: AuditConfig,  # noqa: ARG001 — symmetry with resolve_field_findings; reserved
+    cache: AuditCache | None,
+) -> list[FieldFinding]:
+    """Verify a book's `year`/`publisher` against the *cited* Open Library edition.
+
+    Grounding the canonical values in the matched edition (rather than the pooled artifact, which may
+    carry a newer reprint) means the original edition is no longer flagged against a later one. A
+    genuine publisher typo (e.g. 'Princeton Un iversity Press') still escalates to the LLM and is
+    caught.
+    """
+    records = [matched_edition]
+    checks: list[_Check] = []
+    year_chk = _year_check(entry, records)
+    if year_chk is not None:
+        checks.append(year_chk)
+    if entry.publisher:
+        canonical, sources = _canonical(records, lambda r: r.publisher)
+        checks.append(_book_publisher_check(entry, canonical, sources))
+    return [
+        await _judge_field(entry, c, llm, cache) if c.needs_llm else c.finding()
+        for c in checks
+    ]
 
 
 def consulted_sources(artifact: MatchedArtifact) -> list[str]:

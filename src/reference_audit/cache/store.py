@@ -64,6 +64,22 @@ class AuditCache:
         )
         self.conn.commit()
 
+    # --- DOI resolution cache (does doi.org's handle system know this DOI?) ---
+    def get_doi_resolution(self, doi: str) -> bool | None:
+        """Cached doi.org verdict for `doi`: True/False if known, None if never checked."""
+        row = self.conn.execute(
+            "SELECT resolves FROM doi_resolution_cache WHERE doi=?", (doi,)
+        ).fetchone()
+        return bool(row["resolves"]) if row else None
+
+    def put_doi_resolution(self, doi: str, resolves: bool) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO doi_resolution_cache (doi, resolves, checked_at) "
+            "VALUES (?,?,?)",
+            (doi, 1 if resolves else 0, _now()),
+        )
+        self.conn.commit()
+
     # --- LLM decision cache (used from M4) ---
     def get_llm_decision(self, p_hash: str, kind: str) -> str | None:
         row = self.conn.execute(

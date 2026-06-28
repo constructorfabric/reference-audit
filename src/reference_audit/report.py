@@ -38,6 +38,8 @@ def _verdict_line(audit) -> str | None:
         br = v.artifacts[0].best_record
         if br.ids.doi:
             line += f"\n      matched: doi:{br.ids.doi}  ({br.source})"
+        elif br.ids.isbn13:
+            line += f"\n      matched: isbn:{br.ids.isbn13}  ({br.source})"
     return line
 
 

@@ -13,6 +13,7 @@ from reference_audit.fieldcheck import (
     _fold,
     _norm_pages,
     _pages_clean_range,
+    check_book_edition_fields,
     deterministic_field_checks,
     finding_note,
     resolve_field_findings,
@@ -468,6 +469,60 @@ async def test_llm_decision_is_cached(tmp_path):
     await _resolve(e, art, llm, cache)  # served from cache
     assert llm.calls == 1
     cache.close()
+
+
+# ── book edition fields (grounded in the cited Open Library edition) ──────────
+
+
+async def test_book_year_ok_against_matched_edition():
+    # The cited 1976 edition checked against the 1976 OL edition — no false 'needs review'.
+    e = _entry(entry_type=EntryType.BOOK, venue="", year=1976,
+               publisher="W. A. Benjamin, Advanced Book Program")
+    edition = _rec(source="openlibrary", year=1976,
+                   publisher="W. A. Benjamin, Advanced Book Program")
+    findings = {
+        f.field: f
+        for f in await check_book_edition_fields(e, edition, None, AuditConfig(model="t"), None)
+    }
+    assert findings["year"].status == "ok"
+    assert findings["publisher"].status == "ok"
+
+
+async def test_book_publisher_typo_still_escalates_against_edition():
+    # gavrilets: the cited 2004 edition's publisher carries a split-word typo; grounding the canonical
+    # in the matched edition must still catch it (LLM escalation), not silently pass.
+    e = _entry(entry_type=EntryType.BOOK, venue="", year=2004,
+               publisher="Princeton Un iversity Press")
+    edition = _rec(source="openlibrary", year=2004, publisher="Princeton University Press")
+    llm = FakeLLM(FieldJudgment(classification="error", confidence="high", reason="split word"))
+    findings = {
+        f.field: f
+        for f in await check_book_edition_fields(e, edition, llm, AuditConfig(model="t"), None)
+    }
+    assert findings["publisher"].status == "error"
+    assert findings["publisher"].via_llm is True
+
+
+async def test_book_no_publisher_field_only_checks_year():
+    e = _entry(entry_type=EntryType.BOOK, venue="", year=1976, publisher="")
+    edition = _rec(source="openlibrary", year=1976, publisher="Whoever")
+    findings = await check_book_edition_fields(e, edition, None, AuditConfig(model="t"), None)
+    assert [f.field for f in findings] == ["year"]
+
+
+async def test_book_publisher_shortened_imprint_is_formatting_no_llm():
+    # mabook: 'W. A. Benjamin' is a shortened form of the edition's fuller imprint — a formatting
+    # nit, settled deterministically (no LLM call needed) rather than flagged as wrong.
+    e = _entry(entry_type=EntryType.BOOK, venue="", year=1976, publisher="W. A. Benjamin")
+    edition = _rec(source="openlibrary", year=1976,
+                   publisher="W. A. Benjamin, Advanced Book Program")
+    llm = FakeLLM(FieldJudgment(classification="error", confidence="high", reason="should not run"))
+    findings = {
+        f.field: f
+        for f in await check_book_edition_fields(e, edition, llm, AuditConfig(model="t"), None)
+    }
+    assert findings["publisher"].status == "formatting"
+    assert llm.calls == 0
 
 
 # ── finding_note rendering ───────────────────────────────────────────────────

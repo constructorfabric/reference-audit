@@ -263,3 +263,34 @@ def openlibrary_doc_to_record(doc: dict) -> SourceRecord:
         edition=doc.get("edition_count"),
         raw=doc,
     )
+
+
+# A 4-digit year anywhere in an Open Library `publish_date` ("1976", "January 15, 2000", "c1976").
+_OL_EDITION_YEAR = re.compile(r"\b(1[5-9]\d\d|20\d\d)\b")
+
+
+def _openlibrary_edition_year(publish_date: str | None) -> int | None:
+    m = _OL_EDITION_YEAR.search(publish_date or "")
+    return int(m.group(1)) if m else None
+
+
+def openlibrary_edition_to_record(edition: dict, *, work_title: str = "") -> SourceRecord:
+    """One concrete Open Library *edition* (from a work's `editions.json`) → SourceRecord.
+
+    Unlike `openlibrary_doc_to_record` (which collapses a whole work to its first-published year and
+    an aggregate publisher list), this keeps each edition's own year/publisher/ISBN — exactly the
+    per-edition granularity the book check needs to ground the *cited* edition and to point at the
+    latest one.
+    """
+    isbns = (edition.get("isbn_13") or []) + (edition.get("isbn_10") or [])
+    isbn13 = next((normalize_isbn13(i) for i in isbns if normalize_isbn13(i)), None)
+    publishers = edition.get("publishers") or []
+    return SourceRecord(
+        source="openlibrary",
+        source_native_id=(edition.get("key") or "").strip(),
+        title=(edition.get("title") or work_title or "").strip(),
+        year=_openlibrary_edition_year(edition.get("publish_date")),
+        publisher=(publishers[0].strip() if publishers else ""),
+        ids=Identifiers(isbn13=isbn13),
+        raw=edition,
+    )

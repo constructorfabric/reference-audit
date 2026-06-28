@@ -8,7 +8,11 @@ from reference_audit.models import Identifiers
 from reference_audit.pipeline import AuditPipeline
 from reference_audit.sources.crossref import CrossrefAdapter
 from reference_audit.sources.normalize import publisher_bibtex_to_record
-from reference_audit.sources.publisher import PublisherAdapter, _silverchair_export_url
+from reference_audit.sources.publisher import (
+    PublisherAdapter,
+    _atypon_export_url,
+    _silverchair_export_url,
+)
 
 # A trimmed Silverchair @proceedings export (MIT Press "Cite" → BibTeX). Note: pages is a single
 # article number, and `volume` holds the proceedings *title*, not a number.
@@ -29,6 +33,28 @@ _LANDING = "https://direct.mit.edu/isal/proceedings/isal2023/35/131/116921"
 _EXPORT_URL = (
     "https://direct.mit.edu/Citation/Download"
     "?resourceId=116921&resourceType=3&citationFormat=2"
+)
+
+# A trimmed Sage/Atypon @article export (journals.sagepub.com "Cite" → BibTeX). Note: the publisher
+# of record states the version year 2026 (vol 55, issue 2) where the aggregators carry 2025 (the
+# online-first year) — the exact discrepancy the publisher source exists to settle.
+_SAGE_EXPORT = """
+@article{doi:10.1177/03010066251384492,
+author = {Anna Kravchenko and Andrey A Bagrov and Mikhail I Katsnelson and Veronica Dudarev},
+title = {Multiscale structural complexity as a quantitative measure of visual complexity},
+journal = {Perception},
+volume = {55},
+number = {2},
+pages = {139-158},
+year = {2026},
+doi = {10.1177/03010066251384492},
+URL = {https://doi.org/10.1177/03010066251384492},
+}
+"""
+_SAGE_LANDING = "https://journals.sagepub.com/doi/10.1177/03010066251384492"
+_SAGE_EXPORT_URL = (
+    "https://journals.sagepub.com/action/downloadCitation"
+    "?doi=10.1177%2F03010066251384492&format=bibtex&include=cit"
 )
 
 
@@ -53,6 +79,23 @@ def test_silverchair_export_url_derivation():
     assert _silverchair_export_url(_LANDING) == _EXPORT_URL
     assert _silverchair_export_url("https://academic.oup.com/x/1") is None  # not Silverchair
     assert _silverchair_export_url("https://direct.mit.edu/isal/article/foo") is None  # non-numeric
+
+
+def test_sage_atypon_bibtex_parses_year_volume_and_pages():
+    rec = publisher_bibtex_to_record(_SAGE_EXPORT)
+    assert rec is not None
+    assert rec.year == 2026               # version-of-record year, not the aggregators' 2025
+    assert rec.volume == "55"
+    assert rec.issue == "2"
+    assert rec.pages == "139-158"
+    assert rec.venue == "Perception"
+    assert rec.ids.doi == "10.1177/03010066251384492"
+    assert rec.raw["merged_from"] == ["publisher"]
+
+
+def test_atypon_export_url_derivation():
+    assert _atypon_export_url(_SAGE_LANDING, "10.1177/03010066251384492") == _SAGE_EXPORT_URL
+    assert _atypon_export_url("https://direct.mit.edu/x/1", "10.1/x") is None  # not Atypon
 
 
 # ── adapter (mocked network) ─────────────────────────────────────────────────
@@ -97,6 +140,45 @@ async def test_publisher_bot_walled_export_is_reported_error_not_absent():
     await ad.aclose()
     assert res.records == []
     assert res.error is not None and "not retrievable" in res.error
+
+
+@respx.mock
+async def test_publisher_fetches_sage_atypon_export():
+    # DOI → Sage landing → Atypon citation export (BibTeX). The publisher-of-record year (2026)
+    # is what the field check then trusts over the aggregators' 2025.
+    respx.get("https://doi.org/10.1177/03010066251384492").mock(
+        return_value=httpx.Response(302, headers={"Location": _SAGE_LANDING})
+    )
+    respx.get(_SAGE_LANDING).mock(return_value=httpx.Response(200, text="<html>landing</html>"))
+    respx.get(url__startswith="https://journals.sagepub.com/action/downloadCitation").mock(
+        return_value=httpx.Response(200, text=_SAGE_EXPORT)
+    )
+    ad = PublisherAdapter()
+    res = await ad.lookup_by_id(Identifiers(doi="10.1177/03010066251384492"))
+    await ad.aclose()
+    assert res.error is None
+    assert len(res.records) == 1
+    assert res.records[0].year == 2026
+    assert res.records[0].source == "publisher"
+
+
+@respx.mock
+async def test_publisher_sage_cloudflare_challenge_is_reported_not_absent():
+    # The real production case: the Atypon export is Cloudflare-challenged (HTTP 200 with a
+    # JS-challenge body, not BibTeX). Reliability: surface an error pointing at the export URL so a
+    # human can retrieve it — never a silent 'absent', never a guessed year.
+    respx.get("https://doi.org/10.1177/03010066251384492").mock(
+        return_value=httpx.Response(302, headers={"Location": _SAGE_LANDING})
+    )
+    respx.get(_SAGE_LANDING).mock(return_value=httpx.Response(200, text="<html>landing</html>"))
+    respx.get(url__startswith="https://journals.sagepub.com/action/downloadCitation").mock(
+        return_value=httpx.Response(200, text=_CHALLENGE)
+    )
+    ad = PublisherAdapter()
+    res = await ad.lookup_by_id(Identifiers(doi="10.1177/03010066251384492"))
+    await ad.aclose()
+    assert res.records == []
+    assert res.error is not None and "not a citation export" in res.error
 
 
 @respx.mock

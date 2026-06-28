@@ -144,7 +144,7 @@ class SourceQueryResult(BaseModel):
     an outage must never be cached/treated as 'not found'."""
 
     source: str
-    query_kind: Literal["id", "metadata"]
+    query_kind: Literal["id", "metadata", "editions"]
     records: list[SourceRecord] = Field(default_factory=list)
     error: str | None = None
 

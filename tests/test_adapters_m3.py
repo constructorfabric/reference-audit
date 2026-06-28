@@ -88,3 +88,67 @@ async def test_openlibrary_book_backfills_isbn():
     res = await a.search_by_metadata(entry)
     await a.aclose()
     assert res.records[0].ids.isbn13 == "9780691117584"
+
+
+# ── fetch_editions: per-edition year/publisher/ISBN across split work records ──
+
+_SEARCH_DOCS = {"docs": [
+    {"key": "/works/OL_OLD", "title": "Modern theory of critical phenomena"},
+    {"key": "/works/OL_NEW", "title": "Modern Theory of Critical Phenomena"},
+    {"key": "/works/OL_OTHER", "title": "A Completely Different Book"},  # title gate must drop this
+]}
+_EDITIONS_OLD = {"entries": [
+    {"key": "/books/OLb1M", "title": "Modern theory of critical phenomena",
+     "publish_date": "1976", "publishers": ["W. A. Benjamin, Advanced Book Program"],
+     "isbn_10": ["0805366709"]},
+    {"key": "/books/OLb2M", "title": "Modern theory of critical phenomena",
+     "publish_date": "2000", "publishers": ["Perseus Pub."], "isbn_10": ["0738203017"]},
+]}
+_EDITIONS_NEW = {"entries": [
+    {"key": "/books/OLb3M", "title": "Modern Theory of Critical Phenomena",
+     "publish_date": "2018", "publishers": ["Taylor & Francis Group"],
+     "isbn_13": ["9780429498886"]},
+]}
+
+
+@respx.mock
+async def test_openlibrary_fetch_editions_pools_across_works():
+    respx.get(url__regex=r"openlibrary\.org/search\.json").mock(
+        return_value=httpx.Response(200, json=_SEARCH_DOCS)
+    )
+    respx.get(url__regex=r"openlibrary\.org/works/OL_OLD/editions\.json").mock(
+        return_value=httpx.Response(200, json=_EDITIONS_OLD)
+    )
+    respx.get(url__regex=r"openlibrary\.org/works/OL_NEW/editions\.json").mock(
+        return_value=httpx.Response(200, json=_EDITIONS_NEW)
+    )
+    # OL_OTHER is dropped by the title gate, so its editions endpoint must never be queried; if it is,
+    # respx (default) raises on the unmocked request, failing the test.
+    a = OpenLibraryAdapter(client=httpx.AsyncClient())
+    entry = BibEntry(key="ma", entry_type=EntryType.BOOK,
+                     title="Modern Theory of Critical Phenomena", authors=["Ma, Shang-Keng"])
+    res = await a.fetch_editions(entry)
+    await a.aclose()
+    assert res.query_kind == "editions"
+    assert res.error is None
+    years = sorted(r.year for r in res.records)
+    assert years == [1976, 2000, 2018]
+    by_year = {r.year: r for r in res.records}
+    assert by_year[1976].publisher == "W. A. Benjamin, Advanced Book Program"
+    assert by_year[1976].ids.isbn13 == "9780805366709"  # isbn_10 upgraded to isbn13
+    assert by_year[2018].ids.isbn13 == "9780429498886"
+
+
+@respx.mock
+async def test_openlibrary_fetch_editions_surfaces_error_when_nothing_retrieved():
+    # A 503 on the work search is an outage, not 'no editions' — must be reported, never cached.
+    respx.get(url__regex=r"openlibrary\.org/search\.json").mock(
+        return_value=httpx.Response(503, text="busy")
+    )
+    a = OpenLibraryAdapter(client=httpx.AsyncClient())
+    entry = BibEntry(key="ma", entry_type=EntryType.BOOK,
+                     title="Modern Theory of Critical Phenomena", authors=["Ma, Shang-Keng"])
+    res = await a.fetch_editions(entry)
+    await a.aclose()
+    assert res.records == []
+    assert res.error is not None

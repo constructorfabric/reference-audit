@@ -8,6 +8,7 @@ verdict → report.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from tqdm import tqdm
@@ -29,10 +30,23 @@ from reference_audit.models import (
     EntryAudit,
     EntryType,
     Identifiers,
+    MatchedArtifact,
     SourceQueryResult,
     SourceRecord,
+    Verdict,
 )
-from reference_audit.fieldcheck import consulted_sources, finding_note, resolve_field_findings
+from reference_audit.bookcheck import (
+    better_edition_note,
+    describe_cited_edition,
+    latest_edition,
+    match_cited_edition,
+)
+from reference_audit.fieldcheck import (
+    check_book_edition_fields,
+    consulted_sources,
+    finding_note,
+    resolve_field_findings,
+)
 from reference_audit.parsing.bib import parse_bib
 from reference_audit.parsing.tex import parse_cited_keys
 from reference_audit.sources.base import SourceAdapter
@@ -45,6 +59,21 @@ from reference_audit.sources.registry import (
 
 _NEEDS_ISBN = {EntryType.BOOK, EntryType.INCOLLECTION}
 _NEEDS_DOI = {EntryType.ARTICLE, EntryType.INPROCEEDINGS}
+
+
+@dataclass
+class _BookResolution:
+    """Outcome of consulting Open Library (the authority of record for books) for one entry.
+
+    `error` set ⇒ Open Library could not be reached (reported, never read as 'no editions').
+    `matched` is the cited edition (confirms identity + sources year/publisher); `latest` is the most
+    recent edition (the better-version target).
+    """
+
+    error: str | None = None
+    editions: list[SourceRecord] = field(default_factory=list)
+    matched: SourceRecord | None = None
+    latest: SourceRecord | None = None
 
 
 class EmptyBibliographyError(ValueError):
@@ -234,9 +263,12 @@ class AuditPipeline:
                 # cached artifact records (all deterministic, and per-field LLM decisions are
                 # themselves cached) so a cached run reports identically to a --fresh one.
                 await self._enrich_artifact(audit, cached)
-                self._note_backfill(audit, cached)
+                await self._note_backfill(audit, cached)
                 self._note_better_version(audit, cached)
                 await self._check_fields(audit, cached)
+                # Books: re-derive the Open Library edition findings (editions are cached, so this is
+                # the same single fetch a --fresh run made) and report them identically.
+                await self._report_book(audit, await self._resolve_book(audit))
                 return
         route = route_entry(entry, self.adapters)
         if not route.id_adapters and not route.metadata_adapters:
@@ -256,7 +288,15 @@ class AuditPipeline:
             verdict = await self._verdict(audit, errored=errored or llm_errored)
 
         verdict = self._guard_web_artifact(entry, audit, verdict)
-        self._note_backfill(audit, verdict)
+
+        # Books: Open Library is the authority of record for identity. It is edition-aware, so it can
+        # confirm a real book the article-centric matcher rejected (a 1976 original whose only
+        # DOI-bearing candidate is a 2018 reprint — a 42-year/ISBN gap that score-rejects). The
+        # confirmed cited edition becomes the matched artifact, settled BEFORE caching.
+        book = await self._resolve_book(audit)
+        verdict = self._apply_book_identity(verdict, book)
+
+        await self._note_backfill(audit, verdict)
         self._note_better_version(audit, verdict)
         # Enrich BEFORE caching the verdict, so the cached artifact already carries the authoritative
         # by-id / publisher-of-record records (identity is settled; this only improves field sourcing).
@@ -265,6 +305,7 @@ class AuditPipeline:
         if self.cache is not None and verdict is not None:
             self.cache.put_entry_verdict(entry.content_hash, verdict)
         await self._check_fields(audit, verdict)
+        await self._report_book(audit, book)
 
     async def _verdict(self, audit: EntryAudit, *, errored: bool):
         """Cluster the accepted candidates into artifacts (SAME-OBJECT), then count them."""
@@ -344,6 +385,10 @@ class AuditPipeline:
             return
         if verdict is None or verdict.kind != "exactly_one" or not verdict.artifacts:
             return
+        if audit.entry.entry_type in _NEEDS_ISBN:
+            # Books are identity-resolved by Open Library to a SPECIFIC edition; re-pooling by the
+            # work's ISBN would dissolve that edition back into the work and lose its year/publisher.
+            return
         artifact = verdict.artifacts[0]
         ids = artifact.merged_ids
         if not (ids.doi or ids.isbn13):
@@ -407,7 +452,7 @@ class AuditPipeline:
             return None
         return verdict
 
-    def _note_backfill(self, audit: EntryAudit, verdict) -> None:
+    async def _note_backfill(self, audit: EntryAudit, verdict) -> None:
         """Record identifiers discovered for an entry that lacked them (T3 backfill)."""
         if verdict is None or verdict.kind != "exactly_one" or not verdict.artifacts:
             return
@@ -416,7 +461,7 @@ class AuditPipeline:
         if best is None:
             return
         if not entry.ids.doi and best.ids.doi:
-            audit.issues.append(f"DOI found via {best.source}: {best.ids.doi}")
+            audit.issues.append(await self._backfilled_doi_note(best.ids.doi, best.source))
         if not entry.ids.isbn13 and best.ids.isbn13:
             audit.issues.append(f"ISBN found via {best.source}: {best.ids.isbn13}")
         if (
@@ -431,8 +476,60 @@ class AuditPipeline:
                     f"author '{wrong}' not found in {best.source} record (possible wrong name)"
                 )
 
+    async def _backfilled_doi_note(self, doi: str, source: str) -> str:
+        """Backfill message for a *discovered* DOI, gated on whether it actually resolves.
+
+        A discovered DOI is the most authoritative key we report for the entry, so it must be real.
+        An unregistered one (doi.org 404 — commonly an author-supplied placeholder echoed from
+        preprint metadata, the origin of this entry's `10.5555/...`) is reported as a defect, never
+        presented as a clean find. With no resolver available we fall back to trusting the source
+        (prior behaviour); a doi.org outage leaves the find 'unconfirmed' — reported, never asserted
+        valid or invalid.
+        """
+        publisher = next((a for a in self.adapters if a.name == "publisher"), None)
+        if publisher is None:
+            return f"DOI found via {source}: {doi}"
+        resolves = await self._doi_resolves(doi, publisher)
+        if resolves is False:
+            return (
+                f"DOI found via {source} ({doi}) does NOT resolve at doi.org "
+                "(404 — DOI Not Found): likely an invalid identifier (e.g. author-supplied in "
+                "preprint/arXiv metadata). The work was matched, but this DOI is unusable."
+            )
+        if resolves is None:
+            return (
+                f"DOI found via {source}: {doi} "
+                "(could not confirm it resolves at doi.org — verify before use)"
+            )
+        return f"DOI found via {source}: {doi}"
+
+    async def _doi_resolves(self, doi: str, publisher: SourceAdapter) -> bool | None:
+        """doi.org's verdict on a DOI (cached): True=registered, False=404, None=undetermined.
+
+        Only definitive True/False are cached; an undetermined outcome (outage) must retry, mirroring
+        the never-cache-errors invariant.
+        """
+        if self.cache is not None:
+            cached = self.cache.get_doi_resolution(doi)
+            if cached is not None:
+                return cached
+        try:
+            resolves = await publisher.doi_registered(doi)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 — advisory; a failed check is undetermined, never invalid
+            return None
+        if resolves is not None and self.cache is not None:
+            self.cache.put_doi_resolution(doi, resolves)
+        return resolves
+
     def _note_better_version(self, audit: EntryAudit, verdict) -> None:
-        """Step 2: report if a better version of the matched artifact is available."""
+        """Step 2: report if a better version of the matched artifact is available.
+
+        Books are excluded here — their better-edition advice is edition-grounded in `_check_book`.
+        """
+        if audit.entry.entry_type in _NEEDS_ISBN:
+            return
         if verdict is None or verdict.kind != "exactly_one" or not verdict.artifacts:
             return
         for note in better_version_notes(audit.entry, verdict.artifacts[0]):
@@ -451,9 +548,17 @@ class AuditPipeline:
             return
         # Advisory step: a field-check failure must never clear the (already-decided) verdict or
         # abort the entry, so isolate it here rather than letting it reach `_audit_entry`.
+        # Books delegate year/publisher to the edition-grounded `_check_book`, so skip them here
+        # (comparing an original edition against a pooled reprint produced false positives).
+        skip_fields = (
+            frozenset({"year", "publisher"})
+            if audit.entry.entry_type in _NEEDS_ISBN
+            else frozenset()
+        )
         try:
             findings = await resolve_field_findings(
-                audit.entry, verdict.artifacts[0], self.llm, self.config, self.cache
+                audit.entry, verdict.artifacts[0], self.llm, self.config, self.cache,
+                skip_fields=skip_fields,
             )
         except asyncio.CancelledError:
             raise
@@ -475,6 +580,112 @@ class AuditPipeline:
                 f"could not verify field(s) {', '.join(unverifiable)} — "
                 f"not present in the metadata from {where}"
             )
+
+    async def _resolve_book(self, audit: EntryAudit) -> _BookResolution | None:
+        """Consult Open Library — the authority of record for books — for the entry's editions.
+
+        Returns None for non-books. Otherwise fetches the editions and selects the cited one
+        (`matched`) and the most recent one (`latest`); a transport/HTTP failure is carried as
+        `error` (reliability: an outage is reported, never read as 'no editions'). The result drives
+        both the identity override (`_apply_book_identity`) and the report (`_report_book`).
+        """
+        if audit.entry.entry_type not in _NEEDS_ISBN:
+            return None
+        ol = next((a for a in self.adapters if a.name == "openlibrary"), None)
+        if ol is None:
+            return _BookResolution(error="Open Library adapter not configured")
+        try:
+            result = await self._fetch_editions(audit.entry, ol)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — report, don't fail the entry
+            return _BookResolution(error=f"edition lookup failed: {exc}")
+        if result.error:
+            return _BookResolution(error=result.error)
+        editions = result.records
+        return _BookResolution(
+            editions=editions,
+            matched=match_cited_edition(audit.entry, editions),
+            latest=latest_edition(editions),
+        )
+
+    def _apply_book_identity(self, verdict, book: _BookResolution | None):
+        """For a book, an Open Library edition match is authoritative identity: it confirms the cited
+        edition as the matched artifact, overriding the article-centric matcher (which can't bridge a
+        1976 original to its only DOI-bearing record, a 2018 reprint). Non-books and unconfirmed books
+        keep whatever the generic matcher decided."""
+        if book is None or book.matched is None:
+            return verdict
+        edition = book.matched
+        artifact = MatchedArtifact(
+            records=[edition], versions=[edition], best_record=edition, merged_ids=edition.ids
+        )
+        return Verdict(
+            kind="exactly_one",
+            artifacts=[artifact],
+            confidence="high",
+            rationale="confirmed via Open Library (cited edition matched)",
+        )
+
+    async def _report_book(self, audit: EntryAudit, book: _BookResolution | None) -> None:
+        """Report the Open Library book check: confirm the cited edition (or raise the gap to the
+        user), check its year/publisher, and point at the latest edition as a better version.
+
+        Runs after `_check_fields` so it appends to — never clobbers — the field findings.
+        """
+        if book is None:
+            return
+        cited = describe_cited_edition(audit.entry)
+        if book.error:
+            audit.issues.append(
+                f"could not verify the cited edition ({cited}) against Open Library "
+                f"(reported, will retry next run): {book.error}"
+            )
+            return
+        if not book.editions:
+            audit.issues.append(
+                f"could not verify the cited edition ({cited}) against Open Library "
+                "— the book was not found there"
+            )
+            return
+        if book.matched is None:
+            audit.issues.append(
+                f"the cited edition ({cited}) was not found among Open Library's "
+                f"{len(book.editions)} known edition(s) — verify the year/publisher"
+            )
+            return
+
+        # Step 1: year/publisher correctness, grounded in the confirmed cited edition.
+        if self.config.check_fields:
+            try:
+                findings = await check_book_edition_fields(
+                    audit.entry, book.matched, self.llm, self.config, self.cache
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — advisory; report, don't fail the entry
+                audit.issues.append(f"book edition field check failed (verdict unaffected): {exc}")
+                findings = []
+            audit.field_findings = list(audit.field_findings) + findings
+            for f in findings:
+                if f.status in ("error", "uncertain"):
+                    audit.issues.append(finding_note(f))
+
+        # Step 2: a later edition than the one cited is a better version to consider.
+        note = better_edition_note(book.matched, book.latest)
+        if note:
+            audit.issues.append(note)
+
+    async def _fetch_editions(self, entry: BibEntry, ol: SourceAdapter):
+        """Open Library editions for `entry` (cached per entry, like any source query)."""
+        if self.cache is not None:
+            cached = self.cache.get_source_query(entry.content_hash, ol.name, "editions")
+            if cached is not None:
+                return cached
+        result = await ol.fetch_editions(entry)
+        if self.cache is not None:
+            self.cache.put_source_query(entry.content_hash, result)
+        return result
 
 
 async def _run_async(

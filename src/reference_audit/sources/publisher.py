@@ -18,7 +18,7 @@ guess and never cached as "absent". A browser-backed fetcher can later be slotte
 
 from __future__ import annotations
 
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -35,6 +35,14 @@ _DOI_RESOLVER = "https://doi.org/"
 #   .../isal2023/35/131/116921  ->  resourceId=116921
 _SILVERCHAIR_HOSTS = ("direct.mit.edu",)
 
+# Atypon-hosted publishers (Sage, …) expose a citation download keyed directly by the DOI:
+#   {scheme}://{host}/action/downloadCitation?doi={DOI}&format=bibtex&include=cit  (BibTeX)
+# Unlike Silverchair, no landing-path resource id is needed — the DOI alone derives the URL.
+# NOTE: these endpoints are typically Cloudflare-challenged for non-browser clients, so the fetch
+# surfaces a reported 'not retrievable'/'not a citation export' error (never 'absent'); a
+# browser-backed fetcher slotted in behind get_text() would make the export resolve.
+_ATYPON_HOSTS = ("journals.sagepub.com",)
+
 
 def _silverchair_export_url(landing: str) -> str | None:
     parts = urlparse(landing)
@@ -49,8 +57,18 @@ def _silverchair_export_url(landing: str) -> str | None:
     )
 
 
+def _atypon_export_url(landing: str, doi: str) -> str | None:
+    parts = urlparse(landing)
+    if not any(parts.netloc == h or parts.netloc.endswith("." + h) for h in _ATYPON_HOSTS):
+        return None
+    return (
+        f"{parts.scheme}://{parts.netloc}/action/downloadCitation"
+        f"?doi={quote(doi, safe='')}&format=bibtex&include=cit"
+    )
+
+
 class PublisherAdapter(SourceAdapter):
-    """Fetch the DOI publisher's own citation export (currently Silverchair platforms)."""
+    """Fetch the DOI publisher's own citation export (Silverchair and Atypon platforms)."""
 
     name = "publisher"
     handles = {
@@ -71,6 +89,28 @@ class PublisherAdapter(SourceAdapter):
             raise TransientHTTPError(f"transport: {exc}") from exc
         return str(resp.url)
 
+    async def doi_registered(self, doi: str) -> bool | None:
+        """Whether the handle system (doi.org) actually knows this DOI.
+
+        A *backfilled* DOI is only useful if it resolves: authors sometimes record a bogus DOI in
+        their arXiv/preprint metadata (e.g. an ACM `10.5555/...` placeholder for a venue that mints
+        no real DOI) which the aggregators then echo. doi.org answers authoritatively — a redirect to
+        a landing page (handle found) ⇒ registered; HTTP 404 (DOI Not Found) ⇒ not registered.
+        Redirects are deliberately NOT followed, so we read doi.org's own verdict and never mistake a
+        bot-walled destination (403) for an unregistered DOI. Returns None when doi.org could not be
+        reached (transport, or any non-404 error) — an outage is never read as 'invalid'.
+        """
+        await self.rate_limiter.acquire()
+        try:
+            resp = await self.client.get(f"{_DOI_RESOLVER}{doi}", follow_redirects=False)
+        except httpx.HTTPError:
+            return None
+        if resp.is_redirect or 200 <= resp.status_code < 300:
+            return True
+        if resp.status_code == 404:
+            return False
+        return None  # 401/403/429/5xx etc. — undetermined; never asserted invalid
+
     async def lookup_by_id(self, ids: Identifiers) -> SourceQueryResult:
         if not ids.doi:
             return SourceQueryResult(source=self.name, query_kind="id", records=[])
@@ -79,7 +119,7 @@ class PublisherAdapter(SourceAdapter):
         except TransientHTTPError as exc:
             return SourceQueryResult(source=self.name, query_kind="id", error=str(exc))
 
-        export_url = _silverchair_export_url(landing)
+        export_url = _silverchair_export_url(landing) or _atypon_export_url(landing, ids.doi)
         if export_url is None:
             # Unknown publisher platform — nothing we know how to fetch. A clean "not found" here
             # (not an error): field checks then report the gap against the sources we did consult.

@@ -7,6 +7,9 @@ Three cache layers (README: avoid re-running DB/LLM calls):
 - llm_decision_cache : LLM verdicts keyed by (prompt_hash, kind, model) — model in key ⇒ a model
   switch re-runs (added in M4).
 - entry_verdict_cache: whole-entry fast path, gated by (pipeline_version, model).
+- doi_resolution_cache: doi.org's verdict on a DOI (does the handle resolve?) — a world-fact, so
+  keyed by the bare DOI and independent of pipeline_version/model. Only definitive True/False are
+  stored; an outage is never cached (mirrors the never-cache-errors invariant).
 - db_quirks          : mirror of docs/db_quirks.md (README principle 2).
 """
 
@@ -40,6 +43,11 @@ CREATE TABLE IF NOT EXISTS entry_verdict_cache (
     model            TEXT NOT NULL,
     created_at       TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS doi_resolution_cache (
+    doi        TEXT PRIMARY KEY,
+    resolves   INTEGER NOT NULL,
+    checked_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS db_quirks (
     source        TEXT NOT NULL,
     quirk         TEXT NOT NULL,
@@ -52,6 +60,7 @@ _CACHE_TABLES = (
     "source_query_cache",
     "llm_decision_cache",
     "entry_verdict_cache",
+    "doi_resolution_cache",
 )
 
 
