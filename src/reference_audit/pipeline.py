@@ -738,8 +738,19 @@ class AuditPipeline:
         """For a book, an Open Library edition match is authoritative identity: it confirms the cited
         edition as the matched artifact, overriding the article-centric matcher (which can't bridge a
         1976 original to its only DOI-bearing record, a 2018 reprint). Non-books and unconfirmed books
-        keep whatever the generic matcher decided."""
-        if book is None or book.matched is None:
+        keep whatever the generic matcher decided.
+
+        One exception, for reliability: when Open Library — the book authority of record — could not be
+        reached (`book.error`), a `none` ('possible hallucination') verdict from the article-centric
+        matcher is NOT trustworthy. That matcher routinely fails to confirm a real book (it sees only a
+        reprint, or nothing), so without the authority we have not actually checked the book. Leave it
+        unresolved (reported, retried next run) rather than assert a hallucination we did not establish.
+        """
+        if book is None:
+            return verdict
+        if book.matched is None:
+            if book.error and verdict is not None and verdict.kind == "none":
+                return None
             return verdict
         edition = book.matched
         artifact = MatchedArtifact(

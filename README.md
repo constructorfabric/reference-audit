@@ -50,6 +50,13 @@ Work id is treated as authoritative identity, so a similar-titled foreign-DOI re
 in and its identifiers are never backfilled onto the entry. A cited Work id whose Work has a
 mismatched title/author does not confirm the entry; it is left unresolved and reported.
 
+For **books**, Open Library is the authority of record for identity: it is edition-aware, so it can
+confirm a real book the article-centric matcher rejected (e.g. a 1976 original whose only DOI-bearing
+candidate is a 2018 reprint). Because of this, a book is only ever called a hallucination when that
+authority was actually consulted — if Open Library is unreachable, an article-search "no match" is
+**not** trusted: the entry is left unresolved (reported, retried next run) rather than flagged as a
+likely hallucination we never really checked.
+
 Results are cached in a local SQLite DB, so re-running on the same `.bib` makes **no** repeat
 network or LLM calls. A transient outage never counts as "no match".
 

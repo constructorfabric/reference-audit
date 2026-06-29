@@ -203,6 +203,52 @@ async def test_cited_openalex_id_with_mismatched_work_is_not_confirmed(tmp_path)
 
 
 @respx.mock
+async def test_book_openlibrary_outage_downgrades_no_match_to_unresolved(tmp_path):
+    # Reliability: when Open Library (the book authority of record) is unreachable, the article-
+    # centric matcher's 'NO MATCH (possible hallucination)' verdict is NOT trustworthy for a book.
+    # We must not assert a hallucination we never actually checked — leave it unresolved (retry next
+    # run) instead. Regression for the diamond2011collapse transport-error report.
+    book_bib = (
+        "@book{diamond2011collapse, "
+        "title={Collapse: How Societies Choose to Fail or Succeed}, "
+        "author={Diamond, Jared}, year={2011}, publisher={Penguin}, isbn={9780143117001}}"
+    )
+    # Crossref finds nothing real; Open Library's search.json yields a work key (so editions are
+    # attempted) but is an UNRELATED record, so the generic matcher auto-rejects it → verdict 'none'.
+    respx.get(url__regex=r"api\.crossref\.org/works\?").mock(
+        return_value=httpx.Response(200, json={"message": {"items": []}})
+    )
+    respx.get(url__regex=r"openlibrary\.org/search\.json").mock(
+        return_value=httpx.Response(200, json={"docs": [
+            {"key": "/works/OL_UNRELATED", "title": "An Unrelated Treatise on Beekeeping",
+             "author_name": ["Someone Else"], "first_publish_year": 1999},
+        ]})
+    )
+    # The editions fetch transport-errors (the real-world "All connection attempts failed").
+    respx.get(url__regex=r"openlibrary\.org/works/OL_UNRELATED/editions\.json").mock(
+        side_effect=httpx.ConnectError("All connection attempts failed")
+    )
+    bib = tmp_path / "r.bib"
+    bib.write_text(book_bib, encoding="utf-8")
+    pipe = AuditPipeline(
+        AuditConfig(model="t", use_llm=False),
+        adapters=[CrossrefAdapter(client=httpx.AsyncClient()),
+                  OpenLibraryAdapter(client=httpx.AsyncClient())],
+    )
+    report = await pipe.run(None, bib)
+    await pipe.aclose()
+
+    audit = report.entries[0]
+    # NOT a hallucination: the authority was unreachable, so the entry is left unresolved (no verdict).
+    assert audit.verdict is None
+    # ...and the outage is reported (will retry next run), never silently passed.
+    assert any(
+        "could not verify the cited edition" in i and "will retry next run" in i
+        for i in audit.issues
+    )
+
+
+@respx.mock
 async def test_book_not_in_openlibrary_raises_gap(tmp_path):
     # Open Library has no record of the book → the cited edition cannot be confirmed, so the gap is
     # reported to the user rather than silently passing the (reprint-matched) book.

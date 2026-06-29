@@ -200,6 +200,13 @@ reference, or leave it `unresolved` on transient failure.
 The system **MUST** return `none` for a reference no source matches, and **MUST NOT** return `none`
 when a source errored (that entry stays `unresolved`).
 
+For a **book**, Open Library is the authority of record for identity, so a `none` from the
+article-centric matcher is only trustworthy when that authority was actually consulted. When the
+Open Library edition lookup failed (transport/HTTP error), `_apply_book_identity` downgrades a `none`
+verdict to `unresolved` (reported, retried next run) rather than assert a hallucination that was
+never really checked. This override runs in the `inst-book` step and is covered by tests but is not
+yet a separately `@cpt`-traced flow instruction.
+
 **Implements**:
 - `cpt-referenceaudit-algo-identification-verdict`
 
