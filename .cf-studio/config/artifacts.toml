@@ -30,6 +30,12 @@ path = "architecture/features/parsing.md"
 kind = "FEATURE"
 traceability = "FULL"
 
+[[systems.artifacts]]
+name = "Identification & Verdict Feature"
+path = "architecture/features/identification.md"
+kind = "FEATURE"
+traceability = "FULL"
+
 [[systems.codebase]]
 name = "Reference Audit Source"
 path = "src/reference_audit"

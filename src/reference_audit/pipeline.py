@@ -262,10 +262,14 @@ class AuditPipeline:
             audit.verdict = None
             audit.issues.append(f"audit failed (left unresolved, will retry next run): {exc}")
 
+    # @cpt-flow:cpt-referenceaudit-flow-identification-audit-entry:p1
+    # @cpt-dod:cpt-referenceaudit-dod-identification-identify-artifact:p1
     async def _audit_entry_inner(self, audit: EntryAudit) -> None:
         entry = audit.entry
         if self.cache is not None:
+            # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-cache-lookup
             cached = self.cache.get_entry_verdict(entry.content_hash)
+            # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-cache-lookup
             if cached is not None:
                 audit.verdict = cached
                 audit.from_cache = True
@@ -283,7 +287,9 @@ class AuditPipeline:
                 # the same single fetch a --fresh run made) and report them identically.
                 await self._report_book(audit, await self._resolve_book(audit))
                 return
+        # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-route
         route = route_entry(entry, self.adapters)
+        # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-route
         if not route.id_adapters and not route.metadata_adapters:
             # No scholarly source routed (the default set always routes @misc to the aggregators, so
             # this is a reduced-adapter configuration). A URL-only web @misc is still verifiable
@@ -294,49 +300,70 @@ class AuditPipeline:
                 self.cache.put_entry_verdict(entry.content_hash, verdict)
             return
 
+        # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-gather
         records, errored = await self._gather_candidates(entry, route)
+        # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-gather
+        # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-assess
         pooled = pool_candidates(records)
         entry_has_id = entry.ids.any_present()
         audit.candidates = [self._assess(entry, r, entry_has_id=entry_has_id) for r in pooled]
+        # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-assess
+        # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-verdict
         verdict = await self._verdict(audit, errored=errored)
+        # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-verdict
 
         # README: "unless a returned record is a 100% match, use an LLM to filter results one by
         # one." A formal exactly_one IS the 100%-match short-circuit, so only invoke the per-
         # candidate LLM filter when the formal rules left the entry unresolved.
+        # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-llm-adjudicate
         if verdict is None and self.llm is not None:
             llm_errored = await adjudicate_entry(audit, self.llm, self.config, self.cache)
             verdict = await self._verdict(audit, errored=errored or llm_errored)
+        # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-llm-adjudicate
 
         # URL-only web @misc (a blog/software page no scholarly DB indexes): fetch the cited page and
         # verify it via its HTML metadata, then an LLM fallback. Runs only when the DB path found
         # nothing real, so it never overrides a genuine scholarly match.
+        # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-web
         verdict = await self._resolve_web(audit, verdict)
+        # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-web
 
         # Books: Open Library is the authority of record for identity. It is edition-aware, so it can
         # confirm a real book the article-centric matcher rejected (a 1976 original whose only
         # DOI-bearing candidate is a 2018 reprint — a 42-year/ISBN gap that score-rejects). The
         # confirmed cited edition becomes the matched artifact, settled BEFORE caching.
+        # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-book
         book = await self._resolve_book(audit)
         verdict = self._apply_book_identity(verdict, book)
+        # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-book
 
+        # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-best-output
         await self._note_backfill(audit, verdict)
         self._note_better_version(audit, verdict)
         # Enrich BEFORE caching the verdict, so the cached artifact already carries the authoritative
         # by-id / publisher-of-record records (identity is settled; this only improves field sourcing).
         await self._enrich_artifact(audit, verdict)
+        # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-best-output
+        # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-cache-store
         audit.verdict = verdict
         if self.cache is not None and verdict is not None:
             self.cache.put_entry_verdict(entry.content_hash, verdict)
+        # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-cache-store
         await self._check_fields(audit, verdict)
         await self._report_book(audit, book)
 
+    # @cpt-algo:cpt-referenceaudit-algo-identification-verdict:p1
     async def _verdict(self, audit: EntryAudit, *, errored: bool):
         """Cluster the accepted candidates into artifacts (SAME-OBJECT), then count them."""
+        # @cpt-begin:cpt-referenceaudit-algo-identification-verdict:p1:inst-cluster
         accepted = [c for c in audit.candidates if c.bucket == "auto_accept"]
         artifacts, cluster_errored = await cluster_accepted(
             accepted, self.config, self.llm, self.cache
         )
+        # @cpt-end:cpt-referenceaudit-algo-identification-verdict:p1:inst-cluster
+        # @cpt-begin:cpt-referenceaudit-algo-identification-verdict:p1:inst-build
         return build_verdict(audit.candidates, artifacts, errored=errored or cluster_errored)
+        # @cpt-end:cpt-referenceaudit-algo-identification-verdict:p1:inst-build
 
     async def _gather_candidates(self, entry, route) -> tuple[list[SourceRecord], bool]:
         async def one(adapter: SourceAdapter, kind: str) -> SourceQueryResult:
@@ -449,17 +476,22 @@ class AuditPipeline:
             key=lambda r: (0 if r.is_preprint else 1, 1 if r.ids.doi else 0, r.citation_count),
         )
 
+    # @cpt-algo:cpt-referenceaudit-algo-identification-score:p1
     def _assess(
         self, entry: BibEntry, record: SourceRecord, *, entry_has_id: bool
     ) -> CandidateAssessment:
+        # @cpt-begin:cpt-referenceaudit-algo-identification-score:p1:inst-features
         features = compute_features(
             entry, record, tail_threshold=self.config.prefix_trap_tail_jaccard
         )
+        # @cpt-end:cpt-referenceaudit-algo-identification-score:p1:inst-features
+        # @cpt-begin:cpt-referenceaudit-algo-identification-score:p1:inst-bucket
         return CandidateAssessment(
             record=record,
             features=features,
             bucket=bucket(features, self.config, entry_has_id=entry_has_id),
         )
+        # @cpt-end:cpt-referenceaudit-algo-identification-score:p1:inst-bucket
 
     async def _resolve_web(self, audit: EntryAudit, verdict):
         """Verify a URL-only @misc by fetching its cited page (HTML metadata, then an LLM fallback).
@@ -572,6 +604,7 @@ class AuditPipeline:
             self.cache.put_doi_resolution(doi, resolves)
         return resolves
 
+    # @cpt-dod:cpt-referenceaudit-dod-identification-best-version:p1
     def _note_better_version(self, audit: EntryAudit, verdict) -> None:
         """Step 2: report if a better version of the matched artifact is available.
 

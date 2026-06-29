@@ -16,10 +16,9 @@ The Reference Audit DESIGN is decomposed by pipeline stage. The **Parsing** feat
 `.bib` + `.tex` parsing and identifier normalization) is the foundation every later stage builds
 on. The downstream stages — identification against databases, the same-object matching rule and
 3-way verdict, LLM adjudication, SQLite caching, web/book verification, and best-version/canonical
-output — are now implemented in code. They are grouped here under a single **Identification &
-Verdict** feature entry; that entry tracks code state but does not yet carry a dedicated governed
-feature specification or instruction-level `@cpt` traceability (only the Parsing feature is traced
-to code today).
+output — are implemented in code and governed by the dedicated **Identification & Verdict**
+feature spec ([features/identification.md](features/identification.md)), which carries
+instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cache/`.
 
 **Decomposition Strategy**:
 - Group by pipeline stage (parsing → sources/cache → matching/llm → report).
@@ -31,7 +30,7 @@ to code today).
 
 **Overall implementation status:**
 
-- [ ] `p1` - **ID**: `cpt-referenceaudit-status-overall`
+- [x] `p1` - **ID**: `cpt-referenceaudit-status-overall`
 
 ### 2.1 [Parsing](features/parsing.md) - HIGH
 
@@ -89,15 +88,9 @@ to code today).
 - **Data**:
   - (none — parse slice is in-memory only)
 
-### 2.2 [Identification & Verdict](DESIGN.md#32-component-model) - HIGH
+### 2.2 [Identification & Verdict](features/identification.md) - HIGH
 
-- [ ] `p1` - **ID**: `cpt-referenceaudit-feature-identification`
-
-  > **Status note:** the capability below is **implemented in code** (`sources/`, `matching/`,
-  > `llm/`, `cache/`). This entry stays unchecked because it does not yet have a dedicated governed
-  > FEATURE specification or instruction-level `@cpt` traceability — authoring `features/
-  > identification.md` and tracing the matching code is the remaining governance work. Only the
-  > Parsing feature is traced to code today.
+- [x] `p1` - **ID**: `cpt-referenceaudit-feature-identification`
 
 - **Purpose**: Query bibliographic databases, score candidates with the SAME-OBJECT disambiguation
   rule, and return the 3-way verdict plus the canonical best version.
@@ -114,21 +107,21 @@ to code today).
 - **Out of scope**:
   - Manuscript body rewriting
 
-- **Requirements Covered** (all implemented in code; unchecked = pending `@cpt` tracing):
+- **Requirements Covered**:
 
-  - [ ] `p1` - `cpt-referenceaudit-fr-identify-artifact`
-  - [ ] `p1` - `cpt-referenceaudit-fr-three-way-verdict`
-  - [ ] `p1` - `cpt-referenceaudit-fr-hallucination-screen`
-  - [ ] `p2` - `cpt-referenceaudit-fr-best-version-canonical`
-  - [ ] `p2` - `cpt-referenceaudit-nfr-cached-calls`
+  - [x] `p1` - `cpt-referenceaudit-fr-identify-artifact`
+  - [x] `p1` - `cpt-referenceaudit-fr-three-way-verdict`
+  - [x] `p1` - `cpt-referenceaudit-fr-hallucination-screen`
+  - [x] `p2` - `cpt-referenceaudit-fr-best-version-canonical`
+  - [x] `p2` - `cpt-referenceaudit-nfr-cached-calls`
 
 - **Design Principles Covered**:
 
-  - [ ] `p2` - `cpt-referenceaudit-principle-modular-sources`
+  - [x] `p2` - `cpt-referenceaudit-principle-modular-sources`
 
 - **Design Constraints Covered**:
 
-  - [ ] `p1` - `cpt-referenceaudit-constraint-id-preference`
+  - [x] `p1` - `cpt-referenceaudit-constraint-id-preference`
 
 - **Domain Model Entities**:
   - SourceRecord
@@ -136,21 +129,21 @@ to code today).
 
 - **Design Components**:
 
-  - [ ] `p2` - `cpt-referenceaudit-component-sources`
-  - [ ] `p1` - `cpt-referenceaudit-component-matching`
-  - [ ] `p2` - `cpt-referenceaudit-component-llm`
-  - [ ] `p2` - `cpt-referenceaudit-component-cache`
+  - [x] `p2` - `cpt-referenceaudit-component-sources`
+  - [x] `p1` - `cpt-referenceaudit-component-matching`
+  - [x] `p2` - `cpt-referenceaudit-component-llm`
+  - [x] `p2` - `cpt-referenceaudit-component-cache`
 
 - **API**:
   - `reference_audit.pipeline.run_audit(...)` / `AuditPipeline.run(...)`
 
 - **Sequences**:
 
-  - [ ] `p2` - `cpt-referenceaudit-seq-identify-adjudicate`
+  - [x] `p2` - `cpt-referenceaudit-seq-identify-adjudicate`
 
 - **Data**:
 
-  - [ ] `p3` - `cpt-referenceaudit-db-cache`
+  - [x] `p3` - `cpt-referenceaudit-db-cache`
   - `cpt-referenceaudit-dbtable-response-cache`
 
 ---

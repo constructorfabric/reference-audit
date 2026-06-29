@@ -91,7 +91,7 @@ and forms a stable foundation for the networked stages.
 
 #### Modular, swappable sources
 
-- [ ] `p2` - **ID**: `cpt-referenceaudit-principle-modular-sources`
+- [x] `p2` - **ID**: `cpt-referenceaudit-principle-modular-sources`
 
 Each bibliographic database is a self-contained adapter behind a common interface (`sources/base.py`),
 so sources can be added, removed, or reordered without touching matching or pipeline code.
@@ -100,7 +100,7 @@ so sources can be added, removed, or reordered without touching matching or pipe
 
 #### Identifier preference order
 
-- [ ] `p1` - **ID**: `cpt-referenceaudit-constraint-id-preference`
+- [x] `p1` - **ID**: `cpt-referenceaudit-constraint-id-preference`
 
 Identification must prefer DOI for papers, ISBN for books, and URL for other artifacts; metadata
 matching always runs alongside (to backfill missing identifiers and corroborate), but a strong
@@ -198,7 +198,7 @@ Holds no behavior beyond validation and small derived helpers; performs no I/O.
 
 #### sources
 
-- [ ] `p2` - **ID**: `cpt-referenceaudit-component-sources`
+- [x] `p2` - **ID**: `cpt-referenceaudit-component-sources`
 
 ##### Why this component exists
 
@@ -222,7 +222,7 @@ only (never an identity source), so a bot-walled publisher cannot mask a halluci
 
 #### matching
 
-- [ ] `p1` - **ID**: `cpt-referenceaudit-component-matching`
+- [x] `p1` - **ID**: `cpt-referenceaudit-component-matching`
 
 ##### Why this component exists
 
@@ -246,7 +246,7 @@ Does not call databases directly (consumes candidates from `sources`) and does n
 
 #### llm
 
-- [ ] `p2` - **ID**: `cpt-referenceaudit-component-llm`
+- [x] `p2` - **ID**: `cpt-referenceaudit-component-llm`
 
 ##### Why this component exists
 
@@ -269,7 +269,7 @@ Stateless with respect to the audit; returns structured judgments, never final r
 
 #### cache
 
-- [ ] `p2` - **ID**: `cpt-referenceaudit-component-cache`
+- [x] `p2` - **ID**: `cpt-referenceaudit-component-cache`
 
 ##### Why this component exists
 
@@ -392,7 +392,7 @@ sequenceDiagram
 
 #### Identify and adjudicate
 
-- [ ] `p2` - **ID**: `cpt-referenceaudit-seq-identify-adjudicate`
+- [x] `p2` - **ID**: `cpt-referenceaudit-seq-identify-adjudicate`
 
 **Use cases**: `cpt-referenceaudit-usecase-parse-audit`
 
@@ -426,7 +426,7 @@ The offline parse path uses no persistent database. The networked path memoizes 
 SQLite cache (`cache/db.py`, `cache/store.py`) with four cache tables plus a `db_quirks` log. Only
 successful results are stored; errors are never cached, so an outage retries.
 
-- [ ] `p3` - **ID**: `cpt-referenceaudit-db-cache`
+- [x] `p3` - **ID**: `cpt-referenceaudit-db-cache`
 
 #### Tables: SQLite response cache
 

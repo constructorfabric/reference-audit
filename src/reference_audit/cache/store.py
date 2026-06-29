@@ -56,6 +56,7 @@ class AuditCache:
         ).fetchone()
         return Verdict.model_validate_json(row["verdict_json"]) if row else None
 
+    # @cpt-dod:cpt-referenceaudit-dod-identification-caching:p1
     def put_entry_verdict(self, entry_hash: str, verdict: Verdict) -> None:
         self.conn.execute(
             "INSERT OR REPLACE INTO entry_verdict_cache "

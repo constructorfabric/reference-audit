@@ -167,13 +167,13 @@ issues — all with no network access.
 ### 5.2 Identification & Verdict (implemented)
 
 > **Checkbox semantics:** a checked box marks a requirement that is implemented **and** traced to
-> code via `@cpt` markers. The requirements below are all **implemented in code** (`sources/`,
-> `matching/`, `llm/`, `cache/`) but are not yet `@cpt`-traced through a governed feature spec, so
-> they remain unchecked. See `DECOMPOSITION.md` §2.2 for the outstanding traceability work.
+> code via `@cpt` markers. The requirements below are governed by the
+> [Identification & Verdict feature](features/identification.md), which traces them into
+> `pipeline.py`, `matching/`, and `cache/`.
 
 #### Identify the artifact behind a reference
 
-- [ ] `p1` - **ID**: `cpt-referenceaudit-fr-identify-artifact`
+- [x] `p1` - **ID**: `cpt-referenceaudit-fr-identify-artifact`
 
 The system **MUST** query bibliographic databases and return the artifact(s) matching a reference,
 preferring DOI (papers), ISBN (books), and URL (other artifacts).
@@ -184,7 +184,7 @@ preferring DOI (papers), ISBN (books), and URL (other artifacts).
 
 #### Three-way identification verdict
 
-- [ ] `p1` - **ID**: `cpt-referenceaudit-fr-three-way-verdict`
+- [x] `p1` - **ID**: `cpt-referenceaudit-fr-three-way-verdict`
 
 The system **MUST** return one of three verdicts per reference: `none`, `exactly_one`, or `multiple`.
 
@@ -194,7 +194,7 @@ The system **MUST** return one of three verdicts per reference: `none`, `exactly
 
 #### Hallucination screening
 
-- [ ] `p1` - **ID**: `cpt-referenceaudit-fr-hallucination-screen`
+- [x] `p1` - **ID**: `cpt-referenceaudit-fr-hallucination-screen`
 
 The system **MUST** reliably return `none` for invented / fabricated entries.
 
@@ -204,7 +204,7 @@ The system **MUST** reliably return `none` for invented / fabricated entries.
 
 #### Best version and canonical output
 
-- [ ] `p2` - **ID**: `cpt-referenceaudit-fr-best-version-canonical`
+- [x] `p2` - **ID**: `cpt-referenceaudit-fr-best-version-canonical`
 
 The system **MUST** select a better version of a matched work (published over preprint, later
 editions) and emit the canonical best reference.
@@ -230,7 +230,7 @@ reproducible and the slice can run in air-gapped CI.
 
 #### Caching of database and LLM calls
 
-- [ ] `p2` - **ID**: `cpt-referenceaudit-nfr-cached-calls`
+- [x] `p2` - **ID**: `cpt-referenceaudit-nfr-cached-calls`
 
 The networked path **MUST** memoize database and LLM responses to bound cost and latency on repeated audits. Only successful results are cached; transient errors are never stored, so an outage retries rather than being recorded as a miss.
 
@@ -266,7 +266,7 @@ Contracts this library expects from external systems.
 
 #### Scholarly database query contract
 
-- [ ] `p2` - **ID**: `cpt-referenceaudit-contract-database-query`
+- [x] `p2` - **ID**: `cpt-referenceaudit-contract-database-query`
 
 **Direction**: required from client (database adapters)
 
@@ -296,13 +296,35 @@ Contracts this library expects from external systems.
 **Alternative Flows**:
 - **No `.tex` provided**: Nothing is reported as uncited; only `.bib`-derived issues are produced.
 
+#### Audit references against bibliographic databases
+
+- [x] `p1` - **ID**: `cpt-referenceaudit-usecase-networked-audit`
+
+**Actor**: `cpt-referenceaudit-actor-author`
+
+**Preconditions**:
+- A `.bib` file exists; the relevant bibliographic sources are reachable.
+
+**Main Flow**:
+1. The author (or AI agent) runs the full audit on their `.bib` (and optional `.tex`).
+2. For each entry the system queries the routed sources, scores and clusters candidates, and
+   adjudicates residual ambiguity with the LLM.
+3. The system returns a 3-way verdict per reference and, for an `exactly_one` match, the canonical
+   best version; successful results are cached.
+
+**Postconditions**:
+- The author has a per-reference verdict and the canonical best reference for each match.
+
+**Alternative Flows**:
+- **Source/LLM failure**: The affected entry is left `unresolved` (never `none`) and retried next run.
+
 ## 9. Acceptance Criteria
 
 - [x] Parse-only audit returns correct cited/uncited/missing-include counts for a known fixture.
 - [x] DOI, ISBN, and arXiv identifiers are normalized to canonical forms.
 - [x] Commented preprint twins are routed to an informational list, never the audited list.
-- [ ] A fabricated reference with no real match returns a `none` verdict; transient errors leave the entry `unresolved`, never `none`. *(implemented in code; pending governed tracing)*
-- [ ] Repeated audits of the same inputs reuse the SQLite cache instead of re-querying. *(implemented in code; pending governed tracing)*
+- [x] A fabricated reference with no real match returns a `none` verdict; transient errors leave the entry `unresolved`, never `none`.
+- [x] Repeated audits of the same inputs reuse the SQLite cache instead of re-querying.
 
 ## 10. Dependencies
 

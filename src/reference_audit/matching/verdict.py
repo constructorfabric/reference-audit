@@ -9,6 +9,8 @@ from __future__ import annotations
 from reference_audit.models import CandidateAssessment, MatchedArtifact, Verdict
 
 
+# @cpt-dod:cpt-referenceaudit-dod-identification-three-way-verdict:p1
+# @cpt-dod:cpt-referenceaudit-dod-identification-hallucination-screen:p1
 def build_verdict(
     assessments: list[CandidateAssessment],
     artifacts: list[MatchedArtifact],
