@@ -209,7 +209,10 @@ To query external bibliographic databases and pages and return candidate artifac
 
 Modular adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library, Google Books, the
 publisher DOI landing-page citation export, and a web page fetcher) producing `SourceRecord`s behind
-a common interface, with per-entry routing by id vs. metadata. **IMPLEMENTED.**
+a common interface, with per-entry routing by id vs. metadata. The web page fetcher additionally
+detects JavaScript single-page-app shells (a served page with no readable content) and re-fetches
+them through a headless browser (`render`) so the rendered page can be read; when no browser is
+available the page is marked unrenderable rather than read as empty. **IMPLEMENTED.**
 
 ##### Responsibility boundaries
 
@@ -233,8 +236,9 @@ To decide, from candidate records, whether a reference matches no artifact, exac
 ##### Responsibility scope
 
 Candidate pooling, feature scoring (`FeatureVector`), the SAME-OBJECT clustering rule (`sameobject`),
-the 3-way verdict (`verdict`), URL-only web verification (`webcheck`), and version ranking.
-**IMPLEMENTED.**
+the 3-way verdict (`verdict`), URL-only web verification (`webcheck` — including the rule that a
+JavaScript app shell that could not be rendered is left unresolved, never read as a wrong/`none`
+URL), and version ranking. **IMPLEMENTED.**
 
 ##### Responsibility boundaries
 

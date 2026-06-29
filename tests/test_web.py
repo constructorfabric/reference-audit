@@ -18,9 +18,26 @@ from reference_audit.pipeline import AuditPipeline
 from reference_audit.sources.base import SourceAdapter
 from reference_audit.sources.http import TransientHTTPError
 from reference_audit.models import SourceQueryResult
-from reference_audit.sources.web import WebAdapter, extract_web_metadata
+from reference_audit.sources.render import RenderError, RenderUnavailable
+from reference_audit.sources.web import WebAdapter, _looks_unrendered, extract_web_metadata
 
 CFG = AuditConfig(model="t")
+
+# A client-side-rendered single-page-app shell (Angular): a spinner + a <script type="module">
+# bundle, real content injected only after JS. Modeled on the real data.europa.eu dataset page.
+_SPA_SHELL = (
+    '<!DOCTYPE html><html lang="en"><head>'
+    "<title>European Data Portal</title>"
+    '<script type="module" crossorigin src="/data/app.js"></script>'
+    "</head><body><div id=\"app\"><div class=\"spinner\"> </div></div></body></html>"
+)
+# What the same URL looks like after a headless browser runs the JavaScript.
+_SPA_RENDERED = (
+    "<html><head><title>Special Eurobarometer SP523 : Corruption</title>"
+    '<meta property="og:title" content="Special Eurobarometer SP523 : Corruption">'
+    "</head><body><h1>Special Eurobarometer SP523 : Corruption</h1>"
+    "<p>Corruption remains a serious concern for EU citizens.</p></body></html>"
+)
 
 _URL = "https://google-research.github.io/self-organising-systems/particle-lenia/"
 
@@ -60,6 +77,16 @@ def _stub_fetch(status=200, final_url=_URL, html=_LENIA_HTML, exc=None):
             raise exc
         return status, final_url, html
     return fetch
+
+
+def _stub_render(html=_SPA_RENDERED, final_url=_URL, exc=None, calls=None):
+    async def render(_url):
+        if calls is not None:
+            calls.append(_url)
+        if exc is not None:
+            raise exc
+        return 200, final_url, html
+    return render
 
 
 class FakeLLM:
@@ -137,6 +164,65 @@ async def test_adapter_empty_url_is_empty_not_error():
     assert res.records == [] and res.error is None
 
 
+# ── SPA (client-side-rendered) detection + headless render ────────────────────
+
+
+def test_looks_unrendered_detects_spa_shell_but_not_content_page():
+    assert _looks_unrendered(_SPA_SHELL, extract_web_metadata(_SPA_SHELL, _URL)) is True
+    # A real content page (the Lenia page) has plenty of text → never treated as a shell.
+    assert _looks_unrendered(_LENIA_HTML, extract_web_metadata(_LENIA_HTML, _URL)) is False
+    # A short page with NO SPA markers is not a shell either (no render to attempt).
+    plain = "<html><body>hello world</body></html>"
+    assert _looks_unrendered(plain, extract_web_metadata(plain, _URL)) is False
+
+
+async def test_adapter_renders_spa_shell_then_extracts():
+    calls = []
+    res = await WebAdapter(
+        fetch=_stub_fetch(html=_SPA_SHELL), render=_stub_render(calls=calls)
+    ).fetch_page(_URL)
+    rec = res.records[0]
+    assert calls == [_URL]                                   # the shell triggered a render
+    assert rec.raw["render"] == "rendered"
+    assert rec.title == "Special Eurobarometer SP523 : Corruption"
+
+
+async def test_adapter_non_shell_does_not_render():
+    calls = []
+    res = await WebAdapter(fetch=_stub_fetch(), render=_stub_render(calls=calls)).fetch_page(_URL)
+    assert calls == []                                       # a content page is never rendered
+    assert res.records[0].raw["render"] == "not_needed"
+
+
+async def test_adapter_spa_shell_no_renderer_is_unavailable():
+    res = await WebAdapter(fetch=_stub_fetch(html=_SPA_SHELL), render=None).fetch_page(_URL)
+    assert res.error is None
+    assert res.records[0].raw["render"] == "unavailable"     # never a fabricated page, just a gap
+
+
+async def test_adapter_spa_shell_render_unavailable_marker():
+    res = await WebAdapter(
+        fetch=_stub_fetch(html=_SPA_SHELL), render=_stub_render(exc=RenderUnavailable("no browser"))
+    ).fetch_page(_URL)
+    assert res.error is None
+    assert res.records[0].raw["render"] == "unavailable"
+
+
+async def test_adapter_spa_shell_render_error_is_reported_not_absent():
+    res = await WebAdapter(
+        fetch=_stub_fetch(html=_SPA_SHELL), render=_stub_render(exc=RenderError("timeout"))
+    ).fetch_page(_URL)
+    assert res.records == []                                 # a render failure is an outage…
+    assert res.error is not None and "rendering failed" in res.error  # …reported, retried, uncached
+
+
+async def test_adapter_spa_shell_still_empty_after_render():
+    res = await WebAdapter(
+        fetch=_stub_fetch(html=_SPA_SHELL), render=_stub_render(html=_SPA_SHELL)
+    ).fetch_page(_URL)
+    assert res.records[0].raw["render"] == "rendered_empty"
+
+
 # ── the funnel ───────────────────────────────────────────────────────────────
 
 
@@ -186,6 +272,38 @@ async def test_funnel_no_llm_unresolved_on_metadata_miss():
     verdict, issues = await _check(_entry(), res, None)
     assert verdict is None
     assert any("LLM check is disabled" in i for i in issues)
+
+
+async def test_funnel_spa_unavailable_is_unresolved_never_none():
+    # Regression: an un-renderable SPA shell must NEVER become a `none` (false hallucination).
+    res = await WebAdapter(fetch=_stub_fetch(html=_SPA_SHELL), render=None).fetch_page(_URL)
+    # A FakeLLM that would shout "different page" if ever reached — it must NOT be reached.
+    llm = FakeLLM(lambda u: WebMatchResult(corresponds=False, confidence="high", reason="landing page"))
+    verdict, issues = await _check(_entry(), res, llm)
+    assert verdict is None
+    assert llm.calls == 0
+    assert any("no headless browser is available" in i for i in issues)
+
+
+async def test_funnel_spa_rendered_empty_is_unresolved():
+    res = await WebAdapter(
+        fetch=_stub_fetch(html=_SPA_SHELL), render=_stub_render(html=_SPA_SHELL)
+    ).fetch_page(_URL)
+    verdict, issues = await _check(_entry(), res, FakeLLM(lambda u: "raise"))
+    assert verdict is None
+    assert any("stayed empty even after headless rendering" in i for i in issues)
+
+
+async def test_funnel_spa_rendered_confirms_via_metadata():
+    # The data.europa.eu case: a shell that, once rendered, matches the cited title → exactly_one.
+    res = await WebAdapter(
+        fetch=_stub_fetch(html=_SPA_SHELL), render=_stub_render()
+    ).fetch_page(_URL)
+    entry = _entry(title="Special Eurobarometer 523: Corruption", authors=())
+    verdict, issues = await _check(entry, res, None)         # confirmed without any LLM call
+    assert verdict.kind == "exactly_one"
+    assert "HTML metadata matches" in verdict.rationale
+    assert issues == []
 
 
 async def test_funnel_dead_link_unresolved_with_flag():
@@ -318,3 +436,43 @@ async def test_pipeline_web_gone_statuses(tmp_path, status):
     report = await pipe.run(None, _write_bib(tmp_path))
     await pipe.aclose()
     assert report.entries[0].verdict is None
+
+
+def test_web_fetch_predates_render_detects_old_cache():
+    from reference_audit.models import SourceRecord
+    from reference_audit.pipeline import _web_fetch_predates_render
+
+    def result(*recs):
+        return SourceQueryResult(source="web", query_kind="web", records=list(recs))
+
+    pre = SourceRecord(source="web", source_native_id=_URL, raw={"status": 200, "dead": False})
+    post = SourceRecord(source="web", source_native_id=_URL, raw={"status": 200, "render": "rendered"})
+    dead = SourceRecord(source="web", source_native_id=_URL, raw={"status": 404, "dead": True})
+    assert _web_fetch_predates_render(result(pre)) is True    # no render marker → re-fetch
+    assert _web_fetch_predates_render(result(post)) is False  # already rendered-aware
+    assert _web_fetch_predates_render(result(dead)) is False  # a dead link is still valid
+
+
+async def test_pipeline_refetches_stale_web_cache_to_render(tmp_path):
+    # A web fetch cached BEFORE rendering existed (no `render` marker) must be re-fetched so the SPA
+    # render path runs — the source-query cache is not versioned by pipeline_version.
+    cache = AuditCache(tmp_path / "c.db", pipeline_version=CFG.pipeline_version, model="t")
+    from reference_audit.parsing.bib import parse_bib
+
+    entry = parse_bib(_write_bib(tmp_path))[0][0]
+    stale = SourceQueryResult(
+        source="web",
+        query_kind="web",
+        records=[extract_web_metadata(_SPA_SHELL, _URL)],  # an un-rendered shell, no render marker
+    )
+    cache.put_source_query(entry.content_hash, stale)
+
+    calls = []
+    # The stub renders the shell into the real Lenia content page, which matches the cited entry.
+    web = WebAdapter(fetch=_stub_fetch(html=_SPA_SHELL), render=_stub_render(html=_LENIA_HTML, calls=calls))
+    pipe = AuditPipeline(CFG, cache=cache, adapters=[web], llm=None)
+    report = await pipe.run(None, _write_bib(tmp_path))
+    await pipe.aclose()
+    cache.close()
+    assert calls == [_URL]                                    # stale shell forced a re-fetch+render
+    assert report.entries[0].verdict.kind == "exactly_one"

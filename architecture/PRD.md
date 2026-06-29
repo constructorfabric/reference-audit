@@ -335,6 +335,7 @@ Contracts this library expects from external systems.
 | Scholarly databases | Identification (Crossref, OpenAlex, S2, arXiv, Open Library, Google Books) | p2 |
 | openai | LLM adjudication of ambiguous matches | p2 |
 | httpx / curl-cffi / beautifulsoup4 | Source HTTP queries and web/publisher page parsing | p2 |
+| Headless Chromium/Chrome (system binary) | Rendering JavaScript single-page-app pages for URL-only `@misc` verification; optional — absent it, such pages are left unresolved, never misjudged | p3 |
 
 ## 11. Assumptions
 

@@ -192,6 +192,18 @@ def _is_url_only_web(entry: BibEntry) -> bool:
     )
 
 
+def _web_fetch_predates_render(cached: SourceQueryResult) -> bool:
+    """True for a web fetch cached *before* SPA rendering existed. The source-query cache is not
+    versioned by pipeline_version, so an old cached shell would otherwise be served and skip the new
+    render path. Every live (non-dead) web record now carries ``raw['render']``; its absence marks a
+    pre-feature fetch that must be re-fetched once so an SPA shell actually gets rendered."""
+    for rec in cached.records:
+        raw = rec.raw or {}
+        if not raw.get("dead") and "render" not in raw:
+            return True
+    return False
+
+
 class AuditPipeline:
     """Async audit pipeline.
 
@@ -538,7 +550,7 @@ class AuditPipeline:
         """Fetch the entry's cited URL (cached per entry, like any source query)."""
         if self.cache is not None:
             cached = self.cache.get_source_query(entry.content_hash, web.name, "web")
-            if cached is not None:
+            if cached is not None and not _web_fetch_predates_render(cached):
                 return cached
         result = await web.fetch_page(entry.ids.url)
         if self.cache is not None:

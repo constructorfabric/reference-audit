@@ -61,9 +61,15 @@ class AuditConfig(BaseSettings):
     # --- Web artifacts (URL-only @misc): HTML-metadata check before the LLM fallback ---
     web_title_accept: float = 0.85        # page meta-title vs cited-title floor for a deterministic confirm
 
+    # --- Web artifacts: headless rendering of client-side-rendered (single-page-app) pages ---
+    web_render_enabled: bool = True       # render SPA shells in a headless browser before judging
+    web_render_browser_path: str | None = Field(default=None, alias="WEB_RENDER_BROWSER_PATH")
+    web_render_timeout: float = 30.0      # seconds before a render is treated as a (retryable) error
+    web_render_virtual_time_ms: int = 15000  # JS virtual-time budget given to the headless browser
+
     # --- Cache / pipeline ---
     cache_path: Path | None = None        # default: <bib_dir>/.reference_audit/cache.db
-    pipeline_version: str = "0.11"        # bump when thresholds/prompts/rules change
+    pipeline_version: str = "0.12"        # bump when thresholds/prompts/rules change
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

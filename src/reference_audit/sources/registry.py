@@ -18,11 +18,25 @@ from reference_audit.sources.google_books import GoogleBooksAdapter
 from reference_audit.sources.openalex import OpenAlexAdapter
 from reference_audit.sources.openlibrary import OpenLibraryAdapter
 from reference_audit.sources.publisher import PublisherAdapter
+from reference_audit.sources.render import ChromiumRenderer, find_browser
 from reference_audit.sources.semantic_scholar import SemanticScholarAdapter
 from reference_audit.sources.web import WebAdapter
 
 # Reputable venues that legitimately mint no DOI — a no-DOI match here is not a defect (README 1.1).
 VENUE_ALLOWLIST_NO_DOI = ("tmlr", "transactions on machine learning research")
+
+
+def build_web_renderer(config: AuditConfig) -> ChromiumRenderer | None:
+    """A headless renderer for SPA shells, or None when rendering is disabled. The renderer self-
+    reports 'unavailable' at call time when no browser is found, so the funnel leaves such pages
+    unresolved rather than crying hallucination (see `sources.render`)."""
+    if not config.web_render_enabled:
+        return None
+    return ChromiumRenderer(
+        find_browser(config.web_render_browser_path),
+        timeout=config.web_render_timeout,
+        virtual_time_ms=config.web_render_virtual_time_ms,
+    )
 
 
 def build_default_adapters(config: AuditConfig) -> list[SourceAdapter]:
@@ -35,7 +49,7 @@ def build_default_adapters(config: AuditConfig) -> list[SourceAdapter]:
         OpenLibraryAdapter(email=config.openlibrary_email),
         GoogleBooksAdapter(api_key=config.google_books_api_key),
         PublisherAdapter(),
-        WebAdapter(),
+        WebAdapter(render=build_web_renderer(config)),
     ]
 
 

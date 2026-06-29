@@ -6,7 +6,9 @@ cheap-first funnel that mirrors the rest of the pipeline:
   1. **Fetch outcome.** A transport error / bot-wall leaves the entry UNRESOLVED (reported, retried —
      never a false 'no match'). A dead link (404/410) is a real finding, also reported, and likewise
      leaves the entry unresolved (a rotted or wrong URL is not, by itself, proof the work never
-     existed — reliability: report the gap, never guess a hallucination).
+     existed — reliability: report the gap, never guess a hallucination). A client-side-rendered
+     (single-page-app) shell we could not render (no browser, or empty even after rendering) is the
+     same: reported and left unresolved, NEVER read as a different/`none` resource.
   2. **HTML metadata (deterministic).** If the page's self-declared title matches the cited title
      (and authors corroborate, when both sides list them), the page IS the cited resource →
      ``exactly_one``, with no LLM call (the 100%-match short-circuit).
@@ -114,6 +116,25 @@ async def check_web_reference(
         issues.append(
             f"cited URL is a dead link (HTTP {raw.get('status')} — page no longer exists); "
             "the reference could not be verified"
+        )
+        return None, issues
+
+    # A client-side-rendered (single-page-app) shell whose real content we could not read: NEVER a
+    # `none`. An empty app shell is not positive evidence of a different resource — feeding it to the
+    # LLM (which sees only a generic landing/spinner page) yields a false "wrong/fabricated URL"
+    # verdict. Report the gap and leave it unresolved, per the reliability rule. See `sources.web`.
+    render = raw.get("render")
+    if render == "unavailable":
+        issues.append(
+            "cited URL returns a JavaScript-rendered page whose content loads only in a browser, "
+            "and no headless browser is available to render it; left unresolved (install/configure "
+            "a headless browser to verify these — see web_render_browser_path)"
+        )
+        return None, issues
+    if render == "rendered_empty":
+        issues.append(
+            "cited URL returns a JavaScript-rendered page that stayed empty even after headless "
+            "rendering; the reference could not be verified (left unresolved, will retry next run)"
         )
         return None, issues
 

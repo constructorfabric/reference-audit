@@ -99,6 +99,9 @@ plus, for an `exactly_one` match, the canonical best version.
 5. [x] - `p1` - Cluster the accepted candidates and count them into a 3-way verdict - `inst-verdict`
 6. [x] - `p1` - **IF** still unresolved **AND** an LLM is configured, run the per-candidate funnel - `inst-llm-adjudicate`
 7. [x] - `p1` - Verify a URL-only `@misc` against its own cited page (`_resolve_web`) - `inst-web`
+   (the fetcher detects a JavaScript single-page-app shell and re-fetches it via a headless browser
+   before judging; a shell that cannot be rendered — no browser, or empty after rendering — is left
+   unresolved, never read as a wrong/`none` URL. Implemented within this step; not separately traced.)
 8. [x] - `p1` - Confirm a book's cited edition against Open Library (`_resolve_book`) - `inst-book`
 9. [x] - `p1` - Backfill identifiers, note a better version, and enrich the canonical record - `inst-best-output`
 10. [x] - `p1` - **IF** the verdict resolved, cache it (success only) - `inst-cache-store`

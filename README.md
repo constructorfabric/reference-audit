@@ -45,6 +45,15 @@ own HTML metadata (Open Graph / `citation_*` / `<title>` + authors) against the 
 back to the LLM when that metadata is missing or inconclusive. A dead link or a page that cannot be
 confirmed is reported, never silently passed.
 
+Many such pages are **JavaScript single-page apps** (e.g. `data.europa.eu` dataset pages): a plain
+HTTP fetch returns only an empty app shell, with the real title/text injected after the page's
+JavaScript runs. The tool detects these shells and re-fetches them through a headless browser
+(Chromium via `--dump-dom`) so the rendered page is judged like any other. This is the reliability
+fix for a class of false hallucinations: an unreadable shell is *never* read as "a different page".
+If no headless browser is available, or rendering fails, the entry is reported and left unresolved
+(retried next run) rather than flagged. Rendering is on by default (`web_render_enabled`); point
+`WEB_RENDER_BROWSER_PATH` at a Chrome/Chromium binary if one is not auto-detected on `PATH`.
+
 A reference that cites an **OpenAlex Work id** (an `openalex.org/W…` URL, common for books and other
 titles the article-centric search and Crossref/Open Library miss) is resolved directly to that Work.
 When the Work matches the entry's title and authors it is pinned as the match — the author-supplied
@@ -196,7 +205,8 @@ The remaining entries (at least one match found) are then split into `ISSUES`, `
 - **`✗ no match`** — nothing real corresponds; treat as a likely hallucination.
 - **`? multiple matches`** — ambiguous; the entry matches more than one distinct work.
 - **`unresolved`** — the tool could not conclude (e.g. a transient API error, or a cited web page
-  that is a dead link or could not be confirmed). Never reported as a hallucination.
+  that is a dead link, a JavaScript app shell no browser could render, or otherwise could not be
+  confirmed). Never reported as a hallucination.
 - **`⚠` lines** — per-entry issues: a normalized/backfilled identifier, a missing ISBN, a dangling
   citation, etc.
 - The header also lists **cited-but-missing** citations (a `\cite` with no `.bib` entry) and
@@ -299,7 +309,8 @@ uv run cfs update            # update studio (kits are left alone unless you pas
 src/reference_audit/
   parsing/     # .bib / .tex / identifier parsing
   sources/     # modular adapters: Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library,
-               #   Google Books, publisher (DOI landing-page citation export), web (cited-page fetch); + routing
+               #   Google Books, publisher (DOI landing-page citation export), web (cited-page fetch),
+               #   render (headless-browser rendering of JS single-page-app pages); + routing
   matching/    # candidate pooling, feature scoring, SAME-OBJECT clustering, verdicts, web check
   llm/         # OpenAI structured-output adjudication (pydantic schemas)
   cache/       # SQLite memoization of DB/LLM calls (errors never cached)
