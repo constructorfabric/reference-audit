@@ -31,7 +31,7 @@ def build_default_adapters(config: AuditConfig) -> list[SourceAdapter]:
         OpenAlexAdapter(mailto=mailto),
         SemanticScholarAdapter(api_key=config.s2_api_key),
         ArxivAdapter(),
-        OpenLibraryAdapter(),
+        OpenLibraryAdapter(email=config.openlibrary_email),
         PublisherAdapter(),
         WebAdapter(),
     ]

@@ -17,7 +17,7 @@ from reference_audit.models import (
     SourceRecord,
 )
 from reference_audit.sources.base import SourceAdapter
-from reference_audit.sources.http import TransientHTTPError, get_json
+from reference_audit.sources.http import TransientHTTPError, get_json, new_client
 from reference_audit.sources.normalize import (
     openlibrary_doc_to_record,
     openlibrary_edition_to_record,
@@ -54,6 +54,16 @@ class OpenLibraryAdapter(SourceAdapter):
     name = "openlibrary"
     handles = {EntryType.BOOK, EntryType.INCOLLECTION}
     rate_per_sec = 5.0
+
+    def __init__(self, *, email: str | None = None, client=None, limiter=None):
+        # Open Library asks API clients to identify themselves with a contact email *in the
+        # User-Agent header* (not a query param like Crossref's `mailto`); see
+        # https://openlibrary.org/developers/api#rate-limits. When configured and no client is
+        # injected (tests pass their own), build the client with an email-bearing User-Agent.
+        if client is None and email:
+            client = new_client(user_agent=f"reference-audit/0.1 (mailto:{email})")
+        super().__init__(client=client, limiter=limiter)
+        self.email = email
 
     async def lookup_by_id(self, ids: Identifiers) -> SourceQueryResult:
         if not ids.isbn13:

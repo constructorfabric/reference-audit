@@ -39,6 +39,7 @@ class AuditConfig(BaseSettings):
     unpaywall_email: str | None = Field(
         default=None, alias="PAPER_SEARCH_MCP_UNPAYWALL_EMAIL"
     )
+    openlibrary_email: str | None = Field(default=None, alias="OPENLIBRARY_EMAIL")
 
     # --- Matching thresholds (calibrated against the pilot; see plan risk #3) ---
     title_accept: float = 0.92            # auto_accept title floor (entry has an identifier)
