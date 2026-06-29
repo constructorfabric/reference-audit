@@ -334,6 +334,12 @@ class AuditPipeline:
         # similar-titled foreign-DOI record and backfill the wrong identifiers.
         verdict = self._apply_openalex_identity(verdict, entry, records)
 
+        # Google Books volume id: a cited books.google.…/books?id=… is likewise author-supplied,
+        # authoritative identity for a trade/book title. Pin it when the by-id lookup confirms it, so
+        # a same-titled journal-article (e.g. a book *review* reusing the book's title+authors, which
+        # carries a DOI the book lacks) can't be matched and backfill its wrong DOI onto the book.
+        verdict = self._apply_google_books_identity(verdict, entry, records)
+
         # Books: Open Library is the authority of record for identity. It is edition-aware, so it can
         # confirm a real book the article-centric matcher rejected (a 1976 original whose only
         # DOI-bearing candidate is a 2018 reprint — a 42-year/ISBN gap that score-rejects). The
@@ -732,6 +738,42 @@ class AuditPipeline:
             artifacts=[artifact],
             confidence="high",
             rationale="confirmed via OpenAlex (cited Work id resolved)",
+        )
+
+    def _apply_google_books_identity(self, verdict, entry: BibEntry, records: list[SourceRecord]):
+        """Pin the matched artifact to the cited Google Books volume when its by-id lookup confirms it.
+
+        Mirrors `_apply_openalex_identity`: a cited volume id is an author-supplied key, so when the
+        lookup returns that exact volume and it passes the title+author gate, that record IS the
+        identity — overriding a same-titled journal-article a title pooler may otherwise match (a book
+        review carries the book's title+authors AND a DOI, which would be wrongly backfilled onto a
+        @book). A volume whose title/author mismatches scores below auto_accept and is left alone.
+        """
+        if not entry.ids.google_books:
+            return verdict
+        rec = next(
+            (
+                r
+                for r in records
+                if r.ids.google_books and r.ids.google_books == entry.ids.google_books
+            ),
+            None,
+        )
+        if rec is None:
+            return verdict  # the lookup errored or returned nothing — never read as a confirmation
+        features = compute_features(
+            entry, rec, tail_threshold=self.config.prefix_trap_tail_jaccard
+        )
+        if bucket(features, self.config, entry_has_id=True) != "auto_accept":
+            return verdict
+        artifact = MatchedArtifact(
+            records=[rec], versions=[rec], best_record=rec, merged_ids=rec.ids
+        )
+        return Verdict(
+            kind="exactly_one",
+            artifacts=[artifact],
+            confidence="high",
+            rationale="confirmed via Google Books (cited volume id resolved)",
         )
 
     def _apply_book_identity(self, verdict, book: _BookResolution | None):

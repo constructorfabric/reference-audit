@@ -98,8 +98,8 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
 - **Depends On**: `cpt-referenceaudit-feature-parsing`
 
 - **Scope**:
-  - Modular source adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library, publisher
-    citation export, web page fetch) and SQLite caching
+  - Modular source adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library, Google Books,
+    publisher citation export, web page fetch) and SQLite caching
   - Feature scoring and the SAME-OBJECT clustering rule (formal + LLM tie-break)
   - 3-way verdict, hallucination screening, URL-only `@misc` web verification, Open Library book /
     edition resolution, DOI/ISBN backfill, best-version + canonical field output

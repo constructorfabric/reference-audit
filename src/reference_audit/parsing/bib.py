@@ -23,6 +23,7 @@ from reference_audit.models import BibEntry, Identifiers, entry_type_from_bib
 from reference_audit.parsing.identifiers import (
     extract_arxiv_id,
     normalize_doi,
+    normalize_google_books_id,
     normalize_isbn13,
     normalize_openalex_id,
     normalize_url,
@@ -77,10 +78,15 @@ def _identifiers_from_fields(f: dict[str, str]) -> Identifiers:
     # An openalex.org `url` is a resolvable Work id, not a generic landing page: extract it as a
     # first-class identifier and drop it from `url` so it isn't mistaken for a web @misc page.
     openalex = normalize_openalex_id(f.get("url"))
+    # A books.google `url` carries a resolvable volume id — extract it as a first-class identifier
+    # (the authoritative key for that exact volume). The URL itself is kept (it is a real landing
+    # page, unlike an openalex.org Work URL) so a dead-link check can still see it.
+    google_books = normalize_google_books_id(f.get("url"))
     url = None if openalex else normalize_url(f.get("url"))
     pmid = (f.get("pmid") or "").strip() or None
     return Identifiers(
-        doi=doi, arxiv_id=arxiv, isbn13=isbn13, url=url, pmid=pmid, openalex=openalex
+        doi=doi, arxiv_id=arxiv, isbn13=isbn13, url=url, pmid=pmid,
+        openalex=openalex, google_books=google_books,
     )
 
 

@@ -58,9 +58,10 @@ class Identifiers(BaseModel):
     pmid: str | None = None
     bibcode: str | None = None      # NASA ADS
     openalex: str | None = None     # OpenAlex Work id, bare + upper, e.g. "W3034344071"
+    google_books: str | None = None  # Google Books volume id, e.g. "yIV_NMDDIvYC"
     url: str | None = None
 
-    def primary_kind(self) -> Literal["doi", "isbn", "arxiv", "openalex", "url"] | None:
+    def primary_kind(self) -> Literal["doi", "isbn", "arxiv", "openalex", "google_books", "url"] | None:
         if self.doi:
             return "doi"
         if self.isbn13:
@@ -69,13 +70,18 @@ class Identifiers(BaseModel):
             return "arxiv"
         if self.openalex:
             return "openalex"
+        if self.google_books:
+            return "google_books"
         if self.url:
             return "url"
         return None
 
     def any_present(self) -> bool:
         return any(
-            (self.doi, self.arxiv_id, self.isbn13, self.pmid, self.bibcode, self.openalex, self.url)
+            (
+                self.doi, self.arxiv_id, self.isbn13, self.pmid, self.bibcode,
+                self.openalex, self.google_books, self.url,
+            )
         )
 
 

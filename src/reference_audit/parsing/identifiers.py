@@ -144,3 +144,22 @@ def normalize_openalex_id(text: str | None) -> str | None:
         return None
     m = _OPENALEX_ID_RE.search(text)
     return m.group(0).upper() if m else None
+
+
+# --- Google Books volume id ---
+# A Google Books volume id is the opaque `id=` token on a books.google.<tld> (or
+# play.google.com/books) URL — e.g. https://books.google.com.sg/books?id=yIV_NMDDIvYC. It is the
+# authoritative key for that exact volume, so the adapter can resolve it with no fuzzy matching.
+# Only trusted when a Google Books host is present — a bare token is too ambiguous to scrape.
+_GBOOKS_ID_RE = re.compile(r"[?&]id=([A-Za-z0-9_-]+)")
+
+
+def normalize_google_books_id(text: str | None) -> str | None:
+    """Return a Google Books volume id from a books.google / play.google books URL, or None."""
+    if not text:
+        return None
+    low = text.lower()
+    if "books.google." not in low and "play.google.com/books" not in low:
+        return None
+    m = _GBOOKS_ID_RE.search(text)
+    return m.group(1) if m else None

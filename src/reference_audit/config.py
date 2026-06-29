@@ -40,6 +40,7 @@ class AuditConfig(BaseSettings):
         default=None, alias="PAPER_SEARCH_MCP_UNPAYWALL_EMAIL"
     )
     openlibrary_email: str | None = Field(default=None, alias="OPENLIBRARY_EMAIL")
+    google_books_api_key: str | None = Field(default=None, alias="GOOGLE_BOOKS_API_KEY")
 
     # --- Matching thresholds (calibrated against the pilot; see plan risk #3) ---
     title_accept: float = 0.92            # auto_accept title floor (entry has an identifier)
@@ -62,7 +63,7 @@ class AuditConfig(BaseSettings):
 
     # --- Cache / pipeline ---
     cache_path: Path | None = None        # default: <bib_dir>/.reference_audit/cache.db
-    pipeline_version: str = "0.10"        # bump when thresholds/prompts/rules change
+    pipeline_version: str = "0.11"        # bump when thresholds/prompts/rules change
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

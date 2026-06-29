@@ -14,6 +14,7 @@ from reference_audit.models import BibEntry, EntryType
 from reference_audit.sources.arxiv import ArxivAdapter
 from reference_audit.sources.base import SourceAdapter
 from reference_audit.sources.crossref import CrossrefAdapter
+from reference_audit.sources.google_books import GoogleBooksAdapter
 from reference_audit.sources.openalex import OpenAlexAdapter
 from reference_audit.sources.openlibrary import OpenLibraryAdapter
 from reference_audit.sources.publisher import PublisherAdapter
@@ -32,6 +33,7 @@ def build_default_adapters(config: AuditConfig) -> list[SourceAdapter]:
         SemanticScholarAdapter(api_key=config.s2_api_key),
         ArxivAdapter(),
         OpenLibraryAdapter(email=config.openlibrary_email),
+        GoogleBooksAdapter(api_key=config.google_books_api_key),
         PublisherAdapter(),
         WebAdapter(),
     ]
@@ -56,7 +58,12 @@ def route_entry(entry: BibEntry, adapters: list[SourceAdapter]) -> Route:
     if entry.ids.arxiv_id:
         id_adapters += present("arxiv", "openalex", "semantic_scholar")
     if entry.ids.isbn13:
-        id_adapters += present("openlibrary")
+        id_adapters += present("openlibrary", "google_books")
+    # A cited Google Books volume id (books.google.…/books?id=…) resolves to exactly that volume —
+    # the authoritative key for a trade/book title both the article-centric search and Open
+    # Library's strict title match miss.
+    if entry.ids.google_books:
+        id_adapters += present("google_books")
     # A cited OpenAlex Work id resolves to exactly that Work — the authoritative key for entries
     # (notably books/trade titles) the article-centric metadata search and Crossref/Open Library
     # miss. Routed for every entry type, since OpenAlex indexes books too.
@@ -67,7 +74,7 @@ def route_entry(entry: BibEntry, adapters: list[SourceAdapter]) -> Route:
     # must never set the `errored` flag and mask a hallucinated DOI as 'unresolved' vs 'no match'.
 
     if entry.entry_type in (EntryType.BOOK, EntryType.INCOLLECTION):
-        metadata_adapters = present("openlibrary", "crossref")
+        metadata_adapters = present("openlibrary", "google_books", "crossref")
     elif entry.entry_type == EntryType.MISC:
         metadata_adapters = present("arxiv", "openalex", "crossref", "semantic_scholar")
     else:  # ARTICLE / INPROCEEDINGS / UNKNOWN

@@ -24,10 +24,12 @@ For each entry the tool runs a funnel that prefers cheap, deterministic evidence
 to an LLM when needed:
 
 1. **Parse** the `.bib` (and resolve `\cite`/`\nocite` in the `.tex`), normalizing DOIs, ISBNs,
-   arXiv ids and OpenAlex Work ids (an `openalex.org/W…` URL becomes a first-class identifier).
+   arXiv ids, OpenAlex Work ids (an `openalex.org/W…` URL becomes a first-class identifier) and
+   Google Books volume ids (a `books.google.…/books?id=…` URL).
 2. **Query** multiple scholarly databases — Crossref, OpenAlex, Semantic Scholar, arXiv, Open
-   Library — both by identifier and by title/author. A cited OpenAlex Work id is resolved directly
-   to that Work (the authoritative key for entries — notably trade books — the other sources miss).
+   Library, Google Books — both by identifier and by title/author. A cited OpenAlex Work id or
+   Google Books volume id is resolved directly to that work (the authoritative key for entries —
+   notably trade books — the other sources miss).
 3. **Pool** the results, merging records that are the same work (shared identifier, or a
    preprint↔published version link).
 4. **Score** each candidate with interpretable features (title/author/year/venue similarity,
@@ -57,6 +59,15 @@ authority was actually consulted — if Open Library is unreachable, an article-
 **not** trusted: the entry is left unresolved (reported, retried next run) rather than flagged as a
 likely hallucination we never really checked.
 
+**Google Books** supplements this where Open Library falls short. Open Library's title search is
+strict — a title carrying its subtitle (*"Why Nations Fail: The Origins of Power, Prosperity, and
+Poverty"*) or a single off-by-one ISBN can return nothing, so a real book is reported "not found
+there". Google Books is more forgiving (`intitle:`/`inauthor:`/`isbn:`), and when the `.bib` carries
+a Google Books **volume id** in its URL, that volume is resolved directly and pinned as authoritative
+identity — exactly like a cited OpenAlex Work id. This matters because a same-titled journal-article
+(e.g. a book *review* that reuses the book's title and authors and carries a DOI the book lacks) would
+otherwise be matched and have its DOI wrongly backfilled onto the `@book`.
+
 Results are cached in a local SQLite DB, so re-running on the same `.bib` makes **no** repeat
 network or LLM calls. A transient outage never counts as "no match".
 
@@ -85,11 +96,13 @@ NASA_ADS_API_KEY=...
 CORE_API_KEY=...
 PAPER_SEARCH_MCP_UNPAYWALL_EMAIL=you@example.org
 OPENLIBRARY_EMAIL=you@example.org   # sent in the User-Agent on Open Library requests (polite identification)
+GOOGLE_BOOKS_API_KEY=...            # Google Books per-project quota (the keyless endpoint shares a global daily quota that is routinely exhausted)
 ```
 
 Only `OPENAI_API_KEY` is needed to run the full pipeline; the data sources used by default
-(Crossref, OpenAlex, arXiv, Open Library) require no key. You can also run with no LLM at all
-(`--no-llm`, see below).
+(Crossref, OpenAlex, arXiv, Open Library) require no key. Google Books works without a key but on a
+shared global daily quota that is frequently exhausted — set `GOOGLE_BOOKS_API_KEY` for reliable
+book coverage at scale. You can also run with no LLM at all (`--no-llm`, see below).
 
 ## Usage
 
@@ -286,7 +299,7 @@ uv run cfs update            # update studio (kits are left alone unless you pas
 src/reference_audit/
   parsing/     # .bib / .tex / identifier parsing
   sources/     # modular adapters: Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library,
-               #   publisher (DOI landing-page citation export), web (cited-page fetch); + routing
+               #   Google Books, publisher (DOI landing-page citation export), web (cited-page fetch); + routing
   matching/    # candidate pooling, feature scoring, SAME-OBJECT clustering, verdicts, web check
   llm/         # OpenAI structured-output adjudication (pydantic schemas)
   cache/       # SQLite memoization of DB/LLM calls (errors never cached)

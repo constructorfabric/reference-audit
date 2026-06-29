@@ -126,7 +126,7 @@ network access is confined to the `sources` and `llm` packages.
 | Entity | Description | Schema |
 |--------|-------------|--------|
 | BibEntry | A parsed `.bib` entry with normalized `Identifiers`. | [models.py](../src/reference_audit/models.py) |
-| Identifiers | Normalized DOI / ISBN13 / arXiv / OpenAlex Work id / URL / PMID. | [models.py](../src/reference_audit/models.py) |
+| Identifiers | Normalized DOI / ISBN13 / arXiv / OpenAlex Work id / Google Books volume id / URL / PMID. | [models.py](../src/reference_audit/models.py) |
 | EntryAudit | A `BibEntry` plus its verdict and issue list. | [models.py](../src/reference_audit/models.py) |
 | AuditReport | The aggregate report (entries + bookkeeping + summary). | [models.py](../src/reference_audit/models.py) |
 | SourceRecord | A candidate artifact returned by a database/web adapter. | [models.py](../src/reference_audit/models.py) |
@@ -163,8 +163,8 @@ identifiers) so every downstream stage works against models instead of LaTeX/Bib
 ##### Responsibility scope
 
 Parse `.bib` into `BibEntry`s (`parsing/bib.py`), extract cited keys and resolve includes from
-`.tex` (`parsing/tex.py`), and normalize DOI/ISBN/arXiv/OpenAlex-Work-id identifiers
-(`parsing/identifiers.py`).
+`.tex` (`parsing/tex.py`), and normalize DOI/ISBN/arXiv/OpenAlex-Work-id/Google-Books-volume-id
+identifiers (`parsing/identifiers.py`).
 Detect commented preprint twins. **IMPLEMENTED (M1).**
 
 ##### Responsibility boundaries
@@ -207,9 +207,9 @@ To query external bibliographic databases and pages and return candidate artifac
 
 ##### Responsibility scope
 
-Modular adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library, the publisher DOI
-landing-page citation export, and a web page fetcher) producing `SourceRecord`s behind a common
-interface, with per-entry routing by id vs. metadata. **IMPLEMENTED.**
+Modular adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library, Google Books, the
+publisher DOI landing-page citation export, and a web page fetcher) producing `SourceRecord`s behind
+a common interface, with per-entry routing by id vs. metadata. **IMPLEMENTED.**
 
 ##### Responsibility boundaries
 
@@ -358,7 +358,7 @@ External libraries and services this module interacts with.
 | beautifulsoup4 | HTML parsing | Web/publisher page metadata extraction |
 | openai | structured-output chat | LLM adjudication |
 | rapidfuzz / anyascii | fuzzy string / transliteration | Title/author similarity features |
-| Crossref / OpenAlex / S2 / arXiv / Open Library | HTTPS JSON APIs | Candidate identification |
+| Crossref / OpenAlex / S2 / arXiv / Open Library / Google Books | HTTPS JSON APIs | Candidate identification |
 
 **Dependency Rules** (per project conventions):
 - Only the `sources` and `llm` components talk to external network services.

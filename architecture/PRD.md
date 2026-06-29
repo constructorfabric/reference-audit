@@ -116,7 +116,7 @@ editions against Open Library, backfills missing DOIs/ISBNs, and reports the can
 
 **ID**: `cpt-referenceaudit-actor-database`
 
-**Role**: An external scholarly source (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library, the DOI landing-page citation export, and the cited web page itself) queried to identify and compare artifacts. Not contacted on the `--no-network` parse-only path.
+**Role**: An external scholarly source (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library, Google Books, the DOI landing-page citation export, and the cited web page itself) queried to identify and compare artifacts. Not contacted on the `--no-network` parse-only path.
 
 ## 3. Operational Concept & Environment
 
@@ -133,7 +133,7 @@ editions against Open Library, backfills missing DOIs/ISBNs, and reports the can
 ### 4.1 In Scope
 
 - Parsing `.bib` entries into structured records and extracting `.tex` citations.
-- Normalizing DOI / ISBN / arXiv / OpenAlex Work id identifiers and detecting commented preprint twins.
+- Normalizing DOI / ISBN / arXiv / OpenAlex Work id / Google Books volume id identifiers and detecting commented preprint twins.
 - Reporting cited / uncited keys, missing `\input`/`\include` files, and citation-vs-bib mismatches.
 - Flagging deterministic metadata issues visible from the `.bib` alone.
 - Identifying artifacts against databases, the 3-way verdict, hallucination screening, URL-only web verification, book/edition resolution, best-version selection, and canonical field output.
@@ -156,7 +156,7 @@ Functional requirements define WHAT the system must do.
 
 - [x] `p1` - **ID**: `cpt-referenceaudit-fr-parse-bib-tex`
 
-The system **MUST** parse `.bib` entries and `.tex` citations, normalize DOI/ISBN/arXiv/OpenAlex-Work-id identifiers,
+The system **MUST** parse `.bib` entries and `.tex` citations, normalize DOI/ISBN/arXiv/OpenAlex-Work-id/Google-Books-volume-id identifiers,
 report cited / uncited keys and missing `\input`/`\include` files, and flag deterministic metadata
 issues — all with no network access.
 
@@ -321,7 +321,7 @@ Contracts this library expects from external systems.
 ## 9. Acceptance Criteria
 
 - [x] Parse-only audit returns correct cited/uncited/missing-include counts for a known fixture.
-- [x] DOI, ISBN, arXiv, and OpenAlex Work id identifiers are normalized to canonical forms.
+- [x] DOI, ISBN, arXiv, OpenAlex Work id, and Google Books volume id identifiers are normalized to canonical forms.
 - [x] Commented preprint twins are routed to an informational list, never the audited list.
 - [x] A fabricated reference with no real match returns a `none` verdict; transient errors leave the entry `unresolved`, never `none`.
 - [x] Repeated audits of the same inputs reuse the SQLite cache instead of re-querying.
@@ -332,7 +332,7 @@ Contracts this library expects from external systems.
 |------------|-------------|-------------|
 | bibtexparser | `.bib` parsing | p1 |
 | pydantic | Data models | p1 |
-| Scholarly databases | Identification (Crossref, OpenAlex, S2, arXiv, Open Library) | p2 |
+| Scholarly databases | Identification (Crossref, OpenAlex, S2, arXiv, Open Library, Google Books) | p2 |
 | openai | LLM adjudication of ambiguous matches | p2 |
 | httpx / curl-cffi / beautifulsoup4 | Source HTTP queries and web/publisher page parsing | p2 |
 

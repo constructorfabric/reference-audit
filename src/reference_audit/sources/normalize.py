@@ -295,3 +295,43 @@ def openlibrary_edition_to_record(edition: dict, *, work_title: str = "") -> Sou
         ids=Identifiers(isbn13=isbn13),
         raw=edition,
     )
+
+
+# ── Google Books (books) ──────────────────────────────────────────────────────
+# A 4-digit year anywhere in a Google Books `publishedDate` ("2012", "2012-03-20").
+_GBOOKS_YEAR = re.compile(r"\b(1[5-9]\d\d|20\d\d)\b")
+
+
+def _google_books_isbn13(info: dict) -> str | None:
+    """Prefer the ISBN_13, else convert an ISBN_10, from `industryIdentifiers`."""
+    idents = info.get("industryIdentifiers") or []
+    by_type = {(i.get("type") or ""): (i.get("identifier") or "") for i in idents}
+    raw = by_type.get("ISBN_13") or by_type.get("ISBN_10")
+    return normalize_isbn13(raw) if raw else None
+
+
+def google_books_volume_to_record(volume: dict) -> SourceRecord:
+    """One Google Books `volumes` item (volume or search hit) → SourceRecord.
+
+    The cited `title` in a .bib usually includes the subtitle ("Why Nations Fail: The Origins…"),
+    which Google Books stores split across `title` + `subtitle`; we recombine them so the matcher's
+    title comparison sees the same string the entry carries.
+    """
+    info = volume.get("volumeInfo") or {}
+    title = (info.get("title") or "").strip()
+    subtitle = (info.get("subtitle") or "").strip()
+    full_title = f"{title}: {subtitle}" if subtitle else title
+    m = _GBOOKS_YEAR.search(info.get("publishedDate") or "")
+    return SourceRecord(
+        source="google_books",
+        source_native_id=(volume.get("id") or "").strip(),
+        title=full_title,
+        authors=[a.strip() for a in (info.get("authors") or []) if a],
+        year=int(m.group(1)) if m else None,
+        publisher=(info.get("publisher") or "").strip(),
+        ids=Identifiers(
+            isbn13=_google_books_isbn13(info),
+            google_books=(volume.get("id") or "").strip() or None,
+        ),
+        raw=volume,
+    )

@@ -159,17 +159,24 @@ UNRESOLVED is retained (and retried next run) on any transient failure.
 - [x] `p1` - **ID**: `cpt-referenceaudit-dod-identification-identify-artifact`
 
 The system **MUST** query the routed bibliographic sources for each entry and return the matching
-artifact(s), preferring strong identifiers (DOI / ISBN / arXiv / OpenAlex Work id) over metadata
-search.
+artifact(s), preferring strong identifiers (DOI / ISBN / arXiv / OpenAlex Work id / Google Books
+volume id) over metadata search. Books are additionally queried against **Google Books**, whose
+forgiving title/author/ISBN search recovers real books that Open Library's strict title match (a
+subtitle-bearing title, or a single off-by-one ISBN) reports as not found.
 
 A cited OpenAlex Work id (an `openalex.org/W…` URL) is routed to OpenAlex's by-id lookup and treated
 as authoritative identity: when the resolved Work matches the entry's title+author it is pinned as
 the matched artifact (`_apply_openalex_identity`), so the article-centric pooler cannot dissolve the
 explicitly-cited Work into a similar-titled foreign-DOI record and backfill the wrong identifiers. A
-cited Work id whose Work has a mismatched title/author does not confirm the entry. This identity
-override is implemented and covered by tests but is not yet a separately `@cpt`-traced flow
-instruction (it runs alongside the traced `inst-web` / `inst-book` identity steps); instruction-level
-tracing is planned.
+cited Work id whose Work has a mismatched title/author does not confirm the entry.
+
+A cited **Google Books volume id** (a `books.google.…/books?id=…` URL) is handled the same way by
+`_apply_google_books_identity`: the resolved volume, when it matches the entry's title+author, is
+pinned as the matched artifact. This specifically prevents a same-titled journal-article (a book
+*review* that reuses the book's title+authors and carries a DOI the book lacks) from being matched
+and having its DOI backfilled onto the `@book`. Both identity overrides are implemented and covered
+by tests but are not yet separately `@cpt`-traced flow instructions (they run alongside the traced
+`inst-web` / `inst-book` identity steps); instruction-level tracing is planned.
 
 **Implements**:
 - `cpt-referenceaudit-flow-identification-audit-entry`
