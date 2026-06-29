@@ -328,6 +328,12 @@ class AuditPipeline:
         verdict = await self._resolve_web(audit, verdict)
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-web
 
+        # OpenAlex Work id: a cited openalex.org Work URL is authoritative identity (the author
+        # pointed us at the exact Work). When the by-id lookup returns that Work and it matches the
+        # entry's title+author, pin it — never let the article-centric pooler dissolve it into a
+        # similar-titled foreign-DOI record and backfill the wrong identifiers.
+        verdict = self._apply_openalex_identity(verdict, entry, records)
+
         # Books: Open Library is the authority of record for identity. It is edition-aware, so it can
         # confirm a real book the article-centric matcher rejected (a 1976 original whose only
         # DOI-bearing candidate is a 2018 reprint — a 42-year/ISBN gap that score-rejects). The
@@ -694,6 +700,38 @@ class AuditPipeline:
             editions=editions,
             matched=match_cited_edition(audit.entry, editions),
             latest=latest_edition(editions),
+        )
+
+    def _apply_openalex_identity(self, verdict, entry: BibEntry, records: list[SourceRecord]):
+        """Pin the matched artifact to the cited OpenAlex Work when its by-id lookup confirms it.
+
+        A cited openalex.org Work id is an author-supplied identifier, as authoritative as a DOI/ISBN:
+        when the lookup returns that exact Work and it passes the title+author gate, that record IS
+        the identity. We override here so the explicitly-cited Work — not a similar-titled foreign-DOI
+        record the title pooler may have merged it into — represents the entry (which keeps a wrong
+        DOI/ISBN from being backfilled). A cited id whose Work has a mismatched title/author does NOT
+        confirm (it scores below auto_accept) and is left to the generic verdict.
+        """
+        if not entry.ids.openalex:
+            return verdict
+        rec = next(
+            (r for r in records if r.ids.openalex and r.ids.openalex == entry.ids.openalex), None
+        )
+        if rec is None:
+            return verdict  # the lookup errored or returned nothing — never read as a confirmation
+        features = compute_features(
+            entry, rec, tail_threshold=self.config.prefix_trap_tail_jaccard
+        )
+        if bucket(features, self.config, entry_has_id=True) != "auto_accept":
+            return verdict
+        artifact = MatchedArtifact(
+            records=[rec], versions=[rec], best_record=rec, merged_ids=rec.ids
+        )
+        return Verdict(
+            kind="exactly_one",
+            artifacts=[artifact],
+            confidence="high",
+            rationale="confirmed via OpenAlex (cited Work id resolved)",
         )
 
     def _apply_book_identity(self, verdict, book: _BookResolution | None):

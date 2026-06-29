@@ -24,6 +24,7 @@ from reference_audit.parsing.identifiers import (
     extract_arxiv_id,
     normalize_doi,
     normalize_isbn13,
+    normalize_openalex_id,
     normalize_url,
 )
 
@@ -73,9 +74,14 @@ def _identifiers_from_fields(f: dict[str, str]) -> Identifiers:
         fallback_text=f.get("doi") or f.get("url"),
     )
     isbn13 = normalize_isbn13(f.get("isbn"))
-    url = normalize_url(f.get("url"))
+    # An openalex.org `url` is a resolvable Work id, not a generic landing page: extract it as a
+    # first-class identifier and drop it from `url` so it isn't mistaken for a web @misc page.
+    openalex = normalize_openalex_id(f.get("url"))
+    url = None if openalex else normalize_url(f.get("url"))
     pmid = (f.get("pmid") or "").strip() or None
-    return Identifiers(doi=doi, arxiv_id=arxiv, isbn13=isbn13, url=url, pmid=pmid)
+    return Identifiers(
+        doi=doi, arxiv_id=arxiv, isbn13=isbn13, url=url, pmid=pmid, openalex=openalex
+    )
 
 
 def _entry_from_fields(key: str, bib_type: str, f: dict[str, str], *, commented: bool) -> BibEntry:

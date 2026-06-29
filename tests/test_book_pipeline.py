@@ -14,6 +14,7 @@ import respx
 from reference_audit.config import AuditConfig
 from reference_audit.pipeline import AuditPipeline
 from reference_audit.sources.crossref import CrossrefAdapter
+from reference_audit.sources.openalex import OpenAlexAdapter
 from reference_audit.sources.openlibrary import OpenLibraryAdapter
 
 # DOI-less 1976 book; the only DOI-bearing record the sources return is the 2018 Routledge reprint.
@@ -97,6 +98,108 @@ async def test_book_original_edition_not_flagged_and_latest_suggested(tmp_path):
 
     # Step 2: the latest edition is offered as a better version.
     assert any("newer edition is available" in i and "2018" in i for i in audit.issues)
+
+
+# russell2019human: a trade book cited ONLY by an OpenAlex Work URL. Crossref + Open Library do not
+# have a clean record for it (the old false-positive NO MATCH), but the cited Work id resolves it.
+_OA_BOOK_BIB = (
+    "@book{russell2019human, "
+    "title={Human Compatible: Artificial Intelligence and the Problem of Control}, "
+    "author={Stuart Russell}, year={2019}, publisher={Viking}, "
+    "url={https://openalex.org/W3034344071}}"
+)
+_OA_BOOK_WORK = {
+    "id": "https://openalex.org/W3034344071",
+    "ids": {"openalex": "https://openalex.org/W3034344071"},
+    "title": "Human Compatible: Artificial Intelligence and the Problem of Control",
+    "publication_year": 2019,
+    "type": "book",
+    "authorships": [{"author": {"display_name": "Stuart Russell"}}],
+    "cited_by_count": 42,
+}
+
+
+# A similar-titled Crossref CHAPTER (own DOI/ISBN) the title pooler used to merge Russell's book
+# into — backfilling the chapter's identifiers onto the book and raising a spurious title review.
+_CR_CHAPTER = {
+    "DOI": "10.1007/978-3-030-86144-5_3",
+    "title": ["Artificial Intelligence and the Problem of Control"],
+    "author": [{"given": "Stuart", "family": "Russell"}],
+    "issued": {"date-parts": [[2022]]},
+    "publisher": "Springer",
+    "ISBN": ["9783030861438"],
+    "type": "book-chapter",
+}
+
+
+@respx.mock
+async def test_book_with_openalex_id_resolves_via_work_lookup(tmp_path):
+    # Open Library lacks the trade title and Crossref only offers a similar-titled chapter; the cited
+    # OpenAlex Work id is the authoritative key and must win identity (no wrong-id backfill).
+    respx.get(url__regex=r"api\.crossref\.org/works\?").mock(
+        return_value=httpx.Response(200, json={"message": {"items": [_CR_CHAPTER]}})
+    )
+    respx.get(url__regex=r"openlibrary\.org/search\.json").mock(
+        return_value=httpx.Response(200, json={"docs": []})
+    )
+    respx.get(url__regex=r"api\.openalex\.org/works/W3034344071").mock(
+        return_value=httpx.Response(200, json=_OA_BOOK_WORK)
+    )
+    bib = tmp_path / "r.bib"
+    bib.write_text(_OA_BOOK_BIB, encoding="utf-8")
+    pipe = AuditPipeline(
+        AuditConfig(model="t", use_llm=False),
+        adapters=[CrossrefAdapter(client=httpx.AsyncClient()),
+                  OpenLibraryAdapter(client=httpx.AsyncClient()),
+                  OpenAlexAdapter(client=httpx.AsyncClient())],
+    )
+    report = await pipe.run(None, bib)
+    await pipe.aclose()
+
+    audit = report.entries[0]
+    # The regression: this correct book was flagged NO MATCH. Now the Work id resolves it cleanly.
+    assert audit.verdict.kind == "exactly_one"
+    best = audit.verdict.artifacts[0].best_record
+    assert best.source == "openalex"
+    assert best.ids.openalex == "W3034344071"
+    # The chapter's identifiers must NOT be attributed to the book (reliability: no wrong guesses).
+    assert best.ids.doi is None
+    assert not any("10.1007/978-3-030-86144-5_3" in i for i in audit.issues)
+    assert not any("9783030861438" in i for i in audit.issues)
+    assert not any("title" in i and "needs review" in i for i in audit.issues)
+
+
+@respx.mock
+async def test_cited_openalex_id_with_mismatched_work_is_not_confirmed(tmp_path):
+    # Safety gate: if the cited Work id resolves to a DIFFERENT-titled work (a wrong/stale id), the
+    # override must NOT pin it — the entry stays unconfirmed rather than being falsely matched.
+    wrong_work = dict(_OA_BOOK_WORK, title="An Entirely Unrelated Treatise on Beekeeping",
+                      authors=None, authorships=[{"author": {"display_name": "Someone Else"}}])
+    respx.get(url__regex=r"api\.crossref\.org/works\?").mock(
+        return_value=httpx.Response(200, json={"message": {"items": []}})
+    )
+    respx.get(url__regex=r"openlibrary\.org/search\.json").mock(
+        return_value=httpx.Response(200, json={"docs": []})
+    )
+    respx.get(url__regex=r"api\.openalex\.org/works/W3034344071").mock(
+        return_value=httpx.Response(200, json=wrong_work)
+    )
+    bib = tmp_path / "r.bib"
+    bib.write_text(_OA_BOOK_BIB, encoding="utf-8")
+    pipe = AuditPipeline(
+        AuditConfig(model="t", use_llm=False),
+        adapters=[CrossrefAdapter(client=httpx.AsyncClient()),
+                  OpenLibraryAdapter(client=httpx.AsyncClient()),
+                  OpenAlexAdapter(client=httpx.AsyncClient())],
+    )
+    report = await pipe.run(None, bib)
+    await pipe.aclose()
+
+    audit = report.entries[0]
+    # Not pinned to the mismatched Work (would be a false confirmation).
+    assert audit.verdict is None or audit.verdict.rationale != (
+        "confirmed via OpenAlex (cited Work id resolved)"
+    )
 
 
 @respx.mock

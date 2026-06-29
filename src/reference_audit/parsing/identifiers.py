@@ -129,3 +129,18 @@ def normalize_url(text: str | None) -> str | None:
         return None
     url = text.strip()
     return url or None
+
+
+# --- OpenAlex Work id ---
+# A canonical OpenAlex Work id is the token `W<digits>` carried by an openalex.org URL
+# (https://openalex.org/W3034344071) or an API path (api.openalex.org/works/W...). Only trusted
+# when an openalex.org host is present — a bare `W…` token is too ambiguous to scrape blindly.
+_OPENALEX_ID_RE = re.compile(r"\bW\d+\b", re.IGNORECASE)
+
+
+def normalize_openalex_id(text: str | None) -> str | None:
+    """Return a bare, upper-cased OpenAlex Work id ('W3034344071') from an openalex.org URL, or None."""
+    if not text or "openalex.org" not in text.lower():
+        return None
+    m = _OPENALEX_ID_RE.search(text)
+    return m.group(0).upper() if m else None

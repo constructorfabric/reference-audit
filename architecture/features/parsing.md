@@ -83,9 +83,12 @@ User-facing interaction: an author requests a parse-only audit and receives an `
 ### Normalize identifiers
 
 Identifier normalization (`parsing/identifiers.py`: `normalize_doi`, `normalize_isbn13`,
-`extract_arxiv_id`, `normalize_url`) is implemented and exercised by the build-report flow's
-`inst-parse-bib` step. It is documented here as a process for completeness but is not yet traced as
-a standalone instruction-level algorithm; instruction-granular tracing of these helpers is planned.
+`extract_arxiv_id`, `normalize_openalex_id`, `normalize_url`) is implemented and exercised by the
+build-report flow's `inst-parse-bib` step. It is documented here as a process for completeness but is
+not yet traced as a standalone instruction-level algorithm; instruction-granular tracing of these
+helpers is planned. An `openalex.org/W…` URL is extracted into a first-class `Identifiers.openalex`
+Work id (and dropped from `url`, so it is not mistaken for a generic web page); a bare `W…` token
+with no `openalex.org` host is not trusted.
 
 **Input**: Raw `.bib` field strings (doi, isbn, eprint, url).
 
@@ -127,7 +130,8 @@ commented-twins / missing-includes counts are correct for the parsed inputs.
 
 - [x] `p1` - **ID**: `cpt-referenceaudit-dod-parsing-identifiers`
 
-The system **MUST** normalize DOI, ISBN, and arXiv identifiers to their canonical forms.
+The system **MUST** normalize DOI, ISBN, arXiv, and OpenAlex Work identifiers to their canonical
+forms.
 
 **Implements**:
 - `cpt-referenceaudit-flow-parsing-build-report`

@@ -57,21 +57,26 @@ class Identifiers(BaseModel):
     isbn13: str | None = None       # 13-digit, separators stripped
     pmid: str | None = None
     bibcode: str | None = None      # NASA ADS
+    openalex: str | None = None     # OpenAlex Work id, bare + upper, e.g. "W3034344071"
     url: str | None = None
 
-    def primary_kind(self) -> Literal["doi", "isbn", "arxiv", "url"] | None:
+    def primary_kind(self) -> Literal["doi", "isbn", "arxiv", "openalex", "url"] | None:
         if self.doi:
             return "doi"
         if self.isbn13:
             return "isbn"
         if self.arxiv_id:
             return "arxiv"
+        if self.openalex:
+            return "openalex"
         if self.url:
             return "url"
         return None
 
     def any_present(self) -> bool:
-        return any((self.doi, self.arxiv_id, self.isbn13, self.pmid, self.bibcode, self.url))
+        return any(
+            (self.doi, self.arxiv_id, self.isbn13, self.pmid, self.bibcode, self.openalex, self.url)
+        )
 
 
 def compute_content_hash(
@@ -87,6 +92,7 @@ def compute_content_hash(
         ids.doi or "",
         ids.arxiv_id or "",
         ids.isbn13 or "",
+        ids.openalex or "",
     ]
     return hashlib.sha256("␟".join(parts).encode("utf-8")).hexdigest()
 

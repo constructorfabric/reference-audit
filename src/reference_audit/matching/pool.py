@@ -61,6 +61,7 @@ def _merge_ids(a: Identifiers, b: Identifiers) -> Identifiers:
         isbn13=a.isbn13 or b.isbn13,
         pmid=a.pmid or b.pmid,
         bibcode=a.bibcode or b.bibcode,
+        openalex=a.openalex or b.openalex,
         url=a.url or b.url,
     )
 

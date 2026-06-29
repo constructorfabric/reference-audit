@@ -39,7 +39,13 @@ _SELECT = ",".join(
 
 class OpenAlexAdapter(SourceAdapter):
     name = "openalex"
-    handles = {EntryType.ARTICLE, EntryType.INPROCEEDINGS, EntryType.MISC}
+    handles = {
+        EntryType.ARTICLE,
+        EntryType.INPROCEEDINGS,
+        EntryType.MISC,
+        EntryType.BOOK,
+        EntryType.INCOLLECTION,
+    }
     rate_per_sec = 10.0
 
     def __init__(self, mailto: str = "reference-audit@example.org", **kw):
@@ -50,12 +56,15 @@ class OpenAlexAdapter(SourceAdapter):
         return {"mailto": self.mailto, "select": _SELECT, **extra}
 
     async def lookup_by_id(self, ids: Identifiers) -> SourceQueryResult:
-        # Prefer DOI; fall back to arXiv via the DataCite DOI OpenAlex indexes.
+        # Prefer DOI; fall back to arXiv via the DataCite DOI OpenAlex indexes, then to a Work id
+        # cited directly (an openalex.org URL — the authoritative key for that exact Work).
         key = None
         if ids.doi:
             key = f"doi:{ids.doi}"
         elif ids.arxiv_id:
             key = f"doi:10.48550/arxiv.{ids.arxiv_id.lower()}"
+        elif ids.openalex:
+            key = ids.openalex
         if key is None:
             return SourceQueryResult(source=self.name, query_kind="id", records=[])
         try:

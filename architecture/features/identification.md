@@ -159,7 +159,17 @@ UNRESOLVED is retained (and retried next run) on any transient failure.
 - [x] `p1` - **ID**: `cpt-referenceaudit-dod-identification-identify-artifact`
 
 The system **MUST** query the routed bibliographic sources for each entry and return the matching
-artifact(s), preferring strong identifiers (DOI / ISBN / arXiv) over metadata search.
+artifact(s), preferring strong identifiers (DOI / ISBN / arXiv / OpenAlex Work id) over metadata
+search.
+
+A cited OpenAlex Work id (an `openalex.org/W…` URL) is routed to OpenAlex's by-id lookup and treated
+as authoritative identity: when the resolved Work matches the entry's title+author it is pinned as
+the matched artifact (`_apply_openalex_identity`), so the article-centric pooler cannot dissolve the
+explicitly-cited Work into a similar-titled foreign-DOI record and backfill the wrong identifiers. A
+cited Work id whose Work has a mismatched title/author does not confirm the entry. This identity
+override is implemented and covered by tests but is not yet a separately `@cpt`-traced flow
+instruction (it runs alongside the traced `inst-web` / `inst-book` identity steps); instruction-level
+tracing is planned.
 
 **Implements**:
 - `cpt-referenceaudit-flow-identification-audit-entry`

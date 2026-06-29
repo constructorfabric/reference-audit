@@ -133,7 +133,7 @@ editions against Open Library, backfills missing DOIs/ISBNs, and reports the can
 ### 4.1 In Scope
 
 - Parsing `.bib` entries into structured records and extracting `.tex` citations.
-- Normalizing DOI / ISBN / arXiv identifiers and detecting commented preprint twins.
+- Normalizing DOI / ISBN / arXiv / OpenAlex Work id identifiers and detecting commented preprint twins.
 - Reporting cited / uncited keys, missing `\input`/`\include` files, and citation-vs-bib mismatches.
 - Flagging deterministic metadata issues visible from the `.bib` alone.
 - Identifying artifacts against databases, the 3-way verdict, hallucination screening, URL-only web verification, book/edition resolution, best-version selection, and canonical field output.
@@ -156,7 +156,7 @@ Functional requirements define WHAT the system must do.
 
 - [x] `p1` - **ID**: `cpt-referenceaudit-fr-parse-bib-tex`
 
-The system **MUST** parse `.bib` entries and `.tex` citations, normalize DOI/ISBN/arXiv identifiers,
+The system **MUST** parse `.bib` entries and `.tex` citations, normalize DOI/ISBN/arXiv/OpenAlex-Work-id identifiers,
 report cited / uncited keys and missing `\input`/`\include` files, and flag deterministic metadata
 issues — all with no network access.
 
@@ -321,7 +321,7 @@ Contracts this library expects from external systems.
 ## 9. Acceptance Criteria
 
 - [x] Parse-only audit returns correct cited/uncited/missing-include counts for a known fixture.
-- [x] DOI, ISBN, and arXiv identifiers are normalized to canonical forms.
+- [x] DOI, ISBN, arXiv, and OpenAlex Work id identifiers are normalized to canonical forms.
 - [x] Commented preprint twins are routed to an informational list, never the audited list.
 - [x] A fabricated reference with no real match returns a `none` verdict; transient errors leave the entry `unresolved`, never `none`.
 - [x] Repeated audits of the same inputs reuse the SQLite cache instead of re-querying.

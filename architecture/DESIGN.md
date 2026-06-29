@@ -126,7 +126,7 @@ network access is confined to the `sources` and `llm` packages.
 | Entity | Description | Schema |
 |--------|-------------|--------|
 | BibEntry | A parsed `.bib` entry with normalized `Identifiers`. | [models.py](../src/reference_audit/models.py) |
-| Identifiers | Normalized DOI / ISBN13 / arXiv / URL / PMID. | [models.py](../src/reference_audit/models.py) |
+| Identifiers | Normalized DOI / ISBN13 / arXiv / OpenAlex Work id / URL / PMID. | [models.py](../src/reference_audit/models.py) |
 | EntryAudit | A `BibEntry` plus its verdict and issue list. | [models.py](../src/reference_audit/models.py) |
 | AuditReport | The aggregate report (entries + bookkeeping + summary). | [models.py](../src/reference_audit/models.py) |
 | SourceRecord | A candidate artifact returned by a database/web adapter. | [models.py](../src/reference_audit/models.py) |
@@ -163,7 +163,8 @@ identifiers) so every downstream stage works against models instead of LaTeX/Bib
 ##### Responsibility scope
 
 Parse `.bib` into `BibEntry`s (`parsing/bib.py`), extract cited keys and resolve includes from
-`.tex` (`parsing/tex.py`), and normalize DOI/ISBN/arXiv identifiers (`parsing/identifiers.py`).
+`.tex` (`parsing/tex.py`), and normalize DOI/ISBN/arXiv/OpenAlex-Work-id identifiers
+(`parsing/identifiers.py`).
 Detect commented preprint twins. **IMPLEMENTED (M1).**
 
 ##### Responsibility boundaries

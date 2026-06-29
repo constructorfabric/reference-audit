@@ -23,10 +23,11 @@ uncited citations.
 For each entry the tool runs a funnel that prefers cheap, deterministic evidence and only escalates
 to an LLM when needed:
 
-1. **Parse** the `.bib` (and resolve `\cite`/`\nocite` in the `.tex`), normalizing DOIs, ISBNs and
-   arXiv ids.
+1. **Parse** the `.bib` (and resolve `\cite`/`\nocite` in the `.tex`), normalizing DOIs, ISBNs,
+   arXiv ids and OpenAlex Work ids (an `openalex.org/W…` URL becomes a first-class identifier).
 2. **Query** multiple scholarly databases — Crossref, OpenAlex, Semantic Scholar, arXiv, Open
-   Library — both by identifier and by title/author.
+   Library — both by identifier and by title/author. A cited OpenAlex Work id is resolved directly
+   to that Work (the authoritative key for entries — notably trade books — the other sources miss).
 3. **Pool** the results, merging records that are the same work (shared identifier, or a
    preprint↔published version link).
 4. **Score** each candidate with interpretable features (title/author/year/venue similarity,
@@ -41,6 +42,13 @@ database indexes) is verified against the page itself: the tool fetches the URL,
 own HTML metadata (Open Graph / `citation_*` / `<title>` + authors) against the citation, and falls
 back to the LLM when that metadata is missing or inconclusive. A dead link or a page that cannot be
 confirmed is reported, never silently passed.
+
+A reference that cites an **OpenAlex Work id** (an `openalex.org/W…` URL, common for books and other
+titles the article-centric search and Crossref/Open Library miss) is resolved directly to that Work.
+When the Work matches the entry's title and authors it is pinned as the match — the author-supplied
+Work id is treated as authoritative identity, so a similar-titled foreign-DOI record is never merged
+in and its identifiers are never backfilled onto the entry. A cited Work id whose Work has a
+mismatched title/author does not confirm the entry; it is left unresolved and reported.
 
 Results are cached in a local SQLite DB, so re-running on the same `.bib` makes **no** repeat
 network or LLM calls. A transient outage never counts as "no match".

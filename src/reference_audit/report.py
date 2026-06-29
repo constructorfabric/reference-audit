@@ -18,6 +18,8 @@ def _ids_str(audit: EntryAudit) -> str:
         parts.append(f"arXiv:{ids.arxiv_id}")
     if ids.isbn13:
         parts.append(f"isbn:{ids.isbn13}")
+    if ids.openalex:
+        parts.append(f"openalex:{ids.openalex}")
     if ids.url and not ids.doi:
         parts.append(f"url:{ids.url}")
     return "  ".join(parts) if parts else "(no identifier)"
@@ -40,6 +42,8 @@ def _verdict_line(audit) -> str | None:
             line += f"\n      matched: doi:{br.ids.doi}  ({br.source})"
         elif br.ids.isbn13:
             line += f"\n      matched: isbn:{br.ids.isbn13}  ({br.source})"
+        elif br.ids.openalex:
+            line += f"\n      matched: openalex:{br.ids.openalex}  ({br.source})"
         elif br.ids.url:
             line += f"\n      matched: url:{br.ids.url}  ({br.source})"
     return line

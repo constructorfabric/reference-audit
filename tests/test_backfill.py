@@ -8,6 +8,7 @@ from reference_audit.config import AuditConfig
 from reference_audit.models import BibEntry, EntryType, Identifiers
 from reference_audit.pipeline import AuditPipeline
 from reference_audit.sources.crossref import CrossrefAdapter
+from reference_audit.sources.openalex import OpenAlexAdapter
 from reference_audit.sources.openlibrary import OpenLibraryAdapter
 from reference_audit.sources.publisher import PublisherAdapter
 from reference_audit.sources.registry import route_entry
@@ -28,6 +29,16 @@ def test_route_book_uses_openlibrary_metadata():
     entry = BibEntry(key="k", entry_type=EntryType.BOOK, title="A Book")
     route = route_entry(entry, adapters)
     assert any(a.name == "openlibrary" for a in route.metadata_adapters)
+
+
+def test_route_book_with_openalex_id_uses_openalex_lookup():
+    # russell2019human: a book whose only id is an OpenAlex Work URL must reach the OpenAlex by-id
+    # lookup (the article-centric search + Crossref/Open Library miss the trade title).
+    adapters = [CrossrefAdapter(), OpenLibraryAdapter(), OpenAlexAdapter()]
+    entry = BibEntry(key="k", entry_type=EntryType.BOOK, title="A Book",
+                     ids=Identifiers(openalex="W3034344071"))
+    route = route_entry(entry, adapters)
+    assert any(a.name == "openalex" for a in route.id_adapters)
 
 
 DOILESS_BIB = (

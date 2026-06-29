@@ -57,6 +57,11 @@ def route_entry(entry: BibEntry, adapters: list[SourceAdapter]) -> Route:
         id_adapters += present("arxiv", "openalex", "semantic_scholar")
     if entry.ids.isbn13:
         id_adapters += present("openlibrary")
+    # A cited OpenAlex Work id resolves to exactly that Work — the authoritative key for entries
+    # (notably books/trade titles) the article-centric metadata search and Crossref/Open Library
+    # miss. Routed for every entry type, since OpenAlex indexes books too.
+    if entry.ids.openalex:
+        id_adapters += present("openalex")
     # NOTE: `publisher` (the DOI landing-page citation export) is deliberately NOT an identity
     # source. It is queried only in the advisory enrichment pass — a bot-walled/blocked publisher
     # must never set the `errored` flag and mask a hallucinated DOI as 'unresolved' vs 'no match'.

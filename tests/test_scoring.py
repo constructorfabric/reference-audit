@@ -147,6 +147,35 @@ def test_arxiv_doi_not_a_published_doi_conflict():
     assert id_agreement(entry_ids, preprint_ids) == "absent"  # not "conflict"
 
 
+def test_openalex_work_id_match_auto_accepts():
+    # russell2019human: cited only by an OpenAlex Work id; the resolved Work matches title+author.
+    # A Work-id agreement is a strong identity signal → Path A auto-accept (no DOI/ISBN needed).
+    e = _entry(
+        title="Human Compatible: Artificial Intelligence and the Problem of Control",
+        authors=["Stuart Russell"],
+        year=2019,
+        ids=Identifiers(openalex="W3034344071"),
+    )
+    r = SourceRecord(
+        source="openalex",
+        title="Human Compatible: Artificial Intelligence and the Problem of Control",
+        authors=["Stuart Russell"],
+        year=2019,
+        ids=Identifiers(openalex="W3034344071"),
+        openalex_work_id="https://openalex.org/W3034344071",
+    )
+    f = compute_features(e, r, tail_threshold=TT)
+    assert f.id_agreement == "match"
+    assert bucket(f, CFG) == "auto_accept"
+
+
+def test_openalex_work_id_mismatch_is_conflict():
+    # A different Work id returned by metadata search is a distinct work, not the cited one.
+    from reference_audit.matching.features import id_agreement
+
+    assert id_agreement(Identifiers(openalex="W1"), Identifiers(openalex="W2")) == "conflict"
+
+
 def test_subset_title_not_inflated():
     # "Fitness Landscapes" (a different chapter) must NOT score 1.0 against the full book title
     e = _entry(title="Fitness Landscapes and the Origin of Species", authors=["Gavrilets, Sergey"])

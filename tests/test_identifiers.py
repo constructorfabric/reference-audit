@@ -5,6 +5,7 @@ from reference_audit.parsing.identifiers import (
     extract_arxiv_id,
     normalize_doi,
     normalize_isbn13,
+    normalize_openalex_id,
 )
 
 
@@ -54,3 +55,17 @@ def test_arxiv_from_marked_doi_or_url():
 
 def test_arxiv_to_doi():
     assert arxiv_to_doi("2408.04076") == "10.48550/arxiv.2408.04076"
+
+
+def test_openalex_id_from_url():
+    # russell2019human: the only "identifier" is an OpenAlex Work URL
+    assert normalize_openalex_id("https://openalex.org/W3034344071") == "W3034344071"
+    assert normalize_openalex_id("https://api.openalex.org/works/W3034344071") == "W3034344071"
+    assert normalize_openalex_id("http://openalex.org/w3034344071") == "W3034344071"  # upper-cased
+
+
+def test_openalex_id_requires_openalex_host():
+    # A bare W-token (or a non-openalex URL that happens to contain one) is too ambiguous to trust.
+    assert normalize_openalex_id("W3034344071") is None
+    assert normalize_openalex_id("https://example.org/W3034344071") is None
+    assert normalize_openalex_id(None) is None

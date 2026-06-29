@@ -92,6 +92,7 @@ def id_agreement(a: Identifiers, b: Identifiers) -> Literal["match", "conflict",
         (a.isbn13, b.isbn13),
         (a.arxiv_id, b.arxiv_id),
         (a.pmid, b.pmid),
+        (a.openalex, b.openalex),
     )
     for x, y in pairs:
         if x and y:

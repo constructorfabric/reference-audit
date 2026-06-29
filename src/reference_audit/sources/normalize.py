@@ -18,6 +18,7 @@ from reference_audit.parsing.identifiers import (
     extract_arxiv_id,
     normalize_doi,
     normalize_isbn13,
+    normalize_openalex_id,
 )
 
 # Crossref relation keys that point at another version of the same work.
@@ -154,7 +155,7 @@ def openalex_work_to_record(work: dict) -> SourceRecord:
         volume=(str(biblio.get("volume") or "")).strip(),
         issue=(str(biblio.get("issue") or "")).strip(),
         pages=_openalex_pages(biblio),
-        ids=Identifiers(doi=doi, arxiv_id=arxiv, pmid=pmid),
+        ids=Identifiers(doi=doi, arxiv_id=arxiv, pmid=pmid, openalex=normalize_openalex_id(work_id)),
         is_preprint=(work.get("type") == "preprint" or source_block.get("type") == "repository"),
         citation_count=int(work.get("cited_by_count") or 0),
         version_links=version_links,
