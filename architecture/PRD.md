@@ -16,8 +16,8 @@
   - [4.1 In Scope](#41-in-scope)
   - [4.2 Out of Scope](#42-out-of-scope)
 - [5. Functional Requirements](#5-functional-requirements)
-  - [5.1 Parsing & Bookkeeping (M1, implemented)](#51-parsing--bookkeeping-m1-implemented)
-  - [5.2 Identification & Verdict (M2–M5, planned)](#52-identification--verdict-m2m5-planned)
+  - [5.1 Parsing & Bookkeeping (implemented)](#51-parsing--bookkeeping-implemented)
+  - [5.2 Identification & Verdict (implemented)](#52-identification--verdict-implemented)
 - [6. Non-Functional Requirements](#6-non-functional-requirements)
   - [6.1 NFR Inclusions](#61-nfr-inclusions)
   - [6.2 NFR Exclusions](#62-nfr-exclusions)
@@ -58,10 +58,13 @@ and downstream tools need a single component that both screens for hallucination
 reference to its canonical best form, working from the same `.bib` + `.tex` inputs that already
 exist in every LaTeX project.
 
-The first milestone (M1) ships a fully offline, no-network parse-only slice: parse the `.bib`,
-extract `.tex` citations, normalize identifiers, and report bookkeeping (cited/uncited/missing) plus
-deterministic metadata issues. Identification, verdicts, and best-version selection are later
-milestones that build on this foundation.
+The foundation is a fully offline, no-network parse-only slice: parse the `.bib`, extract `.tex`
+citations, normalize identifiers, and report bookkeeping (cited/uncited/missing) plus deterministic
+metadata issues. Layered on top, the networked pipeline is now implemented: it queries the scholarly
+sources, scores and clusters candidates (the SAME-OBJECT rule with an LLM tie-break), screens for
+hallucinations, verifies URL-only `@misc` references against their own pages, resolves books and
+editions against Open Library, backfills missing DOIs/ISBNs, and reports the canonical best version
+— with all database/LLM calls memoized in a local SQLite cache.
 
 ### 1.3 Goals (Business Outcomes)
 
@@ -113,7 +116,7 @@ milestones that build on this foundation.
 
 **ID**: `cpt-referenceaudit-actor-database`
 
-**Role**: An external scholarly database (Crossref, OpenAlex, Semantic Scholar, arXiv, OpenLibrary) queried to identify and compare artifacts. (Used by later milestones; not contacted in the parse-only slice.)
+**Role**: An external scholarly source (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library, the DOI landing-page citation export, and the cited web page itself) queried to identify and compare artifacts. Not contacted on the `--no-network` parse-only path.
 
 ## 3. Operational Concept & Environment
 
@@ -121,9 +124,9 @@ milestones that build on this foundation.
 
 ### 3.1 Module-Specific Environment Constraints
 
-- The parse-only slice (M1) MUST run with no network access.
-- Later milestones require outbound HTTPS access to scholarly databases and (optionally) an OpenAI API key for LLM adjudication.
-- Python 3.13+ with `pydantic` and `bibtexparser` as core dependencies.
+- The parse-only path (`--no-network`) MUST run with no network access.
+- The full audit requires outbound HTTPS access to scholarly databases and (optionally) an OpenAI API key for LLM adjudication; `--no-llm` runs the deterministic, formal-only path.
+- Python 3.14+ with `pydantic`, `bibtexparser`, `httpx`, `openai`, and `typer` as core dependencies.
 
 ## 4. Scope
 
@@ -133,7 +136,7 @@ milestones that build on this foundation.
 - Normalizing DOI / ISBN / arXiv identifiers and detecting commented preprint twins.
 - Reporting cited / uncited keys, missing `\input`/`\include` files, and citation-vs-bib mismatches.
 - Flagging deterministic metadata issues visible from the `.bib` alone.
-- (Later) identifying artifacts against databases, the 3-way verdict, hallucination screening, best-version selection, and canonical output.
+- Identifying artifacts against databases, the 3-way verdict, hallucination screening, URL-only web verification, book/edition resolution, best-version selection, and canonical field output.
 
 ### 4.2 Out of Scope
 
@@ -147,7 +150,7 @@ milestones that build on this foundation.
 
 Functional requirements define WHAT the system must do.
 
-### 5.1 Parsing & Bookkeeping (M1, implemented)
+### 5.1 Parsing & Bookkeeping (implemented)
 
 #### Parse bib and tex with identifier normalization
 
@@ -161,7 +164,12 @@ issues — all with no network access.
 
 **Actors**: `cpt-referenceaudit-actor-author`
 
-### 5.2 Identification & Verdict (M2–M5, planned)
+### 5.2 Identification & Verdict (implemented)
+
+> **Checkbox semantics:** a checked box marks a requirement that is implemented **and** traced to
+> code via `@cpt` markers. The requirements below are all **implemented in code** (`sources/`,
+> `matching/`, `llm/`, `cache/`) but are not yet `@cpt`-traced through a governed feature spec, so
+> they remain unchecked. See `DECOMPOSITION.md` §2.2 for the outstanding traceability work.
 
 #### Identify the artifact behind a reference
 
@@ -224,7 +232,7 @@ reproducible and the slice can run in air-gapped CI.
 
 - [ ] `p2` - **ID**: `cpt-referenceaudit-nfr-cached-calls`
 
-Later milestones **SHOULD** memoize database and LLM responses to bound cost and latency on repeated audits.
+The networked path **MUST** memoize database and LLM responses to bound cost and latency on repeated audits. Only successful results are cached; transient errors are never stored, so an outage retries rather than being recorded as a miss.
 
 **Threshold**: Repeated audits of the same inputs reuse cached responses rather than re-querying.
 
@@ -248,9 +256,9 @@ Define the public API surface and integration contracts provided by this library
 
 **Stability**: unstable
 
-**Description**: Given a `.tex` path (optional) and a `.bib` path, returns a structured `AuditReport` with per-entry identifiers, issues, and bookkeeping.
+**Description**: Given a `.tex` path (optional) and a `.bib` path, returns a structured `AuditReport` with per-entry identifiers, issues, and bookkeeping. The full networked audit is exposed by the companion `reference_audit.pipeline.run_audit(...)` (and the async `AuditPipeline.run(...)`), which returns the same `AuditReport` enriched with verdicts, candidates, and field findings.
 
-**Breaking Change Policy**: Pre-1.0; signatures may change between milestones.
+**Breaking Change Policy**: Pre-1.0; signatures may change between releases.
 
 ### 7.2 External Integration Contracts
 
@@ -262,9 +270,9 @@ Contracts this library expects from external systems.
 
 **Direction**: required from client (database adapters)
 
-**Protocol/Format**: HTTPS / JSON over each provider's public API.
+**Protocol/Format**: HTTPS / JSON over each provider's public API (and HTML for the web/publisher page fetch).
 
-**Compatibility**: Provider-specific; isolated behind source adapters (planned, M2–M3).
+**Compatibility**: Provider-specific; isolated behind source adapters in `sources/`.
 
 ## 8. Use Cases
 
@@ -290,9 +298,11 @@ Contracts this library expects from external systems.
 
 ## 9. Acceptance Criteria
 
-- [ ] Parse-only audit returns correct cited/uncited/missing-include counts for a known fixture.
-- [ ] DOI, ISBN, and arXiv identifiers are normalized to canonical forms.
-- [ ] Commented preprint twins are routed to an informational list, never the audited list.
+- [x] Parse-only audit returns correct cited/uncited/missing-include counts for a known fixture.
+- [x] DOI, ISBN, and arXiv identifiers are normalized to canonical forms.
+- [x] Commented preprint twins are routed to an informational list, never the audited list.
+- [ ] A fabricated reference with no real match returns a `none` verdict; transient errors leave the entry `unresolved`, never `none`. *(implemented in code; pending governed tracing)*
+- [ ] Repeated audits of the same inputs reuse the SQLite cache instead of re-querying. *(implemented in code; pending governed tracing)*
 
 ## 10. Dependencies
 
@@ -300,16 +310,18 @@ Contracts this library expects from external systems.
 |------------|-------------|-------------|
 | bibtexparser | `.bib` parsing | p1 |
 | pydantic | Data models | p1 |
-| Scholarly databases | Identification (later milestones) | p2 |
+| Scholarly databases | Identification (Crossref, OpenAlex, S2, arXiv, Open Library) | p2 |
+| openai | LLM adjudication of ambiguous matches | p2 |
+| httpx / curl-cffi / beautifulsoup4 | Source HTTP queries and web/publisher page parsing | p2 |
 
 ## 11. Assumptions
 
 - Inputs are well-formed enough for `bibtexparser` to load (malformed entries are tolerated best-effort).
-- For later milestones, the relevant databases are reachable and expose the cited works.
+- For the networked audit, the relevant databases are reachable; an unreachable source leaves the affected entry `unresolved` rather than mis-judged.
 
 ## 12. Risks
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | Database coverage gaps | A real reference may be misjudged `none` | Query multiple sources; reserve LLM adjudication |
-| Identifier ambiguity | Wrong artifact matched | Prefer DOI/ISBN/URL; apply same-object disambiguation rule (M5) |
+| Identifier ambiguity | Wrong artifact matched | Prefer DOI/ISBN/URL; apply the SAME-OBJECT disambiguation rule with an LLM tie-break |

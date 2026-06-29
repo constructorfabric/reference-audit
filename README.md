@@ -216,12 +216,19 @@ Concretely:
 ```
 src/reference_audit/
   parsing/     # .bib / .tex / identifier parsing
-  sources/     # modular database adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library)
-  matching/    # candidate pooling, feature scoring, SAME-OBJECT clustering, verdicts
-  llm/         # OpenAI structured-output adjudication
-  cache/       # SQLite memoization of DB/LLM calls
-  pipeline.py  # orchestration
-  cli.py       # command-line entry point
+  sources/     # modular adapters: Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library,
+               #   publisher (DOI landing-page citation export), web (cited-page fetch); + routing
+  matching/    # candidate pooling, feature scoring, SAME-OBJECT clustering, verdicts, web check
+  llm/         # OpenAI structured-output adjudication (pydantic schemas)
+  cache/       # SQLite memoization of DB/LLM calls (errors never cached)
+  bookcheck.py # Open Library edition resolution (cited vs. latest edition)
+  fieldcheck.py# per-field correctness / formatting findings for an exactly-one match
+  versioning.py# better-version detection (published > preprint)
+  pipeline.py  # async orchestration
+  report.py    # text / JSON rendering
+  config.py    # AuditConfig (model, keys, thresholds)
+  models.py    # pydantic domain models
+  cli.py       # command-line entry point (Typer)
 architecture/  # governed specification & design (SPEC, PRD, DESIGN, DECOMPOSITION, features)
 tests/
   documents/   # test papers: <paper-title-slug>/<version>.{tex,bib} (initial, polished, …)

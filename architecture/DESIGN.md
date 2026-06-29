@@ -29,14 +29,17 @@
 ### 1.1 Architectural Vision
 
 Reference Audit is a Python library plus CLI organized as a staged pipeline over a small set of
-pydantic domain models. The implemented slice (M1) is a synchronous, offline parse path:
-`build_parse_report` orchestrates `.bib` parsing, `.tex` citation extraction, identifier
-normalization, and deterministic issue collection into an `AuditReport`.
+pydantic domain models. The offline parse path is synchronous: `build_parse_report` orchestrates
+`.bib` parsing, `.tex` citation extraction, identifier normalization, and deterministic issue
+collection into an `AuditReport`.
 
-Later milestones extend the pipeline with modular database adapters (sources), feature scoring and a
-same-object disambiguation rule (matching), an LLM adjudication funnel (llm), and SQLite memoization
-(cache). The architecture isolates each concern behind a package boundary so the offline parse slice
-stays dependency-light and the network/LLM stages can be added without disturbing it.
+On top of that foundation, the networked pipeline (`AuditPipeline.run` / `run_audit`) is implemented
+as concurrent async per-entry processing: modular database adapters (sources), feature scoring and a
+SAME-OBJECT disambiguation rule (matching), an LLM adjudication funnel (llm), URL-only web and Open
+Library book verification, and SQLite memoization (cache). The architecture isolates each concern
+behind a package boundary so the offline parse slice stays dependency-light and the network/LLM
+stages stay swappable. Each entry is audited in isolation: a failure on one reference leaves it
+`unresolved` (retried next run) and never aborts the others.
 
 ### 1.2 Architecture Drivers
 
@@ -70,10 +73,10 @@ CLI / report  ->  pipeline (orchestration)  ->  parsing | sources | matching | l
 
 | Layer | Responsibility | Technology |
 |-------|---------------|------------|
-| Presentation | CLI entry point and report rendering | Python `argparse`, `report.py` |
-| Application | Pipeline orchestration (parse → identify → score → adjudicate → verdict) | `pipeline.py` |
+| Presentation | CLI entry point and report rendering | `typer` CLI, `report.py` |
+| Application | Pipeline orchestration (parse → route → query → score → adjudicate → cluster → verdict → enrich) | `pipeline.py` (async) |
 | Domain | Bib/citation/source/feature models | `pydantic` models |
-| Infrastructure | DB adapters, LLM client, SQLite cache | `sources`, `llm`, `cache` (planned) |
+| Infrastructure | DB/web adapters, LLM client, SQLite cache | `sources`, `llm`, `cache` |
 
 ## 2. Principles & Constraints
 
@@ -90,8 +93,8 @@ and forms a stable foundation for the networked stages.
 
 - [ ] `p2` - **ID**: `cpt-referenceaudit-principle-modular-sources`
 
-Each bibliographic database is a self-contained adapter behind a common interface, so sources can be
-added, removed, or reordered without touching matching or pipeline code.
+Each bibliographic database is a self-contained adapter behind a common interface (`sources/base.py`),
+so sources can be added, removed, or reordered without touching matching or pipeline code.
 
 ### 2.2 Constraints
 
@@ -100,7 +103,8 @@ added, removed, or reordered without touching matching or pipeline code.
 - [ ] `p1` - **ID**: `cpt-referenceaudit-constraint-id-preference`
 
 Identification must prefer DOI for papers, ISBN for books, and URL for other artifacts; metadata
-matching is only a fallback when no strong identifier resolves.
+matching always runs alongside (to backfill missing identifiers and corroborate), but a strong
+identifier match takes precedence.
 
 #### No-network parse path
 
@@ -125,7 +129,9 @@ network access is confined to the `sources` and `llm` packages.
 | Identifiers | Normalized DOI / ISBN13 / arXiv / URL / PMID. | [models.py](../src/reference_audit/models.py) |
 | EntryAudit | A `BibEntry` plus its verdict and issue list. | [models.py](../src/reference_audit/models.py) |
 | AuditReport | The aggregate report (entries + bookkeeping + summary). | [models.py](../src/reference_audit/models.py) |
-| SourceRecord | A candidate artifact returned by a database adapter (planned). | [models.py](../src/reference_audit/models.py) |
+| SourceRecord | A candidate artifact returned by a database/web adapter. | [models.py](../src/reference_audit/models.py) |
+| Verdict / MatchedArtifact | The 3-way verdict and the clustered artifact(s) it resolves to. | [models.py](../src/reference_audit/models.py) |
+| FieldFinding | A per-field correctness/formatting finding for an exactly-one match. | [models.py](../src/reference_audit/models.py) |
 
 **Relationships**:
 - AuditReport → EntryAudit: contains one audit per parsed entry.
@@ -138,6 +144,12 @@ parsing -> models <- pipeline -> sources -> cache
                          |-> matching -> llm
                          |-> report / cli
 ```
+
+> **Checkbox semantics:** `[x]` here means *implemented **and** traced to code* via `@cpt` markers.
+> Today only `parsing`, `models`, and `report-cli` are `@cpt`-traced. The `sources`, `matching`,
+> `llm`, and `cache` components are fully **implemented in code** but are not yet `@cpt`-traced, so
+> they remain unchecked even though their scope notes below read *IMPLEMENTED*. Adding that
+> traceability (and a `features/identification.md` spec) is the outstanding governance work.
 
 #### parsing
 
@@ -190,16 +202,18 @@ Holds no behavior beyond validation and small derived helpers; performs no I/O.
 
 ##### Why this component exists
 
-To query external bibliographic databases and return candidate artifacts for identification.
+To query external bibliographic databases and pages and return candidate artifacts for identification.
 
 ##### Responsibility scope
 
-Modular adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, OpenLibrary, ...) producing
-`SourceRecord`s behind a common interface. **PLANNED (M2–M3).**
+Modular adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library, the publisher DOI
+landing-page citation export, and a web page fetcher) producing `SourceRecord`s behind a common
+interface, with per-entry routing by id vs. metadata. **IMPLEMENTED.**
 
 ##### Responsibility boundaries
 
-Performs no scoring or verdict logic; returns raw candidates only.
+Performs no scoring or verdict logic; returns raw candidates only. The publisher adapter is advisory
+only (never an identity source), so a bot-walled publisher cannot mask a hallucinated DOI.
 
 ##### Related components (by ID)
 
@@ -217,8 +231,9 @@ To decide, from candidate records, whether a reference matches no artifact, exac
 
 ##### Responsibility scope
 
-Feature scoring (`FeatureVector`) and the same-object disambiguation rule; produces the 3-way verdict
-and ranks versions. **PLANNED (M3–M5).**
+Candidate pooling, feature scoring (`FeatureVector`), the SAME-OBJECT clustering rule (`sameobject`),
+the 3-way verdict (`verdict`), URL-only web verification (`webcheck`), and version ranking.
+**IMPLEMENTED.**
 
 ##### Responsibility boundaries
 
@@ -239,7 +254,10 @@ To adjudicate ambiguous matches that feature scoring cannot resolve on its own.
 
 ##### Responsibility scope
 
-OpenAI structured-output adjudication funnel invoked by `matching` for hard cases. **PLANNED (M4).**
+OpenAI structured-output (pydantic-schema) adjudication invoked by `matching` for hard cases:
+per-candidate "can this record correspond to the entry?", the SAME-OBJECT tie-break, web-page
+confirmation, and per-field correctness. Decisions are cached by `(prompt, kind, model)`.
+**IMPLEMENTED.**
 
 ##### Responsibility boundaries
 
@@ -259,7 +277,9 @@ To bound cost and latency by memoizing slow, metered database and LLM calls.
 
 ##### Responsibility scope
 
-SQLite-backed memoization of source and LLM responses. **PLANNED (M2).**
+SQLite-backed memoization of source queries, LLM decisions, whole-entry verdicts, and DOI
+resolutions, gated by `pipeline_version`/`model`. Only successful results are stored — errors are
+never cached, so an outage retries rather than being recorded as a miss. **IMPLEMENTED.**
 
 ##### Responsibility boundaries
 
@@ -279,8 +299,9 @@ To present the `AuditReport` to humans and machines and to provide the program e
 
 ##### Responsibility scope
 
-`report.py` renders JSON/text; `cli.py` parses arguments and runs the (parse-only) audit.
-**IMPLEMENTED (parse-only).**
+`report.py` renders JSON/text (verdict-aware categories: capital offences, unable-to-verify, issues,
+nits, clean); `cli.py` (Typer) parses arguments and runs either the parse-only or the full audit.
+**IMPLEMENTED.**
 
 ##### Responsibility boundaries
 
@@ -300,15 +321,16 @@ This realizes the PRD public interface `cpt-referenceaudit-interface-parse-repor
 
 - **Implements (PRD)**: `cpt-referenceaudit-interface-parse-report`
 - **Contracts**: `cpt-referenceaudit-contract-database-query`
-- **Technology**: Python function call + CLI (argparse)
-- **Location**: [pipeline.py](../src/reference_audit/pipeline.py)
+- **Technology**: Python function call + CLI (Typer)
+- **Location**: [pipeline.py](../src/reference_audit/pipeline.py), [cli.py](../src/reference_audit/cli.py)
 
 **Endpoints Overview**:
 
 | Method | Path | Description | Stability |
 |--------|------|-------------|-----------|
 | `CALL` | `build_parse_report(tex_path, bib_path)` | Parse-only audit returning an `AuditReport`. | unstable |
-| `CLI` | `reference-audit audit` | Run the parse-only audit from the command line. | unstable |
+| `CALL` | `run_audit(tex_path, bib_path, ...)` | Full networked audit returning an `AuditReport` with verdicts. | unstable |
+| `CLI` | `reference-audit audit` | Run the audit from the command line (`--no-network`, `--no-llm`, `--fresh`, `--fail-on`, ...). | unstable |
 
 ### 3.4 Internal Dependencies
 
@@ -330,8 +352,12 @@ External libraries and services this module interacts with.
 | Dependency Module | Interface Used | Purpose |
 |-------------------|---------------|---------|
 | bibtexparser | `loads` / `db.entries` | Parse `.bib` source |
-| pydantic | `BaseModel` | Validated domain models |
-| Crossref / OpenAlex / S2 / arXiv / OpenLibrary | HTTPS JSON APIs | Candidate identification (planned) |
+| pydantic / pydantic-settings | `BaseModel` / `BaseSettings` | Validated domain models + config |
+| httpx / curl-cffi | async HTTP clients | Source queries; bot-walled publisher fetch |
+| beautifulsoup4 | HTML parsing | Web/publisher page metadata extraction |
+| openai | structured-output chat | LLM adjudication |
+| rapidfuzz / anyascii | fuzzy string / transliteration | Title/author similarity features |
+| Crossref / OpenAlex / S2 / arXiv / Open Library | HTTPS JSON APIs | Candidate identification |
 
 **Dependency Rules** (per project conventions):
 - Only the `sources` and `llm` components talk to external network services.
@@ -364,7 +390,7 @@ sequenceDiagram
 
 **Description**: The implemented offline path that produces an `AuditReport` from `.bib` + `.tex`.
 
-#### Identify and adjudicate (planned)
+#### Identify and adjudicate
 
 - [ ] `p2` - **ID**: `cpt-referenceaudit-seq-identify-adjudicate`
 
@@ -375,48 +401,55 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant P as pipeline
+    participant C as cache
     participant S as sources
     participant M as matching
     participant L as llm
-    P->>S: query(ids/metadata)
-    S-->>M: candidate SourceRecords
-    M->>L: adjudicate ambiguous cases
-    L-->>M: structured judgment
-    M-->>P: verdict + canonical reference
+    P->>C: get cached verdict?
+    C-->>P: miss
+    P->>S: query(ids + metadata, concurrent)
+    S-->>M: candidate SourceRecords (pooled)
+    M->>M: score + bucket
+    M->>L: adjudicate non-clean cases (per-candidate, SAME-OBJECT, web, fields)
+    L-->>M: structured judgment (cached)
+    M-->>P: 3-way verdict + canonical best version
+    P->>C: store successful verdict
 ```
 
-**Description**: The planned networked path layered on top of the parse slice (M2–M5).
+**Description**: The networked path layered on top of the parse slice. A clean formal `exactly_one`
+short-circuits the LLM; books are confirmed against Open Library and URL-only `@misc` against their
+own page. Each entry is isolated, and only successful results are cached.
 
 ### 3.7 Database schemas & tables
 
-No persistent database is used in the implemented slice. The planned `cache` component uses SQLite.
+The offline parse path uses no persistent database. The networked path memoizes calls in a local
+SQLite cache (`cache/db.py`, `cache/store.py`) with four cache tables plus a `db_quirks` log. Only
+successful results are stored; errors are never cached, so an outage retries.
 
 - [ ] `p3` - **ID**: `cpt-referenceaudit-db-cache`
 
-#### Table: response_cache (planned; SQLite)
+#### Tables: SQLite response cache
 
 **ID**: `cpt-referenceaudit-dbtable-response-cache`
 
 **Schema**:
 
-| Column | Type | Description |
-|--------|------|-------------|
-| key | text | Hash of the source/LLM request |
-| source | text | Adapter or `llm` that produced the response |
-| response | text | Serialized response payload |
-| fetched_at | text | ISO-8601 timestamp |
+| Table | Primary key | Stores |
+|-------|-------------|--------|
+| `source_query_cache` | `(entry_hash, source, query_kind)` | Raw adapter responses (id / metadata / editions / web). |
+| `llm_decision_cache` | `(prompt_hash, kind, model)` | LLM judgments — model in the key, so a model switch re-runs. |
+| `entry_verdict_cache` | `entry_hash` | Whole-entry verdict fast path, gated by `pipeline_version` + `model`. |
+| `doi_resolution_cache` | `doi` | doi.org's verdict on a DOI (a world-fact; model/version-independent). |
+| `db_quirks` | — | Notes on database quirks encountered (design principle 2). |
 
-**PK**: `key`
+**Constraints**: Only successful (`ok=1`) source results and definitive DOI resolutions are stored;
+transient errors are never cached, preserving the error ≠ not-found invariant.
 
-**Constraints**: `key` UNIQUE NOT NULL.
+**Example** (`source_query_cache`):
 
-**Additional info**: Planned (M2); not present in the implemented slice.
-
-**Example**:
-
-| key | source | response | fetched_at |
-|--------|--------|--------|--------|
-| 9f2a... | crossref | {...} | 2026-06-27T00:00:00Z |
+| entry_hash | source | query_kind | ok | fetched_at |
+|------------|--------|------------|----|------------|
+| 9f2a... | crossref | id | 1 | 2026-06-27T00:00:00Z |
 
 ## 4. Additional context
 

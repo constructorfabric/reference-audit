@@ -4,6 +4,12 @@ The ovreall goal of the project is to provide the level of reliability suitable 
 
 When querying the LLMs for structured output, always use pydantic models
 
+Every change to the code must be reflected in the documentation as part of the same change:
+- Update `README.md` whenever behavior, CLI options, sources, output format, or project layout change.
+- Update the governed `cfs` docs under `architecture/` (SPEC, PRD, DESIGN, DECOMPOSITION, features)
+  to match, and keep `uv run cfs validate` passing. When a capability is implemented but not yet
+  `@cpt`-traced to code, say so explicitly rather than marking it done.
+
 <!-- @cf:root-agents -->
 ```toml
 cf-studio-path = ".cf-studio"

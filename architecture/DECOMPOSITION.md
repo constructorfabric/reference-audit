@@ -12,11 +12,14 @@
 
 ## 1. Overview
 
-The Reference Audit DESIGN is decomposed by pipeline stage. The implemented foundation is the
-**Parsing** feature (offline `.bib` + `.tex` parsing and identifier normalization). The remaining
-stages — identification against databases, the same-object matching rule and 3-way verdict, LLM
-adjudication, caching, and canonical output — are planned and tracked as separate, dependent
-feature entries.
+The Reference Audit DESIGN is decomposed by pipeline stage. The **Parsing** feature (offline
+`.bib` + `.tex` parsing and identifier normalization) is the foundation every later stage builds
+on. The downstream stages — identification against databases, the same-object matching rule and
+3-way verdict, LLM adjudication, SQLite caching, web/book verification, and best-version/canonical
+output — are now implemented in code. They are grouped here under a single **Identification &
+Verdict** feature entry; that entry tracks code state but does not yet carry a dedicated governed
+feature specification or instruction-level `@cpt` traceability (only the Parsing feature is traced
+to code today).
 
 **Decomposition Strategy**:
 - Group by pipeline stage (parsing → sources/cache → matching/llm → report).
@@ -86,24 +89,32 @@ feature entries.
 - **Data**:
   - (none — parse slice is in-memory only)
 
-### 2.2 [Identification & Verdict](features/parsing.md) - HIGH
+### 2.2 [Identification & Verdict](DESIGN.md#32-component-model) - HIGH
 
 - [ ] `p1` - **ID**: `cpt-referenceaudit-feature-identification`
 
-- **Purpose**: Query bibliographic databases, score candidates with the same-object disambiguation
-  rule, and return the 3-way verdict plus the canonical best version. (Planned, M2–M5.)
+  > **Status note:** the capability below is **implemented in code** (`sources/`, `matching/`,
+  > `llm/`, `cache/`). This entry stays unchecked because it does not yet have a dedicated governed
+  > FEATURE specification or instruction-level `@cpt` traceability — authoring `features/
+  > identification.md` and tracing the matching code is the remaining governance work. Only the
+  > Parsing feature is traced to code today.
+
+- **Purpose**: Query bibliographic databases, score candidates with the SAME-OBJECT disambiguation
+  rule, and return the 3-way verdict plus the canonical best version.
 
 - **Depends On**: `cpt-referenceaudit-feature-parsing`
 
 - **Scope**:
-  - Modular source adapters and SQLite caching
-  - Feature scoring and same-object rule
-  - 3-way verdict, hallucination screening, best-version + canonical output
+  - Modular source adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library, publisher
+    citation export, web page fetch) and SQLite caching
+  - Feature scoring and the SAME-OBJECT clustering rule (formal + LLM tie-break)
+  - 3-way verdict, hallucination screening, URL-only `@misc` web verification, Open Library book /
+    edition resolution, DOI/ISBN backfill, best-version + canonical field output
 
 - **Out of scope**:
   - Manuscript body rewriting
 
-- **Requirements Covered**:
+- **Requirements Covered** (all implemented in code; unchecked = pending `@cpt` tracing):
 
   - [ ] `p1` - `cpt-referenceaudit-fr-identify-artifact`
   - [ ] `p1` - `cpt-referenceaudit-fr-three-way-verdict`
@@ -131,7 +142,7 @@ feature entries.
   - [ ] `p2` - `cpt-referenceaudit-component-cache`
 
 - **API**:
-  - (planned)
+  - `reference_audit.pipeline.run_audit(...)` / `AuditPipeline.run(...)`
 
 - **Sequences**:
 
