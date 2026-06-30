@@ -185,6 +185,49 @@ def test_subset_title_not_inflated():
     assert f.title_ratio < 0.95  # length-guarded; was 1.0 with bare token_set_ratio
 
 
+def test_bibtex_others_marker_dropped_from_author_matching():
+    # The `and others` (et al.) convention must not leak the phantom surname "others" into matching.
+    from reference_audit.matching.names import (
+        author_overlap,
+        author_set,
+        author_set_jaccard,
+        author_subset,
+        mismatched_authors,
+    )
+
+    bib = ["Casper, Stephen", "Davies, Xander", "others"]
+    full = ["Stephen Casper", "Xander Davies", "Claudia Shi", "Rachel Freedman"]
+    assert author_set(bib) == {"casper", "davies"}  # 'others' excluded
+    assert author_subset(bib, full) is True  # named authors ⊆ full list (truncation is fine)
+    assert author_overlap(bib, full) > 0.95  # not dragged down by 'others'
+    # 'others' is not reported as a wrong/missing name
+    assert mismatched_authors(bib, full) == []
+    # the truncated list legitimately has low set-Jaccard against the full list…
+    assert author_set_jaccard(bib, full) < 0.6
+
+
+def test_truncated_author_list_still_auto_accepts_backfill():
+    # casper2023open regression: a TMLR/conference paper cited with a truncated author list
+    # ("... and others") against the full author record. Exact title + the named authors being a
+    # subset of the record must auto-accept on the backfill path — the truncation must NOT trip the
+    # distinct-author-set veto into needless adjudication (which, with no LLM, leaves it unresolved).
+    e = _entry(
+        title="Open Problems and Fundamental Limitations of Reinforcement Learning from Human Feedback",
+        authors=["Casper, Stephen", "Davies, Xander", "Shi, Claudia", "others"],
+        year=2023,
+    )
+    r = SourceRecord(
+        source="dblp",
+        title="Open Problems and Fundamental Limitations of Reinforcement Learning from Human Feedback",
+        authors=["Stephen Casper", "Xander Davies", "Claudia Shi", "Rachel Freedman", "Javier Rando"],
+        year=2023,
+    )
+    f = compute_features(e, r, tail_threshold=TT)
+    assert f.title_ratio >= CFG.title_backfill
+    assert f.author_subset is True
+    assert bucket(f, CFG, entry_has_id=False) == "auto_accept"
+
+
 def test_year_gap_does_not_hard_gate():
     # preprint(2024) vs published(2026): year_factor stays high, never zero
     f_year = compute_features(

@@ -17,6 +17,22 @@ def _norm(text: str) -> str:
     return re.sub(r"[^a-z\s,.-]", "", anyascii(text or "").lower()).strip()
 
 
+# The BibTeX `and others` convention (and a written-out "et al.") is a *truncation marker*, not a
+# real author. Left in, the phantom surname "others" both drags `author_overlap` down and breaks the
+# subset check (an intentionally abbreviated list is no longer ⊆ the full author list), which then
+# trips the distinct-author-set veto and forces needless adjudication. Drop it everywhere.
+_ETAL_MARKERS = {"others", "et al", "and others"}
+
+
+def _is_etal(name: str) -> bool:
+    return _norm(name).replace(".", "").strip() in _ETAL_MARKERS
+
+
+def _named(authors: list[str]) -> list[str]:
+    """Author list with any et-al./`others` truncation marker removed."""
+    return [a for a in authors if not _is_etal(a)]
+
+
 def last_name(name: str) -> str:
     """Best-effort surname extraction handling 'Last, First' and 'First Last'."""
     n = _norm(name)
@@ -30,11 +46,12 @@ def last_name(name: str) -> str:
 
 def author_set(authors: list[str]) -> set[str]:
     """Set of normalized surnames (for set-level Jaccard / subset checks)."""
-    return {ln for a in authors if (ln := last_name(a))}
+    return {ln for a in _named(authors) if (ln := last_name(a))}
 
 
 def author_overlap(query_authors: list[str], item_authors: list[str]) -> float:
     """Average best per-query-author surname match in [0, 1]."""
+    query_authors, item_authors = _named(query_authors), _named(item_authors)
     if not query_authors or not item_authors:
         return 0.0
     item_last = [last_name(a) for a in item_authors]
@@ -76,6 +93,7 @@ def mismatched_authors(
     Skips the check entirely when the canonical list is noticeably shorter than the bib list,
     since a truncated API response would produce spurious mismatches for the omitted names.
     """
+    bib_authors, canonical_authors = _named(bib_authors), _named(canonical_authors)
     if not bib_authors or not canonical_authors:
         return []
     if len(canonical_authors) < len(bib_authors) * 0.9:

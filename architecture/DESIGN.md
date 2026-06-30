@@ -207,7 +207,7 @@ To query external bibliographic databases and pages and return candidate artifac
 
 ##### Responsibility scope
 
-Modular adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library, Google Books, the
+Modular adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open Library, Google Books, the
 publisher DOI landing-page citation export, and a web page fetcher) producing `SourceRecord`s behind
 a common interface, with per-entry routing by id vs. metadata. The web page fetcher additionally
 detects JavaScript single-page-app shells (a served page with no readable content) and re-fetches
@@ -362,7 +362,7 @@ External libraries and services this module interacts with.
 | beautifulsoup4 | HTML parsing | Web/publisher page metadata extraction |
 | openai | structured-output chat | LLM adjudication |
 | rapidfuzz / anyascii | fuzzy string / transliteration | Title/author similarity features |
-| Crossref / OpenAlex / S2 / arXiv / Open Library / Google Books | HTTPS JSON APIs | Candidate identification |
+| Crossref / OpenAlex / S2 / arXiv / DBLP / Open Library / Google Books | HTTPS JSON APIs | Candidate identification |
 
 **Dependency Rules** (per project conventions):
 - Only the `sources` and `llm` components talk to external network services.

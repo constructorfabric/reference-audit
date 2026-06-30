@@ -26,10 +26,17 @@ to an LLM when needed:
 1. **Parse** the `.bib` (and resolve `\cite`/`\nocite` in the `.tex`), normalizing DOIs, ISBNs,
    arXiv ids, OpenAlex Work ids (an `openalex.org/W…` URL becomes a first-class identifier) and
    Google Books volume ids (a `books.google.…/books?id=…` URL).
-2. **Query** multiple scholarly databases — Crossref, OpenAlex, Semantic Scholar, arXiv, Open
+2. **Query** multiple scholarly databases — Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open
    Library, Google Books — both by identifier and by title/author. A cited OpenAlex Work id or
    Google Books volume id is resolved directly to that work (the authoritative key for entries —
-   notably trade books — the other sources miss).
+   notably trade books — the other sources miss). DBLP is the authority for the premier CS/ML venues
+   (NeurIPS, ICLR, ICML/PMLR, TMLR), which mint no DOI and are thinly covered by the article-centric
+   sources — a paper cited only by its proceedings or OpenReview URL is confirmed against DBLP's
+   exact title/author/year record (a bare URL is not treated as a matching anchor, so such an entry
+   takes the same strict title+author path as one with no identifier at all). A truncated author
+   list (the BibTeX `and others` / "et al." convention) is recognized as such, so its named authors
+   matching a prefix of the full record's author list confirms the entry rather than reading the
+   omitted names as a different work.
 3. **Pool** the results, merging records that are the same work (shared identifier, or a
    preprint↔published version link).
 4. **Score** each candidate with interpretable features (title/author/year/venue similarity,
@@ -109,7 +116,7 @@ GOOGLE_BOOKS_API_KEY=...            # Google Books per-project quota (the keyles
 ```
 
 Only `OPENAI_API_KEY` is needed to run the full pipeline; the data sources used by default
-(Crossref, OpenAlex, arXiv, Open Library) require no key. Google Books works without a key but on a
+(Crossref, OpenAlex, arXiv, DBLP, Open Library) require no key. Google Books works without a key but on a
 shared global daily quota that is frequently exhausted — set `GOOGLE_BOOKS_API_KEY` for reliable
 book coverage at scale. You can also run with no LLM at all (`--no-llm`, see below).
 
@@ -308,7 +315,7 @@ uv run cfs update            # update studio (kits are left alone unless you pas
 ```
 src/reference_audit/
   parsing/     # .bib / .tex / identifier parsing
-  sources/     # modular adapters: Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library,
+  sources/     # modular adapters: Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open Library,
                #   Google Books, publisher (DOI landing-page citation export), web (cited-page fetch),
                #   render (headless-browser rendering of JS single-page-app pages); + routing
   matching/    # candidate pooling, feature scoring, SAME-OBJECT clustering, verdicts, web check

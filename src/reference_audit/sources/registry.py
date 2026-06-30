@@ -14,6 +14,7 @@ from reference_audit.models import BibEntry, EntryType
 from reference_audit.sources.arxiv import ArxivAdapter
 from reference_audit.sources.base import SourceAdapter
 from reference_audit.sources.crossref import CrossrefAdapter
+from reference_audit.sources.dblp import DblpAdapter
 from reference_audit.sources.google_books import GoogleBooksAdapter
 from reference_audit.sources.openalex import OpenAlexAdapter
 from reference_audit.sources.openlibrary import OpenLibraryAdapter
@@ -45,6 +46,7 @@ def build_default_adapters(config: AuditConfig) -> list[SourceAdapter]:
         CrossrefAdapter(mailto=mailto),
         OpenAlexAdapter(mailto=mailto),
         SemanticScholarAdapter(api_key=config.s2_api_key),
+        DblpAdapter(),
         ArxivAdapter(),
         OpenLibraryAdapter(email=config.openlibrary_email),
         GoogleBooksAdapter(api_key=config.google_books_api_key),
@@ -90,9 +92,11 @@ def route_entry(entry: BibEntry, adapters: list[SourceAdapter]) -> Route:
     if entry.entry_type in (EntryType.BOOK, EntryType.INCOLLECTION):
         metadata_adapters = present("openlibrary", "google_books", "crossref")
     elif entry.entry_type == EntryType.MISC:
-        metadata_adapters = present("arxiv", "openalex", "crossref", "semantic_scholar")
+        metadata_adapters = present("arxiv", "openalex", "crossref", "semantic_scholar", "dblp")
     else:  # ARTICLE / INPROCEEDINGS / UNKNOWN
-        metadata_adapters = present("crossref", "openalex", "semantic_scholar")
+        # DBLP is the authority for the premier CS/ML venues (NeurIPS/ICLR/ICML), which mint no DOI
+        # and are thinly covered by the article-centric aggregators — decisive for @inproceedings.
+        metadata_adapters = present("crossref", "openalex", "semantic_scholar", "dblp")
 
     # de-dup while preserving order
     id_adapters = list(dict.fromkeys(id_adapters))

@@ -164,6 +164,67 @@ def openalex_work_to_record(work: dict) -> SourceRecord:
     )
 
 
+# ── DBLP (computer-science venues — the premier ML conferences) ────────────────
+# DBLP appends a 4-digit homonym-disambiguation number to non-unique names ("Bowen Baker 0001");
+# it is not part of the name and must be stripped before author comparison.
+_DBLP_HOMONYM_RE = re.compile(r"\s+\d{4}$")
+
+
+def _dblp_authors(info: dict) -> list[str]:
+    """DBLP collapses a single-element array to a bare object, so `authors.author` may be a list of
+    `{text, @pid}` dicts, one such dict, or absent. Normalize all shapes to a list of names."""
+    block = info.get("authors") or {}
+    raw = block.get("author")
+    if raw is None:
+        return []
+    items = raw if isinstance(raw, list) else [raw]
+    out: list[str] = []
+    for a in items:
+        name = (a.get("text") if isinstance(a, dict) else str(a)) or ""
+        name = _DBLP_HOMONYM_RE.sub("", name.strip())
+        if name:
+            out.append(name)
+    return out
+
+
+def _dblp_venue(info: dict) -> str:
+    """`venue` is a string, or a list when the record spans several streams — take the first."""
+    venue = info.get("venue")
+    if isinstance(venue, list):
+        return (venue[0] if venue else "").strip()
+    return (venue or "").strip()
+
+
+def dblp_hit_to_record(hit: dict) -> SourceRecord:
+    """One DBLP publ-search `hit` → SourceRecord.
+
+    DBLP authoritatively indexes the premier CS/ML venues (NeurIPS, ICLR, ICML/PMLR), which mint no
+    DOI and are thinly/ambiguously covered by the article-centric aggregators. The `ee` field is the
+    electronic-edition landing page — typically the very proceedings URL the `.bib` cites — so it is
+    kept as `ids.url`; a DOI is captured when present, and an arXiv id is recovered from an `ee`
+    pointing at arxiv.org (DBLP's "Informal and Other Publications" preprint records).
+    """
+    info = hit.get("info") or {}
+    title = (info.get("title") or "").strip().rstrip(".")
+    ee = (info.get("ee") or "").strip()
+    doi = normalize_doi(info.get("doi")) or normalize_doi(ee)
+    arxiv = extract_arxiv_id(None, None, fallback_text=ee)
+    year = info.get("year")
+    rec_type = (info.get("type") or "")
+    return SourceRecord(
+        source="dblp",
+        source_native_id=(info.get("key") or "").strip(),
+        title=title,
+        authors=_dblp_authors(info),
+        year=int(year) if year and str(year).isdigit() else None,
+        venue=_dblp_venue(info),
+        pages=(info.get("pages") or "").strip(),
+        ids=Identifiers(doi=doi, arxiv_id=arxiv, url=ee or None),
+        is_preprint="informal" in rec_type.lower(),
+        raw=hit,
+    )
+
+
 # ── Semantic Scholar ──────────────────────────────────────────────────────────
 def s2_paper_to_record(paper: dict) -> SourceRecord:
     ext = paper.get("externalIds") or {}

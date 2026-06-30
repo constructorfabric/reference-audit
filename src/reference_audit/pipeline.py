@@ -317,7 +317,11 @@ class AuditPipeline:
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-gather
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-assess
         pooled = pool_candidates(records)
-        entry_has_id = entry.ids.any_present()
+        # A bare URL is not a matching anchor (no feature compares it), so a conference paper cited
+        # only by its proceedings URL is, for scoring, as anchorless as one with no id — eligible for
+        # the strict title+author backfill path. This is what lets a DBLP-confirmed NeurIPS/ICLR/ICML
+        # paper (no DOI) reach a deterministic verdict instead of depending on the LLM.
+        entry_has_id = entry.ids.has_strong_id()
         audit.candidates = [self._assess(entry, r, entry_has_id=entry_has_id) for r in pooled]
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-assess
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-verdict

@@ -84,6 +84,18 @@ class Identifiers(BaseModel):
             )
         )
 
+    def has_strong_id(self) -> bool:
+        """True if a *scholarly anchor* is present — a DOI / ISBN / arXiv / PMID / bibcode /
+        OpenAlex Work id / Google Books volume id. A bare `url` does NOT count: no matching feature
+        compares it, so for scoring an entry identified only by a URL is as anchorless as one with no
+        identifier at all, and must be eligible for the strict title+author backfill path."""
+        return any(
+            (
+                self.doi, self.arxiv_id, self.isbn13, self.pmid, self.bibcode,
+                self.openalex, self.google_books,
+            )
+        )
+
 
 def compute_content_hash(
     title: str, authors: list[str], year: int | None, venue: str, ids: Identifiers

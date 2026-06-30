@@ -19,10 +19,11 @@ Bucket = Literal["auto_accept", "auto_reject", "adjudicate"]
 def bucket(features: FeatureVector, config: AuditConfig, *, entry_has_id: bool = True) -> Bucket:
     """Bucket one (entry, candidate) by its feature vector.
 
-    `entry_has_id` enables the strict backfill path: when the bib entry carries NO identifier, a
-    near-exact title + strong authors (and no distinct-work veto) is accepted so the matched DOI can
-    be backfilled. The threshold is stricter than the id-based path because there is no identifier
-    to anchor the match.
+    `entry_has_id` enables the strict backfill path: when the bib entry carries no *strong* anchor
+    (DOI / ISBN / arXiv / OpenAlex / Google Books — a bare URL does not count, see
+    `Identifiers.has_strong_id`), a near-exact title + strong authors (and no distinct-work veto) is
+    accepted so the matched DOI can be backfilled. The threshold is stricter than the id-based path
+    because there is no identifier to anchor the match.
     """
     # A low author-set overlap forces adjudication ONLY when neither set is a subset of the other:
     # a subset is consistent with an abbreviated "et al." list (same work), not a distinct work.

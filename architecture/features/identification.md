@@ -167,6 +167,22 @@ volume id) over metadata search. Books are additionally queried against **Google
 forgiving title/author/ISBN search recovers real books that Open Library's strict title match (a
 subtitle-bearing title, or a single off-by-one ISBN) reports as not found.
 
+Articles and conference papers are additionally queried against **DBLP**, the authority for the
+premier CS/ML venues (NeurIPS, ICLR, ICML/PMLR, TMLR). These mint **no DOI** and are
+thinly/ambiguously covered by the article-centric aggregators, so a real paper cited only by its
+proceedings or OpenReview URL would otherwise be "unable to verify". For scoring, a bare URL is
+**not** a strong anchor (`Identifiers.has_strong_id` excludes it — no feature compares a URL), so a
+URL-only entry takes the strict title+author backfill path: a DBLP record with the exact title, full
+author list, and year confirms it deterministically (no LLM required).
+
+A **truncated author list** — the BibTeX `and others` convention (and a written-out "et al.") —
+is treated as a truncation marker, not a literal author (`matching/names.py`). Left in, the phantom
+surname "others" would drag author overlap down and break the subset check (an intentionally
+abbreviated list is no longer ⊆ the full author list), tripping the distinct-author-set veto and
+forcing needless adjudication — which, with no LLM, leaves an otherwise-confirmable paper (e.g. a
+~30-author RLHF survey) unresolved. The marker is dropped, so the named authors matching a prefix of
+the record's full list confirms identity.
+
 A cited OpenAlex Work id (an `openalex.org/W…` URL) is routed to OpenAlex's by-id lookup and treated
 as authoritative identity: when the resolved Work matches the entry's title+author it is pinned as
 the matched artifact (`_apply_openalex_identity`), so the article-centric pooler cannot dissolve the
