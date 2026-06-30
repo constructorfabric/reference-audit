@@ -46,9 +46,10 @@ def match_cited_edition(
     """
     if not editions:
         return None
-    if entry.ids.isbn13:
+    cited_isbns = entry.ids.all_isbn13()
+    if cited_isbns:
         for e in editions:
-            if e.ids.isbn13 and e.ids.isbn13 == entry.ids.isbn13:
+            if e.ids.all_isbn13() & cited_isbns:
                 return e
     if entry.year is not None:
         if entry.publisher:

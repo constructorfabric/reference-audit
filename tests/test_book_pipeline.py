@@ -273,3 +273,70 @@ async def test_book_not_in_openlibrary_raises_gap(tmp_path):
     assert any("could not verify the cited edition" in i for i in audit.issues)
     # ...and no edition-grounded year/publisher finding was fabricated.
     assert not any(f.field in ("year", "publisher") for f in audit.field_findings)
+
+
+# amsden1989asia: a real @book cited by a CHAPTER-level Oxford DOI. The DOI resolves to a chapter
+# ("A History of Backwardness") whose title differs from the book, so the generic matcher rejects it
+# — but the chapter record carries the book's ISBNs, which resolve the book in Open Library.
+_CHAPTER_DOI = {
+    "DOI": "10.1093/abc123.003.0002",
+    "title": ["A History of Backwardness"],
+    "container-title": ["Asia's Next Giant"],
+    "author": [{"given": "Alice H.", "family": "Amsden"}],
+    "issued": {"date-parts": [[1992]]},
+    "publisher": "Oxford University Press",
+    # Print ISBN (OL indexes it) + an online ISBN OL does NOT index — exercises "try every ISBN".
+    "ISBN": ["9780195076035", "9780199870691"],
+    "type": "book-chapter",
+}
+_CHAPTER_BOOK_BIB = (
+    "@book{amsden1989asia, title={Asia's Next Giant: South Korea and Late Industrialization}, "
+    "author={Amsden, Alice H}, year={1989}, publisher={Oxford University Press}, "
+    "doi={10.1093/abc123.003.0002}}"
+)
+
+
+@respx.mock
+async def test_book_cited_by_chapter_doi_confirmed_via_isbn_backfill(tmp_path):
+    # by-id lookup and metadata search both return the chapter (title ≠ book title → generic NO MATCH).
+    respx.get(url__regex=r"api\.crossref\.org/works/10\.1093").mock(
+        return_value=httpx.Response(200, json={"message": _CHAPTER_DOI})
+    )
+    respx.get(url__regex=r"api\.crossref\.org/works\?").mock(
+        return_value=httpx.Response(200, json={"message": {"items": [_CHAPTER_DOI]}})
+    )
+    # Open Library indexes the book by its print ISBN only; the online ISBN and the subtitle-bearing
+    # title search both miss (the route order makes the specific ISBN win over the empty catch-all).
+    respx.get(url__regex=r"openlibrary\.org/search\.json\?.*isbn=9780195076035").mock(
+        return_value=httpx.Response(200, json={"docs": [
+            {"key": "/works/OLW", "title": "Asia's next giant"}]})
+    )
+    respx.get(url__regex=r"openlibrary\.org/search\.json").mock(
+        return_value=httpx.Response(200, json={"docs": []})
+    )
+    respx.get(url__regex=r"openlibrary\.org/works/OLW/editions\.json").mock(
+        return_value=httpx.Response(200, json={"entries": [
+            {"key": "/books/OL1", "title": "Asia's Next Giant", "publish_date": "1989",
+             "publishers": ["Oxford University Press"], "isbn_13": ["9780195058529"]},
+            {"key": "/books/OL2", "title": "Asia's Next Giant", "publish_date": "1992",
+             "publishers": ["Oxford University Press"], "isbn_13": ["9780195076035"]},
+        ]})
+    )
+    bib = tmp_path / "r.bib"
+    bib.write_text(_CHAPTER_BOOK_BIB, encoding="utf-8")
+    pipe = AuditPipeline(
+        AuditConfig(model="t", use_llm=False),
+        adapters=[CrossrefAdapter(client=httpx.AsyncClient()),
+                  OpenLibraryAdapter(client=httpx.AsyncClient())],
+    )
+    report = await pipe.run(None, bib)
+    await pipe.aclose()
+
+    audit = report.entries[0]
+    # The regression: this real book was flagged NO MATCH. The chapter DOI's ISBNs now backfill into
+    # Open Library, which confirms the book — grounded on the CITED 1989 edition, not the 1992 reprint.
+    assert audit.verdict.kind == "exactly_one"
+    best = audit.verdict.artifacts[0].best_record
+    assert best.source == "openlibrary"
+    assert best.year == 1989
+    assert any("chapter/component DOI" in i for i in audit.issues)

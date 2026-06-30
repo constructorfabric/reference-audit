@@ -31,6 +31,22 @@ _CROSSREF_VERSION_RELATIONS = (
 )
 
 
+def _normalize_isbn13s(raw: object) -> tuple[str, ...]:
+    """Every distinct ISBN-13 in a source's ISBN field (print + electronic, etc.), order-preserving.
+
+    Order is kept so the first becomes the record's canonical `isbn13`; the whole set drives matching
+    and pooling so different printings of one book read as the same work, not a conflict."""
+    if not raw:
+        return ()
+    items = [raw] if isinstance(raw, str) else list(raw)
+    out: list[str] = []
+    for i in items:
+        norm = normalize_isbn13(i if isinstance(i, str) else None)
+        if norm and norm not in out:
+            out.append(norm)
+    return tuple(out)
+
+
 def _crossref_year(item: dict) -> int | None:
     for field in ("published", "issued", "published-online", "published-print", "created"):
         block = item.get(field) or {}
@@ -72,8 +88,8 @@ def crossref_item_to_record(item: dict) -> SourceRecord:
     title = (title_list[0] if title_list else "").strip()
     venue_list = item.get("container-title") or []
     venue = (venue_list[0] if venue_list else "").strip()
-    isbn_list = item.get("ISBN") or []
-    isbn13 = normalize_isbn13(isbn_list[0]) if isbn_list else None
+    isbn13s = _normalize_isbn13s(item.get("ISBN"))
+    isbn13 = isbn13s[0] if isbn13s else None
     version_links = _crossref_version_links(item)
     arxiv = extract_arxiv_id(None, None, fallback_text=" ".join([doi or "", *version_links]))
 
@@ -90,7 +106,7 @@ def crossref_item_to_record(item: dict) -> SourceRecord:
         # `article-number` with no page range; fall back to it so it isn't reported unverifiable.
         pages=(item.get("page") or item.get("article-number") or "").strip(),
         publisher=(item.get("publisher") or "").strip(),
-        ids=Identifiers(doi=doi, isbn13=isbn13, arxiv_id=arxiv),
+        ids=Identifiers(doi=doi, isbn13=isbn13, isbn13s=isbn13s, arxiv_id=arxiv),
         is_preprint=(item.get("type") == "posted-content"),
         citation_count=int(item.get("is-referenced-by-count") or 0),
         version_links=version_links,
@@ -310,8 +326,8 @@ def publisher_bibtex_to_record(bibtex: str, *, source: str = "publisher") -> Sou
 
 # ── Open Library (books) ──────────────────────────────────────────────────────
 def openlibrary_doc_to_record(doc: dict) -> SourceRecord:
-    isbns = doc.get("isbn") or []
-    isbn13 = next((normalize_isbn13(i) for i in isbns if normalize_isbn13(i)), None)
+    isbn13s = _normalize_isbn13s(doc.get("isbn"))
+    isbn13 = isbn13s[0] if isbn13s else None
     authors = doc.get("author_name") or []
     publishers = doc.get("publisher") or []
     return SourceRecord(
@@ -321,7 +337,7 @@ def openlibrary_doc_to_record(doc: dict) -> SourceRecord:
         authors=[a.strip() for a in authors if a],
         year=doc.get("first_publish_year"),
         publisher=(publishers[0].strip() if publishers else ""),
-        ids=Identifiers(isbn13=isbn13),
+        ids=Identifiers(isbn13=isbn13, isbn13s=isbn13s),
         edition=doc.get("edition_count"),
         raw=doc,
     )
@@ -344,8 +360,8 @@ def openlibrary_edition_to_record(edition: dict, *, work_title: str = "") -> Sou
     per-edition granularity the book check needs to ground the *cited* edition and to point at the
     latest one.
     """
-    isbns = (edition.get("isbn_13") or []) + (edition.get("isbn_10") or [])
-    isbn13 = next((normalize_isbn13(i) for i in isbns if normalize_isbn13(i)), None)
+    isbn13s = _normalize_isbn13s((edition.get("isbn_13") or []) + (edition.get("isbn_10") or []))
+    isbn13 = isbn13s[0] if isbn13s else None
     publishers = edition.get("publishers") or []
     return SourceRecord(
         source="openlibrary",
@@ -353,7 +369,7 @@ def openlibrary_edition_to_record(edition: dict, *, work_title: str = "") -> Sou
         title=(edition.get("title") or work_title or "").strip(),
         year=_openlibrary_edition_year(edition.get("publish_date")),
         publisher=(publishers[0].strip() if publishers else ""),
-        ids=Identifiers(isbn13=isbn13),
+        ids=Identifiers(isbn13=isbn13, isbn13s=isbn13s),
         raw=edition,
     )
 
@@ -363,12 +379,12 @@ def openlibrary_edition_to_record(edition: dict, *, work_title: str = "") -> Sou
 _GBOOKS_YEAR = re.compile(r"\b(1[5-9]\d\d|20\d\d)\b")
 
 
-def _google_books_isbn13(info: dict) -> str | None:
-    """Prefer the ISBN_13, else convert an ISBN_10, from `industryIdentifiers`."""
+def _google_books_isbn13s(info: dict) -> tuple[str, ...]:
+    """Every ISBN-13 in `industryIdentifiers` (ISBN_13s first, then ISBN_10s normalized to 13)."""
     idents = info.get("industryIdentifiers") or []
-    by_type = {(i.get("type") or ""): (i.get("identifier") or "") for i in idents}
-    raw = by_type.get("ISBN_13") or by_type.get("ISBN_10")
-    return normalize_isbn13(raw) if raw else None
+    raw13 = [i.get("identifier") for i in idents if (i.get("type") or "") == "ISBN_13"]
+    raw10 = [i.get("identifier") for i in idents if (i.get("type") or "") == "ISBN_10"]
+    return _normalize_isbn13s(raw13 + raw10)
 
 
 def google_books_volume_to_record(volume: dict) -> SourceRecord:
@@ -383,6 +399,7 @@ def google_books_volume_to_record(volume: dict) -> SourceRecord:
     subtitle = (info.get("subtitle") or "").strip()
     full_title = f"{title}: {subtitle}" if subtitle else title
     m = _GBOOKS_YEAR.search(info.get("publishedDate") or "")
+    isbn13s = _google_books_isbn13s(info)
     return SourceRecord(
         source="google_books",
         source_native_id=(volume.get("id") or "").strip(),
@@ -391,7 +408,8 @@ def google_books_volume_to_record(volume: dict) -> SourceRecord:
         year=int(m.group(1)) if m else None,
         publisher=(info.get("publisher") or "").strip(),
         ids=Identifiers(
-            isbn13=_google_books_isbn13(info),
+            isbn13=isbn13s[0] if isbn13s else None,
+            isbn13s=isbn13s,
             google_books=(volume.get("id") or "").strip() or None,
         ),
         raw=volume,

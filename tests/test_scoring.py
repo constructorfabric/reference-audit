@@ -176,6 +176,52 @@ def test_openalex_work_id_mismatch_is_conflict():
     assert id_agreement(Identifiers(openalex="W1"), Identifiers(openalex="W2")) == "conflict"
 
 
+def test_isbn_set_overlap_is_match_not_conflict():
+    # hassen1997nile: a book chapter cited by the volume's *electronic* ISBN; the source record lists
+    # the same book's print + electronic ISBNs. A shared ISBN anywhere in the sets is a MATCH, never a
+    # conflict because the canonical (first) ISBNs differ.
+    from reference_audit.matching.features import id_agreement
+
+    cite = Identifiers(isbn13="9783642606168")  # electronic
+    record = Identifiers(isbn13="9783642644764", isbn13s=("9783642644764", "9783642606168"))
+    assert id_agreement(cite, record) == "match"
+
+
+def test_isbn_set_disjoint_is_conflict():
+    # Two different books (no shared ISBN-13) still read as a conflict.
+    from reference_audit.matching.features import id_agreement
+
+    assert id_agreement(Identifiers(isbn13="9783642606168"), Identifiers(isbn13="9780127439501")) == "conflict"
+
+
+def test_book_chapter_cited_by_volume_isbn_auto_accepts():
+    # The end-to-end shape of hassen1997nile: cited with the parent volume's electronic ISBN and no
+    # DOI, matched against the chapter's scholarly record (chapter DOI + the volume's ISBN set). The
+    # ISBN-set overlap makes this a deterministic Path-A id-match auto-accept — no LLM needed.
+    e = BibEntry(
+        key="hassen1997nile",
+        entry_type=EntryType.INPROCEEDINGS,
+        title="Nile Floods and Political Disorder in Early Egypt",
+        authors=["Hassan, Fekri A."],
+        year=1997,
+        ids=Identifiers(isbn13="9783642606168"),
+    )
+    r = SourceRecord(
+        source="crossref",
+        title="Nile Floods and Political Disorder in Early Egypt",
+        authors=["Fekri A. Hassan"],
+        year=1997,
+        ids=Identifiers(
+            doi="10.1007/978-3-642-60616-8_1",
+            isbn13="9783642644764",
+            isbn13s=("9783642644764", "9783642606168"),
+        ),
+    )
+    f = compute_features(e, r, tail_threshold=TT)
+    assert f.id_agreement == "match"
+    assert bucket(f, CFG, entry_has_id=e.ids.has_strong_id()) == "auto_accept"
+
+
 def test_subset_title_not_inflated():
     # "Fitness Landscapes" (a different chapter) must NOT score 1.0 against the full book title
     e = _entry(title="Fitness Landscapes and the Origin of Species", authors=["Gavrilets, Sergey"])

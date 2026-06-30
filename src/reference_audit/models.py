@@ -54,7 +54,12 @@ class Identifiers(BaseModel):
 
     doi: str | None = None          # bare, e.g. "10.1073/pnas.2004976117" (no https://doi.org/)
     arxiv_id: str | None = None     # e.g. "2412.17799"
-    isbn13: str | None = None       # 13-digit, separators stripped
+    isbn13: str | None = None       # primary 13-digit, separators stripped
+    # Every ISBN-13 this record carries. One physical book registers several (print + electronic, and
+    # per-edition), so a single `isbn13` scalar makes the *same* book look like an ISBN *conflict*
+    # when the cite and the source happen to pick different printings. `isbn13` stays the canonical
+    # one for display/lookup/backfill; matching and pooling use the whole set via `all_isbn13()`.
+    isbn13s: tuple[str, ...] = ()
     pmid: str | None = None
     bibcode: str | None = None      # NASA ADS
     openalex: str | None = None     # OpenAlex Work id, bare + upper, e.g. "W3034344071"
@@ -75,6 +80,13 @@ class Identifiers(BaseModel):
         if self.url:
             return "url"
         return None
+
+    def all_isbn13(self) -> frozenset[str]:
+        """Every ISBN-13 this record carries (primary + the rest), deduplicated.
+
+        Robust to whether the primary is also listed in `isbn13s`, so callers can populate either
+        field without double-bookkeeping."""
+        return frozenset(i for i in (self.isbn13, *self.isbn13s) if i)
 
     def any_present(self) -> bool:
         return any(

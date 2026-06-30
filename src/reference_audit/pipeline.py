@@ -17,7 +17,7 @@ from reference_audit.cache.store import AuditCache
 from reference_audit.config import AuditConfig
 from reference_audit.llm.client import LLMClient
 from reference_audit.matching.adjudicate import adjudicate_entry
-from reference_audit.matching.features import compute_features
+from reference_audit.matching.features import _published_doi, compute_features
 from reference_audit.matching.names import mismatched_authors
 from reference_audit.matching.pool import pool_candidates
 from reference_audit.matching.sameobject import cluster_accepted
@@ -75,6 +75,9 @@ class _BookResolution:
     editions: list[SourceRecord] = field(default_factory=list)
     matched: SourceRecord | None = None
     latest: SourceRecord | None = None
+    # Set when the entry carried no ISBN of its own and we located the book via an ISBN backfilled
+    # from the cited DOI's record (a chapter-level DOI of the book). Drives the explanatory note.
+    backfilled_isbn: str | None = None
 
 
 class EmptyBibliographyError(ValueError):
@@ -178,9 +181,17 @@ def _shares_strong_id(a: Identifiers, b: Identifiers) -> bool:
     """True if two identifier sets agree on any strong identifier (DOI / ISBN13 / arXiv)."""
     return bool(
         (a.doi and a.doi == b.doi)
-        or (a.isbn13 and a.isbn13 == b.isbn13)
+        or bool(a.all_isbn13() & b.all_isbn13())
         or (a.arxiv_id and a.arxiv_id == b.arxiv_id)
     )
+
+
+def _verdict_records(verdict: Verdict | None) -> list[SourceRecord]:
+    """Flatten the records behind a verdict's artifacts (used to re-derive book findings from a
+    cached verdict — the records carry the ISBN that originally located the book)."""
+    if verdict is None:
+        return []
+    return [r for a in verdict.artifacts for r in a.records]
 
 
 def _is_url_only_web(entry: BibEntry) -> bool:
@@ -296,8 +307,12 @@ class AuditPipeline:
                 # so this re-runs against the caches and reproduces the same verdict it discards).
                 await self._resolve_web(audit, cached)
                 # Books: re-derive the Open Library edition findings (editions are cached, so this is
-                # the same single fetch a --fresh run made) and report them identically.
-                await self._report_book(audit, await self._resolve_book(audit))
+                # the same single fetch a --fresh run made) and report them identically. The cached
+                # artifact's records carry the ISBN (incl. one backfilled from a chapter DOI), so the
+                # book is re-located the same way and the report can't contradict the cached verdict.
+                await self._report_book(
+                    audit, await self._resolve_book(audit, _verdict_records(cached))
+                )
                 return
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-route
         route = route_entry(entry, self.adapters)
@@ -361,7 +376,7 @@ class AuditPipeline:
         # DOI-bearing candidate is a 2018 reprint — a 42-year/ISBN gap that score-rejects). The
         # confirmed cited edition becomes the matched artifact, settled BEFORE caching.
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-book
-        book = await self._resolve_book(audit)
+        book = await self._resolve_book(audit, records)
         verdict = self._apply_book_identity(verdict, book)
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-book
 
@@ -696,21 +711,61 @@ class AuditPipeline:
                 f"not present in the metadata from {where}"
             )
 
-    async def _resolve_book(self, audit: EntryAudit) -> _BookResolution | None:
+    def _book_backfill_isbns(self, entry: BibEntry, records: list[SourceRecord]) -> tuple[str, ...]:
+        """ISBNs to locate the book in Open Library when the entry carries none of its own.
+
+        A book is often cited by a *chapter-level* DOI (Oxford Scholarship Online mints one DOI per
+        chapter: `10.1093/{isbn10}.003.0002`). That DOI's own record carries the containing book's
+        ISBNs, and Open Library — which whiffs on subtitle-bearing title searches — resolves the book
+        cleanly by ISBN. Return the *whole* ISBN set (OL indexes only some of a book's ISBNs, so we
+        try them all). Gated on the entry actually carrying a DOI (this is specifically the chapter-DOI
+        case); we trust an ISBN only from a record that provably belongs to this book: the author-cited
+        DOI's own record (same published DOI), or an Open Library edition (the authority itself, which
+        is what the cached artifact holds when re-deriving from a cached verdict). We deliberately do
+        NOT trust a mere same-author record, which could be a different book by the same author."""
+        cited_doi = _published_doi(entry.ids.doi)
+        if entry.ids.isbn13 or not cited_doi:
+            return ()
+        for r in records:
+            isbns = r.ids.all_isbn13()
+            if not isbns:
+                continue
+            if _published_doi(r.ids.doi) == cited_doi or r.source == "openlibrary":
+                return tuple(sorted(isbns))
+        return ()
+
+    async def _resolve_book(
+        self, audit: EntryAudit, records: list[SourceRecord] | None = None
+    ) -> _BookResolution | None:
         """Consult Open Library — the authority of record for books — for the entry's editions.
 
         Returns None for non-books. Otherwise fetches the editions and selects the cited one
         (`matched`) and the most recent one (`latest`); a transport/HTTP failure is carried as
         `error` (reliability: an outage is reported, never read as 'no editions'). The result drives
         both the identity override (`_apply_book_identity`) and the report (`_report_book`).
+
+        When the entry has no ISBN of its own, an ISBN backfilled from the cited DOI's record (see
+        `_book_backfill_isbn`) is used to *fetch* the editions — but the cited edition is still matched
+        against the original entry's year/publisher, so a book cited by a chapter DOI grounds on the
+        edition the author actually cited (e.g. the 1989 original, not a 1992 reprint the DOI rides on).
         """
         if audit.entry.entry_type not in _NEEDS_ISBN:
             return None
         ol = next((a for a in self.adapters if a.name == "openlibrary"), None)
         if ol is None:
             return _BookResolution(error="Open Library adapter not configured")
+        backfilled = self._book_backfill_isbns(audit.entry, records or [])
+        query_entry = audit.entry
+        if backfilled:
+            query_entry = audit.entry.model_copy(
+                update={
+                    "ids": audit.entry.ids.model_copy(
+                        update={"isbn13": backfilled[0], "isbn13s": backfilled}
+                    )
+                }
+            )
         try:
-            result = await self._fetch_editions(audit.entry, ol)
+            result = await self._fetch_editions(audit.entry, ol, query_entry=query_entry)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — report, don't fail the entry
@@ -718,10 +773,16 @@ class AuditPipeline:
         if result.error:
             return _BookResolution(error=result.error)
         editions = result.records
+        # Cited edition by the original entry's year/publisher; fall back to the backfilled-ISBN
+        # edition so a book whose cited year matches no edition is still confirmed (not a miss).
+        matched = match_cited_edition(audit.entry, editions)
+        if matched is None and backfilled:
+            matched = match_cited_edition(query_entry, editions)
         return _BookResolution(
             editions=editions,
-            matched=match_cited_edition(audit.entry, editions),
+            matched=matched,
             latest=latest_edition(editions),
+            backfilled_isbn=(matched.ids.isbn13 if (backfilled and matched) else None),
         )
 
     def _apply_openalex_identity(self, verdict, entry: BibEntry, records: list[SourceRecord]):
@@ -865,18 +926,31 @@ class AuditPipeline:
                 if f.status in ("error", "uncertain"):
                     audit.issues.append(finding_note(f))
 
+        if book.backfilled_isbn is not None:
+            audit.issues.append(
+                f"the cited DOI ({audit.entry.ids.doi}) is a chapter/component DOI; the book itself "
+                f"was confirmed via Open Library by its ISBN ({book.backfilled_isbn}) — consider "
+                "citing the book's ISBN or book-level DOI"
+            )
+
         # Step 2: a later edition than the one cited is a better version to consider.
         note = better_edition_note(book.matched, book.latest)
         if note:
             audit.issues.append(note)
 
-    async def _fetch_editions(self, entry: BibEntry, ol: SourceAdapter):
-        """Open Library editions for `entry` (cached per entry, like any source query)."""
+    async def _fetch_editions(
+        self, entry: BibEntry, ol: SourceAdapter, *, query_entry: BibEntry | None = None
+    ):
+        """Open Library editions for `entry` (cached per entry, like any source query).
+
+        `query_entry` (default `entry`) is what's actually sent to Open Library — it may carry an ISBN
+        backfilled from the cited DOI — while the cache key stays the *original* entry's hash, so the
+        cached-verdict re-derivation reuses the same editions regardless of how the ISBN was found."""
         if self.cache is not None:
             cached = self.cache.get_source_query(entry.content_hash, ol.name, "editions")
             if cached is not None:
                 return cached
-        result = await ol.fetch_editions(entry)
+        result = await ol.fetch_editions(query_entry or entry)
         if self.cache is not None:
             self.cache.put_source_query(entry.content_hash, result)
         return result

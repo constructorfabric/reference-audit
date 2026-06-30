@@ -67,6 +67,7 @@ def _merge_ids(a: Identifiers, b: Identifiers) -> Identifiers:
         doi=a.doi or b.doi,
         arxiv_id=a.arxiv_id or b.arxiv_id,
         isbn13=a.isbn13 or b.isbn13,
+        isbn13s=tuple(dict.fromkeys((*a.isbn13s, *b.isbn13s, *a.all_isbn13(), *b.all_isbn13()))),
         pmid=a.pmid or b.pmid,
         bibcode=a.bibcode or b.bibcode,
         openalex=a.openalex or b.openalex,

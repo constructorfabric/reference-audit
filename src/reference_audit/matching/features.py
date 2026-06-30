@@ -87,9 +87,16 @@ def id_agreement(a: Identifiers, b: Identifiers) -> Literal["match", "conflict",
     arXiv preprint DOI is a version relationship, not a conflict.
     """
     saw_shared = False
+    # ISBN is set-valued: one book registers several ISBN-13s (print + electronic, per edition), so a
+    # shared ISBN anywhere in the two sets is a match, and it's a conflict only when the sets are
+    # wholly disjoint — never because the cite and the source picked different printings of one book.
+    a_isbns, b_isbns = a.all_isbn13(), b.all_isbn13()
+    if a_isbns and b_isbns:
+        saw_shared = True
+        if a_isbns & b_isbns:
+            return "match"
     pairs = (
         (_published_doi(a.doi), _published_doi(b.doi)),
-        (a.isbn13, b.isbn13),
         (a.arxiv_id, b.arxiv_id),
         (a.pmid, b.pmid),
         (a.openalex, b.openalex),

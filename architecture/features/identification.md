@@ -123,6 +123,14 @@ bucket. Called per candidate by the audit flow's `inst-assess` step.
 1. [x] - `p1` - Compute the full feature vector (`compute_features`) - `inst-features`
 2. [x] - `p1` - **RETURN** the assessment with the formal bucket (`bucket`) - `inst-bucket`
 
+The `id_agreement` feature is **set-aware for ISBNs**: a book registers several ISBN-13s (print +
+electronic, per edition), so each `Identifiers` carries the whole set (`all_isbn13()`). Two records
+agree when their ISBN sets intersect, and `conflict` only when both carry ISBNs that are wholly
+disjoint — a cite giving a volume's electronic ISBN no longer reads as a conflict against a source
+record that lists the print ISBN. This is what lets a book-chapter cited by its containing volume's
+ISBN reach an `auto_accept` (id-match) bucket deterministically, instead of every candidate being
+forced to LLM adjudication.
+
 ### Cluster accepted candidates into a verdict
 
 - [x] `p1` - **ID**: `cpt-referenceaudit-algo-identification-verdict`
@@ -232,6 +240,17 @@ Open Library edition lookup failed (transport/HTTP error), `_apply_book_identity
 verdict to `unresolved` (reported, retried next run) rather than assert a hallucination that was
 never really checked. This override runs in the `inst-book` step and is covered by tests but is not
 yet a separately `@cpt`-traced flow instruction.
+
+A book cited by a **chapter-level DOI** (`10.1093/{isbn}.003.0002`) resolves to a *component* whose
+title differs from the book, so the article-centric matcher returns `none`. When the entry carries no
+ISBN of its own, `_book_backfill_isbns` takes the ISBNs from that cited DOI's own record (trusted
+because the published DOI matches the entry's, or because the record is an Open Library edition during
+cached re-derivation — never a mere same-author record) and `_resolve_book` queries Open Library by
+every one of them (the adapter's `_work_keys` tries each ISBN, since a book registers several and
+Open Library indexes only some). The cited *edition* is still selected by the entry's own
+year/publisher, so the match grounds on the edition the author cited, not whichever reprint the DOI
+rides on. The editions fetch is cache-keyed by the original entry so the cached re-derivation reports
+identically. This runs in the `inst-book` step.
 
 **Implements**:
 - `cpt-referenceaudit-algo-identification-verdict`

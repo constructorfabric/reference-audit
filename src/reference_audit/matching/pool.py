@@ -28,6 +28,12 @@ def _own_keys(rec: SourceRecord) -> set[str]:
         keys.add(f"doi:{rec.ids.doi}")
     if rec.ids.arxiv_id:
         keys.add(f"arxiv:{rec.ids.arxiv_id.lower()}")
+    # Pool on the canonical ISBN only — deliberately NOT the whole `all_isbn13()` set. A book
+    # *chapter*'s scholarly record inherits its containing volume's ISBNs, so pooling on any shared
+    # ISBN would fuse sibling chapters (and the chapter with its parent book) into one record whose
+    # representative is picked by citation-richness, not title — which could bury the title-matching
+    # chapter. Same-work editions (print vs electronic) are still unified downstream by the
+    # SAME-OBJECT clustering at verdict time, which compares title+author, not ISBN membership alone.
     if rec.ids.isbn13:
         keys.add(f"isbn:{rec.ids.isbn13}")
     if rec.openalex_work_id:
@@ -59,6 +65,7 @@ def _merge_ids(a: Identifiers, b: Identifiers) -> Identifiers:
         doi=a.doi or b.doi,
         arxiv_id=a.arxiv_id or b.arxiv_id,
         isbn13=a.isbn13 or b.isbn13,
+        isbn13s=tuple(dict.fromkeys((*a.isbn13s, *b.isbn13s, *a.all_isbn13(), *b.all_isbn13()))),
         pmid=a.pmid or b.pmid,
         bibcode=a.bibcode or b.bibcode,
         openalex=a.openalex or b.openalex,

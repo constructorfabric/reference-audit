@@ -126,7 +126,7 @@ network access is confined to the `sources` and `llm` packages.
 | Entity | Description | Schema |
 |--------|-------------|--------|
 | BibEntry | A parsed `.bib` entry with normalized `Identifiers`. | [models.py](../src/reference_audit/models.py) |
-| Identifiers | Normalized DOI / ISBN13 / arXiv / OpenAlex Work id / Google Books volume id / URL / PMID. | [models.py](../src/reference_audit/models.py) |
+| Identifiers | Normalized DOI / ISBN13 (set-valued: `all_isbn13()` carries print+electronic) / arXiv / OpenAlex Work id / Google Books volume id / URL / PMID. | [models.py](../src/reference_audit/models.py) |
 | EntryAudit | A `BibEntry` plus its verdict and issue list. | [models.py](../src/reference_audit/models.py) |
 | AuditReport | The aggregate report (entries + bookkeeping + summary). | [models.py](../src/reference_audit/models.py) |
 | SourceRecord | A candidate artifact returned by a database/web adapter. | [models.py](../src/reference_audit/models.py) |

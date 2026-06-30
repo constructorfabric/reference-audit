@@ -69,7 +69,7 @@ class AuditConfig(BaseSettings):
 
     # --- Cache / pipeline ---
     cache_path: Path | None = None        # default: <bib_dir>/.reference_audit/cache.db
-    pipeline_version: str = "0.13"        # bump when thresholds/prompts/rules change
+    pipeline_version: str = "0.15"        # bump when thresholds/prompts/rules change
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

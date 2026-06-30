@@ -38,9 +38,15 @@ to an LLM when needed:
    matching a prefix of the full record's author list confirms the entry rather than reading the
    omitted names as a different work.
 3. **Pool** the results, merging records that are the same work (shared identifier, or a
-   preprint↔published version link).
+   preprint↔published version link). ISBNs are treated as a *set*: one book registers several
+   ISBN-13s (print + electronic, per edition), so records that share any one of them are pooled as
+   the same work rather than read as different books.
 4. **Score** each candidate with interpretable features (title/author/year/venue similarity,
-   identifier agreement, and distinct-work signals).
+   identifier agreement, and distinct-work signals). Identifier agreement is likewise set-aware for
+   ISBNs — a cite that gives a book's electronic ISBN matches a source record carrying that book's
+   print ISBN, and it counts as a *conflict* only when the two ISBN sets are wholly disjoint (this is
+   what lets a book-chapter cited by its volume's ISBN resolve deterministically instead of falling
+   to the LLM).
 5. **Adjudicate** anything that isn't a clean match with an LLM, asking one record at a time whether
    it can correspond to the entry; a second LLM check decides whether two strong candidates are the
    *same* work.
@@ -74,6 +80,15 @@ candidate is a 2018 reprint). Because of this, a book is only ever called a hall
 authority was actually consulted — if Open Library is unreachable, an article-search "no match" is
 **not** trusted: the entry is left unresolved (reported, retried next run) rather than flagged as a
 likely hallucination we never really checked.
+
+A book is frequently cited by a **chapter-level DOI** (Oxford Scholarship Online and similar mint one
+DOI per chapter, e.g. `10.1093/{isbn}.003.0002`), which resolves to a *component* whose title differs
+from the book — so the article-centric matcher rejects it as a non-match. When such a book carries no
+ISBN of its own, the ISBNs on that cited DOI's own record are used to locate the book in Open Library
+(every ISBN is tried, since one book registers several and Open Library indexes only some). The cited
+*edition* is still pinned by the entry's own year/publisher, so a book cited by a chapter DOI grounds
+on the edition the author actually cited (the 1989 original, not a 1992 reprint the DOI rides on), and
+the report notes that a chapter/component DOI was cited.
 
 **Google Books** supplements this where Open Library falls short. Open Library's title search is
 strict — a title carrying its subtitle (*"Why Nations Fail: The Origins of Power, Prosperity, and

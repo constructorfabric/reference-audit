@@ -126,8 +126,10 @@ class OpenLibraryAdapter(SourceAdapter):
 
     async def _work_keys(self, entry: BibEntry) -> list[str]:
         keys: list[str] = []
-        if entry.ids.isbn13:
-            params: dict[str, str | int] = {"isbn": entry.ids.isbn13, "fields": "key,title", "limit": 5}
+        # Try every ISBN the entry carries: one book registers several (print/electronic, per
+        # edition) and Open Library indexes only some, so a single ISBN can miss a book it does hold.
+        for isbn in sorted(entry.ids.all_isbn13()):
+            params: dict[str, str | int] = {"isbn": isbn, "fields": "key,title", "limit": 5}
             _status, data = await get_json(self.client, self.rate_limiter, _SEARCH, params=params)
             for doc in (data or {}).get("docs") or []:
                 key = (doc.get("key") or "").strip()

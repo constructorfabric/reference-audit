@@ -43,6 +43,32 @@ async def test_lookup_by_id_returns_normalized_record():
 
 
 @respx.mock
+async def test_book_chapter_captures_all_isbns():
+    # A book chapter's Crossref record lists the containing volume's print + electronic ISBNs. The
+    # normalizer must keep the whole set (not just the first) so a cite giving either ISBN matches.
+    msg = {
+        "message": {
+            "DOI": "10.1007/978-3-642-60616-8_1",
+            "title": ["Nile Floods and Political Disorder in Early Egypt"],
+            "author": [{"given": "Fekri A.", "family": "Hassan"}],
+            "issued": {"date-parts": [[1997]]},
+            "type": "book-chapter",
+            "ISBN": ["9783642644764", "9783642606168"],
+        }
+    }
+    respx.get("https://api.crossref.org/works/10.1007/978-3-642-60616-8_1").mock(
+        return_value=httpx.Response(200, json=msg)
+    )
+    adapter = CrossrefAdapter(client=httpx.AsyncClient())
+    res = await adapter.lookup_by_id(Identifiers(doi="10.1007/978-3-642-60616-8_1"))
+    await adapter.aclose()
+
+    rec = res.records[0]
+    assert rec.ids.isbn13 == "9783642644764"  # canonical = first
+    assert rec.ids.all_isbn13() == frozenset({"9783642644764", "9783642606168"})
+
+
+@respx.mock
 async def test_404_is_absent_not_error():
     respx.get("https://api.crossref.org/works/10.9999/nope").mock(
         return_value=httpx.Response(404)
