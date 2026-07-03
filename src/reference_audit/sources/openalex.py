@@ -33,6 +33,7 @@ _SELECT = ",".join(
         "locations",
         "biblio",
         "cited_by_count",
+        "abstract_inverted_index",
     ]
 )
 

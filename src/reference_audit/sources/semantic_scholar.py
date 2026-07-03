@@ -14,7 +14,7 @@ from reference_audit.sources.http import TransientHTTPError, get_json
 from reference_audit.sources.normalize import s2_paper_to_record
 
 _BASE = "https://api.semanticscholar.org/graph/v1/paper"
-_FIELDS = "title,year,venue,authors,externalIds,citationCount"
+_FIELDS = "title,year,venue,authors,externalIds,citationCount,abstract"
 
 
 class SemanticScholarAdapter(SourceAdapter):
