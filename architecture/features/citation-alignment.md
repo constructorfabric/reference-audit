@@ -25,9 +25,11 @@
 
 - [ ] `p2` - **ID**: `cpt-referenceaudit-featstatus-citation-alignment`
 
-> **Status:** PLANNED. This feature is specified but not yet implemented or `@cpt`-traced to code.
-> Each checkbox is flipped to `[x]` (implemented **and** traced) as the corresponding milestone
-> step lands its code and marker, per the project's checkbox semantics.
+> **Status:** IMPLEMENTED, not yet `@cpt`-traced. The capability is built and covered by tests
+> (`parsing/tex.py::parse_citation_contexts`, `alignmentcheck.py`, the `pipeline._check_alignment`
+> wiring, and `report.py`). The checkboxes stay `[ ]` because instruction-level `@cpt` tracing to
+> code is follow-on governance work — mirroring how the `sources`/`matching`/`llm`/`cache` components
+> are implemented-but-untraced in [DESIGN](../DESIGN.md). Flip each box to `[x]` when its marker lands.
 
 ## 1. Feature Context
 

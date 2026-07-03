@@ -18,7 +18,7 @@
 - [5. Functional Requirements](#5-functional-requirements)
   - [5.1 Parsing & Bookkeeping (implemented)](#51-parsing--bookkeeping-implemented)
   - [5.2 Identification & Verdict (implemented)](#52-identification--verdict-implemented)
-  - [5.3 Citation Alignment (planned)](#53-citation-alignment-planned)
+  - [5.3 Citation Alignment](#53-citation-alignment)
 - [6. Non-Functional Requirements](#6-non-functional-requirements)
   - [6.1 NFR Inclusions](#61-nfr-inclusions)
   - [6.2 NFR Exclusions](#62-nfr-exclusions)
@@ -138,7 +138,7 @@ editions against Open Library, backfills missing DOIs/ISBNs, and reports the can
 - Reporting cited / uncited keys, missing `\input`/`\include` files, and citation-vs-bib mismatches.
 - Flagging deterministic metadata issues visible from the `.bib` alone.
 - Identifying artifacts against databases, the 3-way verdict, hallucination screening, URL-only web verification, book/edition resolution, best-version selection, and canonical field output.
-- Citation-alignment checking: comparing each citing context against the cited work's abstract (advisory; planned).
+- Citation-alignment checking: comparing each citing context against the cited work's abstract (advisory; implemented, not yet @cpt-traced).
 
 ### 4.2 Out of Scope
 
@@ -216,11 +216,11 @@ editions) and emit the canonical best reference.
 
 **Actors**: `cpt-referenceaudit-actor-author`
 
-### 5.3 Citation Alignment (planned)
+### 5.3 Citation Alignment
 
 > **Checkbox semantics:** a checked box marks a requirement implemented **and** traced to code. The
-> requirement below is `[ ]` — specified and governed by the
-> [Citation Alignment feature](features/citation-alignment.md), not yet implemented/traced.
+> requirement below is `[ ]` — implemented and covered by tests, but instruction-level `@cpt` tracing
+> to code is follow-on work (see the [Citation Alignment feature](features/citation-alignment.md)).
 
 #### Check a citation is used faithfully
 

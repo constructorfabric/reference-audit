@@ -333,7 +333,7 @@ cited work actually claims — a check distinct from whether the work exists.
 `alignmentcheck.py` pairs each citing context (`CitationContext`, extracted by `parsing/tex.py`) with
 the matched artifact's abstract and classifies it into `supported` / `contradicted` /
 `not_in_abstract` / `unverifiable`, escalating to the `llm` component with a strict pydantic schema and
-caching each decision. **PLANNED.**
+caching each decision. **IMPLEMENTED (not yet @cpt-traced).**
 
 ##### Responsibility boundaries
 

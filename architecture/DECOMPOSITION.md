@@ -153,7 +153,7 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
 
 - **Purpose**: For each in-text citation of an `exactly_one`-resolved reference, compare the citing
   context against the cited work's abstract and classify the usage — an advisory check that never
-  changes the identification verdict. **PLANNED.**
+  changes the identification verdict. **IMPLEMENTED (not yet @cpt-traced).**
 
 - **Depends On**: `cpt-referenceaudit-feature-identification`, `cpt-referenceaudit-feature-parsing`
 
