@@ -41,6 +41,10 @@ def audit(
     no_llm: bool = typer.Option(
         False, "--no-llm", help="Formal-only: skip LLM adjudication (deterministic)."
     ),
+    check_citations: bool = typer.Option(
+        False, "--check-citations",
+        help="Advisory: check each citing context against the cited work's abstract (needs the LLM).",
+    ),
     fresh: bool = typer.Option(False, "--fresh", help="Ignore cached results and re-query."),
     cache: Path | None = typer.Option(
         None, "--cache", help="Cache DB path (default: <bib_dir>/.reference_audit/cache.db)."
@@ -63,6 +67,8 @@ def audit(
                 updates["model"] = model
             if no_llm:
                 updates["use_llm"] = False
+            if check_citations:
+                updates["check_alignment"] = True
             config = AuditConfig().model_copy(update=updates)
             cache_path = cache or (bib.parent / ".reference_audit" / "cache.db")
             report = run_audit(
