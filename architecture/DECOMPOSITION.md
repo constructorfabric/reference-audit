@@ -6,6 +6,7 @@
 - [2. Entries](#2-entries)
   - [2.1 Parsing - HIGH](#21-parsing---high)
   - [2.2 Identification & Verdict - HIGH](#22-identification--verdict---high)
+  - [2.3 Citation Alignment - MEDIUM](#23-citation-alignment---medium)
 - [3. Feature Dependencies](#3-feature-dependencies)
 
 <!-- /toc -->
@@ -30,7 +31,7 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
 
 **Overall implementation status:**
 
-- [x] `p1` - **ID**: `cpt-referenceaudit-status-overall`
+- [ ] `p1` - **ID**: `cpt-referenceaudit-status-overall`
 
 ### 2.1 [Parsing](features/parsing.md) - HIGH
 
@@ -146,6 +147,45 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
   - [x] `p3` - `cpt-referenceaudit-db-cache`
   - `cpt-referenceaudit-dbtable-response-cache`
 
+### 2.3 [Citation Alignment](features/citation-alignment.md) - MEDIUM
+
+- [ ] `p2` - **ID**: `cpt-referenceaudit-feature-citation-alignment`
+
+- **Purpose**: For each in-text citation of an `exactly_one`-resolved reference, compare the citing
+  context against the cited work's abstract and classify the usage — an advisory check that never
+  changes the identification verdict. **PLANNED.**
+
+- **Depends On**: `cpt-referenceaudit-feature-identification`, `cpt-referenceaudit-feature-parsing`
+
+- **Scope**:
+  - Extract per-key citing contexts from the `.tex` (offline, in the parse slice)
+  - Source the cited work's abstract from the matched artifact
+  - Classify each context (supported / contradicted / not_in_abstract / unverifiable) via the LLM
+  - Report alignment findings without altering the verdict
+
+- **Out of scope**:
+  - Full-text claim verification (abstract-only in v1)
+
+- **Requirements Covered**:
+
+  - [ ] `p2` - `cpt-referenceaudit-fr-citation-alignment`
+
+- **Domain Model Entities**:
+  - CitationContext
+  - AlignmentFinding
+
+- **Design Components**:
+
+  - [ ] `p2` - `cpt-referenceaudit-component-alignment`
+
+- **API**:
+  - `reference_audit.alignmentcheck.resolve_alignment_findings(...)`
+  - `reference_audit.parsing.tex.parse_citation_contexts(...)`
+
+- **Sequences**:
+
+  - [ ] `p2` - `cpt-referenceaudit-seq-citation-alignment`
+
 ---
 
 ## 3. Feature Dependencies
@@ -153,7 +193,9 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
 ```text
 cpt-referenceaudit-feature-parsing
     ↓
-    └─→ cpt-referenceaudit-feature-identification
+    ├─→ cpt-referenceaudit-feature-identification
+    │       ↓
+    └─────→ cpt-referenceaudit-feature-citation-alignment
 ```
 
 **Dependency Rationale**:
@@ -161,3 +203,5 @@ cpt-referenceaudit-feature-parsing
 - `cpt-referenceaudit-feature-identification` requires `cpt-referenceaudit-feature-parsing`:
   identification and verdicts operate on the normalized entries and identifiers the parse slice
   produces.
+- `cpt-referenceaudit-feature-citation-alignment` requires both: it needs the citing contexts from
+  the parse slice and the resolved artifact (plus its abstract) from identification.

@@ -36,6 +36,12 @@ path = "architecture/features/identification.md"
 kind = "FEATURE"
 traceability = "FULL"
 
+[[systems.artifacts]]
+name = "Citation Alignment Feature"
+path = "architecture/features/citation-alignment.md"
+kind = "FEATURE"
+traceability = "FULL"
+
 [[systems.codebase]]
 name = "Reference Audit Source"
 path = "src/reference_audit"
