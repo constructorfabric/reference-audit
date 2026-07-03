@@ -48,8 +48,9 @@ from reference_audit.fieldcheck import (
     finding_note,
     resolve_field_findings,
 )
+from reference_audit.alignmentcheck import alignment_note, resolve_alignment_findings
 from reference_audit.parsing.bib import parse_bib
-from reference_audit.parsing.tex import parse_cited_keys
+from reference_audit.parsing.tex import parse_cited_keys, parse_citation_contexts
 from reference_audit.sources.base import SourceAdapter
 from reference_audit.versioning import better_version_notes
 from reference_audit.sources.registry import (
@@ -248,6 +249,8 @@ class AuditPipeline:
             )
         else:
             self.llm = None
+        # Per-key citing contexts for the alignment check, populated by `run` when enabled.
+        self._citation_contexts: dict[str, list[CitationContext]] = {}
 
     async def aclose(self) -> None:
         for adapter in self.adapters:
@@ -259,6 +262,10 @@ class AuditPipeline:
         self, tex_path: str | Path | None, bib_path: str | Path, *, progress: bool = False
     ) -> AuditReport:
         report = build_parse_report(tex_path, bib_path)
+        # Citation-alignment (opt-in) needs the citing context from the .tex; extract it once, offline,
+        # up front. Without a manuscript there is no context, so the check simply produces nothing.
+        if self.config.check_alignment and tex_path is not None:
+            self._citation_contexts = parse_citation_contexts(tex_path)
         tasks = [asyncio.ensure_future(self._audit_entry(a)) for a in report.entries]
         # Advance a bar as each entry resolves; verdicts land in-place on the audit objects, so
         # completion order is irrelevant. `disable` keeps tests and library callers silent.
@@ -313,6 +320,9 @@ class AuditPipeline:
                 await self._report_book(
                     audit, await self._resolve_book(audit, _verdict_records(cached))
                 )
+                # Citation alignment: re-derive from the cached artifact's abstract + cached per-
+                # context LLM decisions, so a cached run reports identically to a --fresh one.
+                await self._check_alignment(audit, cached)
                 return
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-route
         route = route_entry(entry, self.adapters)
@@ -394,6 +404,7 @@ class AuditPipeline:
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-cache-store
         await self._check_fields(audit, verdict)
         await self._report_book(audit, book)
+        await self._check_alignment(audit, verdict)
 
     # @cpt-algo:cpt-referenceaudit-algo-identification-verdict:p1
     async def _verdict(self, audit: EntryAudit, *, errored: bool):
@@ -709,6 +720,43 @@ class AuditPipeline:
             audit.issues.append(
                 f"could not verify field(s) {', '.join(unverifiable)} — "
                 f"not present in the metadata from {where}"
+            )
+
+    async def _check_alignment(self, audit: EntryAudit, verdict) -> None:
+        """Citation alignment: check each citing context against the cited work's abstract.
+
+        Advisory only — never alters the verdict. Runs on an `exactly_one` match when enabled and the
+        entry has citing contexts. A `contradicted` finding is surfaced loudly per citation; the
+        (often several) `unverifiable` findings collapse to one line (reliability: report the gap,
+        never silently pass); benign `not_in_abstract` / `supported` stay on `audit.alignment_findings`
+        for machine consumers and the dedicated report section. Isolated so a failure cannot abort the
+        entry.
+        """
+        if not self.config.check_alignment:
+            return
+        if verdict is None or verdict.kind != "exactly_one" or not verdict.artifacts:
+            return
+        contexts = self._citation_contexts.get(audit.entry.key, [])
+        if not contexts:
+            return
+        try:
+            findings = await resolve_alignment_findings(
+                audit.entry, verdict.artifacts[0], contexts, self.llm, self.config, self.cache
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — advisory; report, don't fail the entry
+            audit.issues.append(f"citation alignment check failed (verdict unaffected): {exc}")
+            return
+        audit.alignment_findings = findings
+        for f in findings:
+            if f.status == "contradicted":
+                audit.issues.append(alignment_note(f))
+        unverifiable = sum(1 for f in findings if f.status == "unverifiable")
+        if unverifiable:
+            first = next(f for f in findings if f.status == "unverifiable")
+            audit.issues.append(
+                f"citation alignment could not be checked for {unverifiable} citation(s) — {first.detail}"
             )
 
     def _book_backfill_isbns(self, entry: BibEntry, records: list[SourceRecord]) -> tuple[str, ...]:

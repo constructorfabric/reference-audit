@@ -166,6 +166,7 @@ class SourceRecord(BaseModel):
     issue: str = ""                   # the canonical issue/number
     pages: str = ""
     publisher: str = ""
+    abstract: str = ""                # the work's abstract, when the source supplies one (OpenAlex/S2)
     ids: Identifiers = Field(default_factory=Identifiers)
     is_preprint: bool = False
     edition: int | None = None
@@ -245,6 +246,23 @@ class FieldJudgment(BaseModel):
     reason: str
 
 
+class CitationAlignmentResult(BaseModel):
+    """LLM classification of one citing context against the cited work's abstract (strict json_schema).
+
+    Affirmative polarity for `contradicted`: choose it ONLY on positive evidence the abstract asserts
+    the opposite of the citing claim. `supported` when the abstract corroborates the claim.
+    `not_in_abstract` when the abstract neither supports nor contradicts it — the abstract is not the
+    full paper, so its silence is NOT misuse. The system, not the model, owns `unverifiable` (no
+    abstract / error). `evidence_quote` is the span of the abstract that justifies a
+    supported/contradicted call (empty for `not_in_abstract`).
+    """
+
+    classification: Literal["supported", "contradicted", "not_in_abstract"]
+    confidence: Literal["high", "medium", "low"]
+    reason: str
+    evidence_quote: str = ""
+
+
 class FieldFinding(BaseModel):
     """Step-3 correctness check of one .bib field against the identified canonical record.
 
@@ -263,6 +281,40 @@ class FieldFinding(BaseModel):
     sources: list[str] = Field(default_factory=list)  # source(s) carrying the canonical value
     status: Literal["ok", "formatting", "error", "uncertain", "unverifiable"]
     detail: str = ""
+    via_llm: bool = False
+
+
+class CitationContext(BaseModel):
+    """One in-text citing occurrence of a `.bib` key: the surrounding sentence(s) that state *why*
+    the work is cited, plus where it occurred. Extracted offline from the `.tex` (and its includes).
+
+    A key cited in several places yields several contexts, each judged independently. `ordinal` is
+    the 0-based occurrence order for that key (stable, so findings are reproducible)."""
+
+    key: str
+    text: str                          # the citing sentence(s) — the claim attached to the citation
+    ordinal: int = 0
+    command: str = "cite"              # the cite-family command used (cite / citep / citet / nocite)
+
+
+class AlignmentFinding(BaseModel):
+    """Citation-alignment check of one citing context against the cited work's abstract.
+
+    Runs only on an `exactly_one` match with a retrievable abstract. `status`:
+      - ``supported``       the abstract corroborates the citing claim.
+      - ``contradicted``    the abstract asserts the opposite — the one "loud" finding.
+      - ``not_in_abstract`` the abstract is silent on the claim (NOT misuse; full text may support it).
+      - ``unverifiable``    no abstract available, the entry did not resolve, or the check failed.
+    A silent/absent abstract or any failure is NEVER reported as ``contradicted``.
+    """
+
+    key: str
+    context_text: str = ""             # the citing sentence(s) judged
+    ordinal: int = 0
+    status: Literal["supported", "contradicted", "not_in_abstract", "unverifiable"]
+    evidence_quote: str = ""           # the abstract span justifying a supported/contradicted call
+    detail: str = ""
+    confidence: Literal["high", "medium", "low"] = "low"
     via_llm: bool = False
 
 
@@ -296,6 +348,7 @@ class EntryAudit(BaseModel):
     candidates: list[CandidateAssessment] = Field(default_factory=list)
     verdict: Verdict | None = None          # None until step-1 matching has run
     field_findings: list[FieldFinding] = Field(default_factory=list)  # step 3 field correctness
+    alignment_findings: list[AlignmentFinding] = Field(default_factory=list)  # citation alignment
     canonical_bibtex: str = ""              # step 3 (follow-on)
     issues: list[str] = Field(default_factory=list)
     from_cache: bool = False

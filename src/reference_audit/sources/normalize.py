@@ -146,6 +146,25 @@ def _openalex_pages(biblio: dict) -> str:
     return first or last
 
 
+def _openalex_abstract(work: dict) -> str:
+    """Reconstruct the abstract from OpenAlex's `abstract_inverted_index` ({word: [positions]}).
+
+    OpenAlex ships abstracts only in inverted form (a licensing constraint). Missing/empty index →
+    empty string (never a guess). Positions can be sparse; we place each word and join in order.
+    """
+    index = work.get("abstract_inverted_index")
+    if not isinstance(index, dict) or not index:
+        return ""
+    slots: list[tuple[int, str]] = []
+    for word, positions in index.items():
+        if isinstance(positions, list):
+            for p in positions:
+                if isinstance(p, int):
+                    slots.append((p, word))
+    slots.sort()
+    return " ".join(word for _, word in slots).strip()
+
+
 def openalex_work_to_record(work: dict) -> SourceRecord:
     ids_block = work.get("ids") or {}
     doi = normalize_doi(work.get("doi") or ids_block.get("doi"))
@@ -171,6 +190,7 @@ def openalex_work_to_record(work: dict) -> SourceRecord:
         volume=(str(biblio.get("volume") or "")).strip(),
         issue=(str(biblio.get("issue") or "")).strip(),
         pages=_openalex_pages(biblio),
+        abstract=_openalex_abstract(work),
         ids=Identifiers(doi=doi, arxiv_id=arxiv, pmid=pmid, openalex=normalize_openalex_id(work_id)),
         is_preprint=(work.get("type") == "preprint" or source_block.get("type") == "repository"),
         citation_count=int(work.get("cited_by_count") or 0),
@@ -256,6 +276,7 @@ def s2_paper_to_record(paper: dict) -> SourceRecord:
         authors=authors,
         year=paper.get("year"),
         venue=(paper.get("venue") or "").strip(),
+        abstract=(paper.get("abstract") or "").strip(),
         ids=Identifiers(doi=doi, arxiv_id=arxiv, pmid=str(pmid) if pmid else None),
         is_preprint=bool(arxiv and not doi),
         citation_count=int(paper.get("citationCount") or 0),

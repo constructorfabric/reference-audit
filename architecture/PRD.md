@@ -18,6 +18,7 @@
 - [5. Functional Requirements](#5-functional-requirements)
   - [5.1 Parsing & Bookkeeping (implemented)](#51-parsing--bookkeeping-implemented)
   - [5.2 Identification & Verdict (implemented)](#52-identification--verdict-implemented)
+  - [5.3 Citation Alignment](#53-citation-alignment)
 - [6. Non-Functional Requirements](#6-non-functional-requirements)
   - [6.1 NFR Inclusions](#61-nfr-inclusions)
   - [6.2 NFR Exclusions](#62-nfr-exclusions)
@@ -137,12 +138,14 @@ editions against Open Library, backfills missing DOIs/ISBNs, and reports the can
 - Reporting cited / uncited keys, missing `\input`/`\include` files, and citation-vs-bib mismatches.
 - Flagging deterministic metadata issues visible from the `.bib` alone.
 - Identifying artifacts against databases, the 3-way verdict, hallucination screening, URL-only web verification, book/edition resolution, best-version selection, and canonical field output.
+- Citation-alignment checking: comparing each citing context against the cited work's abstract (advisory; implemented, not yet @cpt-traced).
 
 ### 4.2 Out of Scope
 
 - Rewriting or re-typesetting the manuscript body.
 - Generating new references or filling in missing citations.
 - Validating non-bibliographic LaTeX (math, figures, formatting).
+- Full-text claim verification: citation-alignment checking compares against the cited work's **abstract** only (v1), never its full text.
 
 ## 5. Functional Requirements
 
@@ -212,6 +215,25 @@ editions) and emit the canonical best reference.
 **Rationale**: Upgrading references to their canonical form improves citation quality and reproducibility.
 
 **Actors**: `cpt-referenceaudit-actor-author`
+
+### 5.3 Citation Alignment
+
+> **Checkbox semantics:** a checked box marks a requirement implemented **and** traced to code. The
+> requirement below is `[ ]` — implemented and covered by tests, but instruction-level `@cpt` tracing
+> to code is follow-on work (see the [Citation Alignment feature](features/citation-alignment.md)).
+
+#### Check a citation is used faithfully
+
+- [ ] `p2` - **ID**: `cpt-referenceaudit-fr-citation-alignment`
+
+The system **MUST**, for each in-text citation of an `exactly_one`-resolved reference, compare the
+citing context (the reason the work is cited) against the cited work's abstract and classify the usage
+as `supported`, `contradicted`, `not_in_abstract`, or `unverifiable` — never reporting a misalignment
+when the abstract is silent or absent, and never altering the identification verdict.
+
+**Rationale**: A reference can be real yet cited for a claim its source does not make; catching that is the citation-integrity use case beyond hallucination screening.
+
+**Actors**: `cpt-referenceaudit-actor-reviewer`, `cpt-referenceaudit-actor-ai-agent`
 
 ## 6. Non-Functional Requirements
 
@@ -318,6 +340,28 @@ Contracts this library expects from external systems.
 **Alternative Flows**:
 - **Source/LLM failure**: The affected entry is left `unresolved` (never `none`) and retried next run.
 
+#### Check citations are used faithfully
+
+- [ ] `p2` - **ID**: `cpt-referenceaudit-usecase-citation-alignment`
+
+**Actor**: `cpt-referenceaudit-actor-reviewer`
+
+**Preconditions**:
+- A `.bib` + `.tex` exist; references resolve against the databases; the LLM is enabled.
+
+**Main Flow**:
+1. The reviewer (or AI agent) runs the full audit with citation-alignment checking enabled.
+2. For each in-text citation of an `exactly_one`-resolved reference, the system pairs the citing
+   context with the cited work's abstract and classifies the usage.
+3. The system reports `contradicted` citations loudly and `not_in_abstract` / `unverifiable` as
+   advisory notes, without changing any identification verdict.
+
+**Postconditions**:
+- The reviewer has, per citation, an alignment finding with an evidence quote from the abstract.
+
+**Alternative Flows**:
+- **No abstract available / not `exactly_one`**: the citation is `unverifiable` with the reason stated, never `contradicted`.
+
 ## 9. Acceptance Criteria
 
 - [x] Parse-only audit returns correct cited/uncited/missing-include counts for a known fixture.
@@ -348,3 +392,4 @@ Contracts this library expects from external systems.
 |------|--------|------------|
 | Database coverage gaps | A real reference may be misjudged `none` | Query multiple sources; reserve LLM adjudication |
 | Identifier ambiguity | Wrong artifact matched | Prefer DOI/ISBN/URL; apply the SAME-OBJECT disambiguation rule with an LLM tie-break |
+| Abstract coverage gaps / abstract silent on the claim | A faithful citation could be misread as unsupported | Classify silence as `not_in_abstract` / `unverifiable`, never `contradicted`; abstract-only limitation stated in scope |

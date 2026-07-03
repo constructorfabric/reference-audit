@@ -58,6 +58,11 @@ class AuditConfig(BaseSettings):
     # --- Step 3: field correctness ---
     check_fields: bool = True             # verify each field of an exactly-one match is correct
 
+    # --- Citation alignment (advisory; opt-in) ---
+    # Compare each citing context against the cited work's abstract. Off by default: it needs the LLM
+    # and an abstract, and adds a per-citation cost. CLI --check-citations enables it.
+    check_alignment: bool = False
+
     # --- Web artifacts (URL-only @misc): HTML-metadata check before the LLM fallback ---
     web_title_accept: float = 0.85        # page meta-title vs cited-title floor for a deterministic confirm
 

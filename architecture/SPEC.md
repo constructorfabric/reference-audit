@@ -51,6 +51,15 @@ The general plan is:
 1. Compile all available information.
 2. Ensure that `.bib` entries use the most correct and canonical format.
 
+### 4. Is the citation used faithfully?
+
+For each place a reference is cited, check that the **reason it is cited** (the claim the citing
+sentence attaches to it) is consistent with what the cited work actually claims — compared, in this
+first version, against the cited work's **abstract**. This is an advisory check: it flags a citation
+that is *contradicted* by the cited work, and reports honestly when the abstract is silent or
+unavailable (never inferring misuse from absence of evidence). It never changes the identification
+verdict of step 1.
+
 ## General Design Principles
 
 1. Databases might be incomplete and metadata can sometimes be incorrect (e.g. month). DOI & ISBN

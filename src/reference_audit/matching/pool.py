@@ -123,6 +123,17 @@ def _best_field(recs: list[SourceRecord], attr: str, priority: tuple[str, ...]) 
     return ""
 
 
+def _best_abstract(recs: list[SourceRecord]) -> str:
+    """The fullest abstract across a same-work group (longest non-empty).
+
+    Abstracts come from OpenAlex / Semantic Scholar; the citation-richest representative may be a
+    source (e.g. Crossref) that carries none, so — like the other bibliographic fields — the abstract
+    is compiled across the group rather than taken only from the representative, so it survives onto
+    the matched artifact (and the cached verdict) for the citation-alignment check.
+    """
+    return max(((r.abstract or "").strip() for r in recs), key=len, default="")
+
+
 def _best_year(recs: list[SourceRecord]) -> int | None:
     """Publication year from the registration-grade source (publisher/Crossref/OpenAlex) when
     available.
@@ -208,6 +219,9 @@ def _representative(recs: list[SourceRecord]) -> SourceRecord:
     best_year = _best_year(recs)
     if best_year is not None:
         merged.year = best_year
+    best_abstract = _best_abstract(recs)
+    if best_abstract:
+        merged.abstract = best_abstract
     merged.raw = {"merged_from": sorted({s for r in recs for s in _underlying_sources(r)})}
     return merged
 

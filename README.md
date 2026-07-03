@@ -195,6 +195,7 @@ NO ISSUES (18) — verified, nothing to fix:
 | `-f, --format text\|json\|both` | Output format. `json` emits the full structured report (verdicts, candidates, features) — ideal for tooling and AI agents. Default: `text`. |
 | `--no-network` | Parse only: identifiers + cited/uncited bookkeeping, no database or LLM calls. |
 | `--no-llm` | Formal-only: skip LLM adjudication for fully deterministic output (useful in CI). |
+| `--check-citations` | Advisory: for each in-text citation of a matched reference, check the citing context against the cited work's **abstract** (needs the LLM). See [Citation alignment](#citation-alignment---check-citations). |
 | `--fresh` | Ignore cached results and re-query everything. |
 | `--cache PATH` | Cache DB location. Default: `<bib_dir>/.reference_audit/cache.db`. |
 | `--model NAME` | Override the LLM model (default `gpt-5.4-mini`). |
@@ -219,8 +220,8 @@ The text report leads with two headline categories:
   as a clean pass. When it is empty the report states that for every other reference *at least one
   matching artifact was positively identified*.
 
-The remaining entries (at least one match found) are then split into `ISSUES`, `FORMATTING NITS`, and
-`NO ISSUES`. Per-entry verdict glyphs:
+The remaining entries (at least one match found) are then split into `ISSUES`,
+`FORMATTING NITS & ADVISORIES`, and `NO ISSUES`. Per-entry verdict glyphs:
 
 - **`✓ exactly one match`** — resolved to a single document; the matched identifier and version
   count are shown.
@@ -233,6 +234,25 @@ The remaining entries (at least one match found) are then split into `ISSUES`, `
   citation, etc.
 - The header also lists **cited-but-missing** citations (a `\cite` with no `.bib` entry) and
   **uncited** entries.
+
+### Citation alignment (`--check-citations`)
+
+A reference can be perfectly real yet cited for a claim its source never makes. With
+`--check-citations`, for every in-text `\cite` of a reference that resolves to **exactly one** work,
+the auditor extracts the **citing context** (the sentence attaching the claim to the citation) and
+compares it against that work's **abstract**, classifying each citation as:
+
+- **`supported`** — the abstract corroborates the citing claim.
+- **`contradicted`** — the abstract asserts the opposite; surfaced as a loud per-citation issue
+  (*citation may misrepresent the source*), with the abstract quote.
+- **`not_in_abstract`** — the abstract is silent on the claim. An abstract is only a summary, so this
+  is **not** flagged as misuse — it is an advisory note (the full text may well support the claim).
+- **`unverifiable`** — no abstract was retrievable (or the reference did not resolve, or the LLM was
+  unavailable). Reported, never guessed — a silent/absent abstract is never read as a contradiction.
+
+This is **abstract-only** in v1 (never full text) and **advisory**: it never changes a reference's
+identification verdict. The JSON report carries the full per-citation `alignment_findings`
+(status, evidence quote, confidence) for tooling and AI agents.
 
 ## Development
 

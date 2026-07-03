@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from reference_audit.models import AuditReport, EntryAudit, FieldFinding
+from reference_audit.models import AlignmentFinding, AuditReport, EntryAudit, FieldFinding
 
 
 def render_json(report: AuditReport) -> str:
@@ -60,6 +60,20 @@ def _formatting_nits(a: EntryAudit) -> list[FieldFinding]:
     return [f for f in a.field_findings if f.status == "formatting"]
 
 
+def _alignment_advisories(a: EntryAudit) -> list[AlignmentFinding]:
+    """Advisory alignment notes shown inline (not_in_abstract). Contradicted and unverifiable are
+    surfaced as entry issues by the pipeline; supported findings are machine-only (JSON)."""
+    return [f for f in a.alignment_findings if f.status == "not_in_abstract"]
+
+
+def _alignment_line(f: AlignmentFinding) -> str:
+    where = f" #{f.ordinal + 1}" if f.ordinal else ""
+    return (
+        f"    · citation{where} not confirmed by the cited abstract "
+        f"(claim: “{f.context_text}”) — {f.detail}"
+    )
+
+
 def _has_issues(a: EntryAudit, *, network: bool) -> bool:
     """Does this entry need attention? An issue, or (once the network ran) a verdict that is not a
     clean single match — a possible hallucination, an ambiguous multi-match, or an unresolved entry
@@ -86,6 +100,8 @@ def _entry_block(a: EntryAudit) -> list[str]:
         block.append(f"    ⚠ {issue}")
     for f in _formatting_nits(a):
         block.append(_nit_line(f))
+    for f in _alignment_advisories(a):
+        block.append(_alignment_line(f))
     vline = _verdict_line(a)
     if vline:
         block.append(vline)
@@ -124,6 +140,18 @@ def render_text(report: AuditReport) -> str:
             f"  ·  {verdicts.get('multiple', 0)} ambiguous"
             f"  ·  {verdicts.get('unresolved', 0)} unresolved"
         )
+    align = [f for a in report.entries for f in a.alignment_findings]
+    if align:
+        by_status: dict[str, int] = {}
+        for f in align:
+            by_status[f.status] = by_status.get(f.status, 0) + 1
+        lines.append(
+            f"  citation alignment: {len(align)} checked"
+            f"  ·  {by_status.get('contradicted', 0)} contradicted"
+            f"  ·  {by_status.get('supported', 0)} supported"
+            f"  ·  {by_status.get('not_in_abstract', 0)} not-in-abstract"
+            f"  ·  {by_status.get('unverifiable', 0)} unverifiable"
+        )
     by_type = s.get("by_type", {})
     if by_type:
         lines.append("  types: " + ", ".join(f"{k}={v}" for k, v in sorted(by_type.items())))
@@ -150,7 +178,7 @@ def render_text(report: AuditReport) -> str:
             unable_to_verify.append(a)
         elif _has_issues(a, network=network):
             with_issues.append(a)
-        elif _formatting_nits(a):
+        elif _formatting_nits(a) or _alignment_advisories(a):
             nits_only.append(a)
         else:
             clean.append(a)
@@ -171,7 +199,7 @@ def render_text(report: AuditReport) -> str:
 
     groups = [
         (with_issues, "ISSUES ({n}) — other problems to review:"),
-        (nits_only, "FORMATTING NITS ({n}) — verified; only cosmetic field fixes:"),
+        (nits_only, "FORMATTING NITS & ADVISORIES ({n}) — cosmetic field fixes or citation notes:"),
         (clean, "NO ISSUES ({n}) — verified, nothing to fix:"),
     ]
     for bucket, heading in groups:

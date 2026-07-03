@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from reference_audit.models import CitationContext
+
 _VERBATIM_ENVS = ("lstlisting", "verbatim", "minted", "Verbatim", "alltt")
 _VERBATIM_RE = re.compile(
     r"\\begin\{(" + "|".join(re.escape(e) for e in _VERBATIM_ENVS) + r")\}.*?\\end\{\1\}",
@@ -21,6 +23,17 @@ _VERB_INLINE_RE = re.compile(r"\\verb(.)(.*?)\1")
 _CITE_RE = re.compile(r"\\(?:no)?cite[a-zA-Z]*\s*(?:\[[^\]]*\])*\s*\{([^}]*)\}")
 _NOCITE_RE = re.compile(r"\\nocite\s*\{([^}]*)\}")
 _INPUT_RE = re.compile(r"\\(?:input|include)\s*\{([^}]+)\}")
+
+# Same as _CITE_RE but capturing the command name and (optional) pre/post bracket args, so context
+# extraction can name the command and skip \nocite (which carries no citing prose).
+_CITE_CMD_RE = re.compile(
+    r"\\(?P<cmd>(?:no)?cite[a-zA-Z]*)\s*(?:\[[^\]]*\])*\s*\{(?P<keys>[^}]*)\}"
+)
+_SENT_END_RE = re.compile(r"[.!?]")
+_LATEX_CMD_RE = re.compile(r"\\[a-zA-Z]+\*?")
+# A cleaned context shorter than this (bare macro shells, a lone cite) is extended with its
+# preceding sentence so the LLM has an actual claim to judge.
+_MIN_CONTEXT_CHARS = 15
 
 
 def strip_comments(text: str) -> str:
@@ -100,3 +113,74 @@ def parse_cited_keys(tex_path: str | Path) -> tuple[set[str], bool, list[str]]:
             if key and key != "*":
                 keys.add(key)
     return keys, nocite_star, sorted(set(missing))
+
+
+def _clean_context(span: str) -> str:
+    """Strip LaTeX noise from a raw sentence span so what remains is the readable citing claim:
+    drop the cite macros entirely, strip other `\\command` control words (keeping their braced
+    argument *text*), and collapse braces/ties/whitespace."""
+    span = _CITE_CMD_RE.sub(" ", span)     # the citation macro is not part of the claim
+    span = _LATEX_CMD_RE.sub(" ", span)    # \emph, \textbf, ... — keep the argument text, drop the name
+    span = span.replace("{", " ").replace("}", " ").replace("~", " ").replace("\\", " ")
+    return re.sub(r"\s+", " ", span).strip()
+
+
+def _sentence_span(text: str, start: int, end: int) -> tuple[int, int]:
+    """Bounds of the sentence (or paragraph-bounded fragment) containing text[start:end]. A sentence
+    boundary is a `.`/`!`/`?` followed by whitespace; a blank line also bounds it."""
+    left = 0
+    for m in _SENT_END_RE.finditer(text, 0, start):
+        e = m.end()
+        if e < len(text) and text[e].isspace():
+            left = e
+    para = text.rfind("\n\n", left, start)
+    if para != -1:
+        left = para + 2
+
+    right = len(text)
+    for m in _SENT_END_RE.finditer(text, end):
+        e = m.end()
+        if e >= len(text) or text[e].isspace():
+            right = e
+            break
+    para = text.find("\n\n", end, right)
+    if para != -1:
+        right = para
+    return left, right
+
+
+def parse_citation_contexts(tex_path: str | Path) -> dict[str, list[CitationContext]]:
+    """Per-key citing contexts: the sentence(s) around each `\\cite`-family occurrence — the *reason*
+    each work is cited — extracted offline from the `.tex` and its resolvable includes.
+
+    `\\nocite` is skipped (it carries no citing prose). A key cited several times yields several
+    contexts, each with a 0-based `ordinal` in document order. When a citation's own sentence is too
+    short to carry a claim (a bare trailing cite), the preceding sentence is folded in. Keys sharing
+    one sentence each get that whole sentence (v1 is sentence-granular, not clause-granular).
+    """
+    path = Path(tex_path)
+    text = _read_with_includes(path, set(), [])
+    text = strip_verbatim(text)
+
+    contexts: dict[str, list[CitationContext]] = {}
+    counts: dict[str, int] = {}
+    for m in _CITE_CMD_RE.finditer(text):
+        cmd = m.group("cmd")
+        if cmd.startswith("nocite"):
+            continue
+        left, right = _sentence_span(text, m.start(), m.end())
+        cleaned = _clean_context(text[left:right])
+        if len(cleaned) < _MIN_CONTEXT_CHARS:
+            # fold in the preceding sentence so there is an actual claim to judge
+            prev_left, _ = _sentence_span(text, max(left - 2, 0), max(left - 1, 0))
+            cleaned = _clean_context(text[prev_left:right])
+        for raw in m.group("keys").split(","):
+            key = raw.strip()
+            if not key or key == "*":
+                continue
+            ordinal = counts.get(key, 0)
+            counts[key] = ordinal + 1
+            contexts.setdefault(key, []).append(
+                CitationContext(key=key, text=cleaned, ordinal=ordinal, command=cmd)
+            )
+    return contexts

@@ -54,6 +54,7 @@ Requirements that significantly influence architecture decisions.
 | `cpt-referenceaudit-fr-three-way-verdict` | The `matching` package collapses candidates into a `none` / `exactly_one` / `multiple` verdict. |
 | `cpt-referenceaudit-fr-hallucination-screen` | `matching` + `llm` adjudication drive empty candidate sets to a confident `none`. |
 | `cpt-referenceaudit-fr-best-version-canonical` | `matching` ranks versions (published > preprint, later editions) and `report` emits the canonical reference. |
+| `cpt-referenceaudit-fr-citation-alignment` | The `alignment` component pairs each citing context (from `parsing`) with the matched artifact's abstract and classifies it via `llm`; advisory, never changing the verdict. |
 
 #### NFR Allocation
 
@@ -132,6 +133,8 @@ network access is confined to the `sources` and `llm` packages.
 | SourceRecord | A candidate artifact returned by a database/web adapter. | [models.py](../src/reference_audit/models.py) |
 | Verdict / MatchedArtifact | The 3-way verdict and the clustered artifact(s) it resolves to. | [models.py](../src/reference_audit/models.py) |
 | FieldFinding | A per-field correctness/formatting finding for an exactly-one match. | [models.py](../src/reference_audit/models.py) |
+| CitationContext | One in-text citing occurrence of a key: the surrounding sentence(s) and location. | [models.py](../src/reference_audit/models.py) |
+| AlignmentFinding | A per-citation alignment classification (supported / contradicted / not_in_abstract / unverifiable) with evidence. | [models.py](../src/reference_audit/models.py) |
 
 **Relationships**:
 - AuditReport → EntryAudit: contains one audit per parsed entry.
@@ -316,6 +319,33 @@ Contains no parsing, matching, or network logic; only formats results and wires 
 
 - `cpt-referenceaudit-component-parsing` — calls (via pipeline orchestration)
 
+#### alignment
+
+- [ ] `p2` - **ID**: `cpt-referenceaudit-component-alignment`
+
+##### Why this component exists
+
+To verify a resolved citation is *used faithfully* — that the reason it is cited matches what the
+cited work actually claims — a check distinct from whether the work exists.
+
+##### Responsibility scope
+
+`alignmentcheck.py` pairs each citing context (`CitationContext`, extracted by `parsing/tex.py`) with
+the matched artifact's abstract and classifies it into `supported` / `contradicted` /
+`not_in_abstract` / `unverifiable`, escalating to the `llm` component with a strict pydantic schema and
+caching each decision. **IMPLEMENTED (not yet @cpt-traced).**
+
+##### Responsibility boundaries
+
+Advisory only: it runs after identification on an `exactly_one` match and never changes the verdict.
+A silent or absent abstract, a non-`exactly_one` verdict, or an LLM failure yields `unverifiable` —
+never a false `contradicted`.
+
+##### Related components (by ID)
+
+- `cpt-referenceaudit-component-parsing` — depends on (citing contexts)
+- `cpt-referenceaudit-component-llm` — calls (classification)
+
 ### 3.3 API Contracts
 
 The public surface is the `build_parse_report` library function and the `reference-audit` CLI.
@@ -424,6 +454,32 @@ sequenceDiagram
 **Description**: The networked path layered on top of the parse slice. A clean formal `exactly_one`
 short-circuits the LLM; books are confirmed against Open Library and URL-only `@misc` against their
 own page. Each entry is isolated, and only successful results are cached.
+
+#### Check citation alignment
+
+- [ ] `p2` - **ID**: `cpt-referenceaudit-seq-citation-alignment`
+
+**Use cases**: `cpt-referenceaudit-usecase-citation-alignment`
+
+**Actors**: `cpt-referenceaudit-actor-database`
+
+```mermaid
+sequenceDiagram
+    participant P as pipeline._check_alignment
+    participant A as alignmentcheck
+    participant L as llm
+    P->>P: verdict is exactly_one? contexts extracted?
+    P->>A: resolve_alignment_findings(contexts, artifact.abstract)
+    A->>A: abstract available? else unverifiable
+    A->>L: classify(context, abstract) [strict schema, cached]
+    L-->>A: supported / contradicted / not_in_abstract / unverifiable
+    A-->>P: AlignmentFindings (per citation)
+    P->>P: attach findings; verdict unchanged
+```
+
+**Description**: The advisory alignment check, run after field checks on an `exactly_one` match. Each
+citation is judged in isolation; a missing abstract or LLM failure yields `unverifiable`, never a
+false `contradicted`, and never changes the verdict.
 
 ### 3.7 Database schemas & tables
 

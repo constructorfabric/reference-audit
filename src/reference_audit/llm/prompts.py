@@ -70,6 +70,41 @@ FIELD_CHECK_SYSTEM = (
 )
 
 
+CITATION_ALIGNMENT_SYSTEM = (
+    "A bibliography entry has been matched to a specific real publication (the CITED WORK). You are "
+    "given (1) the sentence(s) from the citing paper that invoke the cited work — the CLAIM the "
+    "author attaches to the citation — and (2) the ABSTRACT of the cited work. Decide whether the "
+    "cited work's abstract is consistent with the way it is cited.\n"
+    "Classify 'supported' when the abstract affirmatively corroborates the citing claim.\n"
+    "Classify 'contradicted' ONLY with positive evidence that the abstract asserts the OPPOSITE of "
+    "the citing claim (the claim attributes to the work a finding the abstract explicitly refutes, "
+    "reverses, or excludes).\n"
+    "Classify 'not_in_abstract' when the abstract neither supports nor contradicts the claim — it is "
+    "silent on that point. An abstract is only a summary, so its silence is NOT evidence of misuse: "
+    "prefer 'not_in_abstract' over 'contradicted' whenever the abstract simply does not address the "
+    "claim. Do NOT use outside knowledge; judge only against the abstract text provided.\n"
+    "For a 'supported' or 'contradicted' verdict, put the short span of the abstract that justifies "
+    "it in evidence_quote (leave it empty for 'not_in_abstract'). Respond in strict JSON."
+)
+
+# Cap the abstract text fed to the model: enough to judge the claim, bounded for cost.
+ABSTRACT_TEXT_LIMIT = 4000
+
+
+def citation_alignment_user(entry: BibEntry, context_text: str, abstract: str) -> str:
+    return (
+        "CITED WORK:\n"
+        f"  title:   {entry.title or '(none)'}\n"
+        f"  authors: {'; '.join(entry.authors) or '(none)'}\n"
+        f"  year:    {entry.year or '(none)'}\n\n"
+        "HOW IT IS CITED (the claim the citing paper attaches to this reference):\n"
+        f"  {context_text}\n\n"
+        "ABSTRACT OF THE CITED WORK:\n"
+        f"{abstract[:ABSTRACT_TEXT_LIMIT] or '(none)'}\n\n"
+        "Is the citing claim supported by, contradicted by, or simply not addressed in the abstract?"
+    )
+
+
 def field_check_user(
     field: str, bib_value: str, canonical_value: str, sources: list[str], entry: BibEntry
 ) -> str:
