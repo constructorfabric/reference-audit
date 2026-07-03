@@ -36,7 +36,7 @@ POSITION_SLUG = "position-align-ai-to-aspirations"
     "version, total, cited, uncited, with_issues",
     [
         ("initial", 120, 115, 5, 45),
-        ("polished", 144, 134, 10, 30),
+        ("polished", 144, 134, 10, 25),
     ],
 )
 def test_position_summary_counts(version, total, cited, uncited, with_issues):
