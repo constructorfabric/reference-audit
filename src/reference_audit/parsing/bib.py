@@ -90,13 +90,30 @@ def _identifiers_from_fields(f: dict[str, str]) -> Identifiers:
     )
 
 
-def _entry_from_fields(key: str, bib_type: str, f: dict[str, str], *, commented: bool) -> BibEntry:
+def entry_from_fields(
+    key: str,
+    bib_type: str,
+    f: dict[str, str],
+    *,
+    commented: bool = False,
+    authors: list[str] | None = None,
+) -> BibEntry:
+    """Build a `BibEntry` from a flat `{field: str}` dict — the single construction seam.
+
+    Any front end that produces BibTeX-shaped fields goes through here (the `.bib` parser below, and
+    `pdf.tei` for GROBID's TEI), so identifier normalization, venue selection, cleaning and type
+    mapping are defined exactly once.
+
+    `authors` bypasses the `" and "` split for callers that already have a *list* of names. TEI gives
+    us structured `<persName>` elements, and re-joining them into `"A and B"` only to re-split would
+    corrupt an organizational author such as "Smith and Sons".
+    """
     venue = f.get("journal") or f.get("booktitle") or f.get("howpublished") or ""
     return BibEntry(
         key=key,
         entry_type=entry_type_from_bib(bib_type),
         title=_clean(f.get("title", "")),
-        authors=_split_authors(f.get("author", "")),
+        authors=authors if authors is not None else _split_authors(f.get("author", "")),
         year=_year(f.get("year")),
         venue=_clean(venue),
         publisher=_clean(f.get("publisher", "")),
@@ -118,7 +135,7 @@ def _twin_from_raw(raw: str, key: str) -> BibEntry | None:
     end = re.search(r"(?m)^\s*\}\s*$", tail)
     block = tail[: end.start()] if end else tail
     fields = {k.lower(): v for k, v in _FIELD_RE.findall(block)}
-    return _entry_from_fields(key, bib_type, fields, commented=True)
+    return entry_from_fields(key, bib_type, fields, commented=True)
 
 
 def parse_bib(bib_path: str | Path) -> tuple[list[BibEntry], list[BibEntry]]:
@@ -140,7 +157,7 @@ def parse_bib(bib_path: str | Path) -> tuple[list[BibEntry], list[BibEntry]]:
         bib_type = rec.get("ENTRYTYPE", "")
         fields = {k.lower(): v for k, v in rec.items() if k not in ("ID", "ENTRYTYPE")}
         commented = key in commented_only
-        entry = _entry_from_fields(key, bib_type, fields, commented=commented)
+        entry = entry_from_fields(key, bib_type, fields, commented=commented)
         seen_keys.add(key)
         (twins if commented else entries).append(entry)
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Awaitable, Callable
 
 import httpx
 from curl_cffi.requests import AsyncSession
@@ -57,22 +58,61 @@ def new_client(user_agent: str = DEFAULT_USER_AGENT, timeout: float = DEFAULT_TI
     return httpx.AsyncClient(timeout=timeout, headers={"User-Agent": user_agent}, follow_redirects=True)
 
 
+def is_transient_status(resp: httpx.Response) -> bool:
+    """The default definition of a retryable response: rate-limited, or a server-side failure."""
+    return resp.status_code == 429 or resp.status_code >= 500
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=0.5, min=0.5, max=8),
     retry=retry_if_exception_type(TransientHTTPError),
     reraise=True,
 )
+async def _send_with_retry(
+    send: Callable[[], Awaitable[httpx.Response]],
+    transient: Callable[[httpx.Response], bool] = is_transient_status,
+) -> httpx.Response:
+    """Verb-agnostic retry core: one definition of "what is transient" for every request we make.
+
+    `transient` is injectable because not every 5xx means "the server is unwell". GROBID reports a
+    *per-document* parse failure through a 500 body, and retrying that three times is pure latency
+    while reporting it as an outage would mislabel an unparseable PDF as a service problem.
+    """
+    try:
+        resp = await send()
+    except httpx.TransportError as exc:  # network/DNS/timeout
+        raise TransientHTTPError(f"transport: {exc}") from exc
+    if transient(resp):
+        raise TransientHTTPError(f"http {resp.status_code}")
+    return resp
+
+
 async def _request_with_retry(
     client: httpx.AsyncClient, url: str, params: dict | None, headers: dict | None
 ) -> httpx.Response:
-    try:
-        resp = await client.get(url, params=params, headers=headers)
-    except httpx.TransportError as exc:  # network/DNS/timeout
-        raise TransientHTTPError(f"transport: {exc}") from exc
-    if resp.status_code == 429 or resp.status_code >= 500:
-        raise TransientHTTPError(f"http {resp.status_code}")
-    return resp
+    return await _send_with_retry(lambda: client.get(url, params=params, headers=headers))
+
+
+async def post_multipart(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    files: dict,
+    data: dict | None = None,
+    timeout: float | None = None,
+    transient: Callable[[httpx.Response], bool] = is_transient_status,
+) -> httpx.Response:
+    """Multipart POST under the same transient-retry policy as the GET helpers.
+
+    Returns the raw response — unlike `get_json`/`get_text` the caller classifies non-2xx itself,
+    because a multipart-POST service (GROBID) encodes distinct per-request failure modes in the body
+    and they need different handling. Not rate-limited: the only caller talks to a single-tenant local
+    service one request per run.
+    """
+    return await _send_with_retry(
+        lambda: client.post(url, files=files, data=data, timeout=timeout), transient
+    )
 
 
 async def get_json(

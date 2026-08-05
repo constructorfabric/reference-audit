@@ -55,6 +55,7 @@ Requirements that significantly influence architecture decisions.
 | `cpt-referenceaudit-fr-hallucination-screen` | `matching` + `llm` adjudication drive empty candidate sets to a confident `none`. |
 | `cpt-referenceaudit-fr-best-version-canonical` | `matching` ranks versions (published > preprint, later editions) and `report` emits the canonical reference. |
 | `cpt-referenceaudit-fr-citation-alignment` | The `alignment` component pairs each citing context (from `parsing`) with the matched artifact's abstract and classifies it via `llm`; advisory, never changing the verdict. |
+| `cpt-referenceaudit-fr-audit-pdf` | The `pdf` component (a thin GROBID HTTP client plus a pure TEI mapper) turns a PDF into the same `BibEntry` / `CitationContext` records the `.bib`/`.tex` front end produces, so everything downstream is unchanged. |
 
 #### NFR Allocation
 
@@ -62,6 +63,7 @@ Requirements that significantly influence architecture decisions.
 |--------|-------------|--------------|-----------------|----------------------|
 | `cpt-referenceaudit-nfr-offline-deterministic` | Parse slice is offline + deterministic | `parsing`, `pipeline` | No network imports in the parse path; pure functions over file inputs. | Unit tests run with no network. |
 | `cpt-referenceaudit-nfr-cached-calls` | Memoize DB/LLM calls | `cache` | SQLite-backed memoization wrapping source/LLM calls. | Integration test asserts cache hits on repeat. |
+| `cpt-referenceaudit-nfr-extraction-fidelity` | PDF reference extraction meets pinned fidelity floors and fabricates no identifier | `pdf` | Positional (printed order) plus identifier / normalized-title matching against the very `.bib` the PDF was compiled from; a DOI cut short by a line break is extended only from the reference's own text, never guessed. | Live-gated pinned-threshold comparison over locally compiled PDFs (`tests/test_pdf_extraction.py`); the pure TEI mapping is verified offline from recorded TEI. |
 
 ### 1.3 Architecture Layers
 
@@ -77,7 +79,7 @@ CLI / report  ->  pipeline (orchestration)  ->  parsing | sources | matching | l
 | Presentation | CLI entry point and report rendering | `typer` CLI, `report.py` |
 | Application | Pipeline orchestration (parse → route → query → score → adjudicate → cluster → verdict → enrich) | `pipeline.py` (async) |
 | Domain | Bib/citation/source/feature models | `pydantic` models |
-| Infrastructure | DB/web adapters, LLM client, SQLite cache | `sources`, `llm`, `cache` |
+| Infrastructure | DB/web adapters, LLM client, PDF extraction, SQLite cache | `sources`, `llm`, `pdf`, `cache` |
 
 ## 2. Principles & Constraints
 
@@ -89,6 +91,15 @@ CLI / report  ->  pipeline (orchestration)  ->  parsing | sources | matching | l
 
 The parse path must perform no network I/O and must be deterministic, so it can run in air-gapped CI
 and forms a stable foundation for the networked stages.
+
+#### Network I/O and format mapping are separate
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-principle-pure-tei-mapping`
+
+The GROBID HTTP call lives in one thin module and the TEI-to-model mapping is a pure function of the
+TEI text, so extraction correctness is verifiable offline from recorded TEI XML — the same
+recorded-response discipline the source adapters follow. It is also what makes the compiled-PDF oracle
+possible: the same mapper runs over a live response and over a committed fixture.
 
 #### Modular, swappable sources
 
@@ -111,8 +122,27 @@ identifier match takes precedence.
 
 - [x] `p1` - **ID**: `cpt-referenceaudit-constraint-no-network-parse`
 
-The `parsing` package and `build_parse_report` must not import or invoke any networking code; all
-network access is confined to the `sources` and `llm` packages.
+The `parsing` package, the pure TEI mapper `pdf/tei.py`, and `build_parse_report` must not import or
+invoke any networking code. Network access is confined to the `sources`, `llm`, and `pdf/grobid`
+modules, and `parsing` must not import `pdf/grobid`.
+
+A PDF input is the one case where assembling the entry list *itself* requires a network call — to a
+GROBID service that turns the PDF into TEI. That call is made only by `pdf/grobid.py` and only from the
+async `build_pdf_parse_report`, never from the synchronous `build_parse_report`. So `--no-network`
+keeps its literal meaning and is accepted only for `.tex` + `.bib` input; combining it with a `.pdf` is
+rejected rather than silently redefined as "no *remote* network", which would be a promise the tool
+cannot keep once `grobid_url` may point anywhere.
+
+#### GROBID is a local, opt-in service
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-constraint-grobid-local-only`
+
+PDF extraction must talk only to an operator-supplied GROBID instance (`grobid_url`, default
+`http://localhost:8070`), must be reached only when the audited input is a PDF, and must request
+`consolidateCitations=0` so GROBID performs no third-party lookups of its own — consolidation would let
+it rewrite each reference from Crossref, repairing the very defects this tool exists to detect. No
+public GROBID endpoint is ever a default. A PDF input with no reachable GROBID is an explicit, reported
+failure, never a silently empty reference list.
 
 ## 3. Technical Architecture
 
@@ -346,6 +376,37 @@ never a false `contradicted`.
 - `cpt-referenceaudit-component-parsing` — depends on (citing contexts)
 - `cpt-referenceaudit-component-llm` — calls (classification)
 
+#### pdf
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-component-pdf`
+
+##### Why this component exists
+
+For mass automated processing the available input is usually a PDF, with no `.bib` or `.tex` anywhere.
+This component makes a PDF a whole input by producing exactly the records the authored-source front end
+produces, so identification, matching, verdicts, alignment and reporting are untouched.
+
+##### Responsibility scope
+
+`pdf/grobid.py` is a thin client over one operator-supplied GROBID instance (health check, one
+multipart upload, a named error per failure mode). `pdf/tei.py` is pure: it maps TEI `<biblStruct>`
+elements to `BibEntry` (through `parsing.bib.entry_from_fields`, the shared construction seam) and
+in-text `<ref type="bibr">` markers to `CitationContext` (through `parsing.context`, the shared
+sentence definition). **IMPLEMENTED (not yet @cpt-traced).**
+
+##### Responsibility boundaries
+
+It does not manage the GROBID container, does not identify or score anything, and never repairs a
+reference by consulting a third party. Extraction gaps are reported per record rather than filled in:
+a reference with no title and no identifier is passed on explicitly unresolved, and a DOI cut short by
+a line break is extended only from that reference's own printed text — never guessed, and never
+allowed to reach the matcher as a truncated prefix that would resolve to a different document.
+
+##### Related components (by ID)
+
+- `cpt-referenceaudit-component-parsing` — depends on (`entry_from_fields`, `parsing.context`)
+- `cpt-referenceaudit-component-models` — produces (`BibEntry`, `CitationContext`, `AuditReport`)
+
 ### 3.3 API Contracts
 
 The public surface is the `build_parse_report` library function and the `reference-audit` CLI.
@@ -424,6 +485,39 @@ sequenceDiagram
 ```
 
 **Description**: The implemented offline path that produces an `AuditReport` from `.bib` + `.tex`.
+
+#### Audit a PDF
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-seq-audit-pdf`
+
+**Use cases**: `cpt-referenceaudit-usecase-audit-pdf`
+
+**Actors**: `cpt-referenceaudit-actor-author`, `cpt-referenceaudit-actor-grobid`
+
+```mermaid
+sequenceDiagram
+    participant A as Author
+    participant P as pipeline.build_pdf_parse_report
+    participant G as pdf.grobid
+    participant S as GROBID service
+    participant T as pdf.tei
+    A->>P: run_pdf_audit(paper.pdf)
+    P->>G: fulltext_tei(paper.pdf)
+    G->>S: GET /api/isalive
+    S-->>G: 200 (else: reported failure, exit 2)
+    G->>S: POST /api/processFulltextDocument
+    S-->>G: TEI XML
+    G-->>P: TEI XML
+    P->>T: parse_tei(xml)
+    T-->>P: entries + citing contexts + extraction failures
+    P->>P: assemble AuditReport (input_kind=pdf, citation_linking, notes)
+    P-->>A: AuditReport (then identified exactly as a .bib run is)
+```
+
+**Description**: One GROBID request yields both the reference list and the in-text citations. Zero
+`<biblStruct>` raises `EmptyBibliographyError` (the existing exit-2 signal); an unreachable service,
+a persistent 5xx, or an unparseable PDF each raise a distinct named error. Per-reference extraction
+gaps become entry issues, so the run continues for every other reference.
 
 #### Identify and adjudicate
 

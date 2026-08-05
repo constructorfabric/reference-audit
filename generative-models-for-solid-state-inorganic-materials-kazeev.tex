@@ -1,0 +1,70 @@
+\documentclass{iopjournal}
+% Options
+% 	[anonymous]	Provides output without author names, affiliations or acknowledgments to facilitate double-anonymous peer-review
+
+\usepackage[
+backend=biber,
+style=alphabetic,
+sorting=ynt
+]{biblatex}
+\addbibresource{references.bib}
+
+\begin{document}
+\title{Generative Models for Solid-State Inorganic Materials: From Perfect Code to Imperfect World}
+% From Bits to Atoms: The Generative AI Revolution in Materials Science.
+% The Materials Generator's Dilemma: From Perfect Code to Imperfect Crystals.
+% From Bits to Atoms: The Generative AI Revolution in Materials Science.
+% Why Generative Models Can't Deliver the Goods (Yet)
+\author{Nikita Kazeev$^1$\orcid{0000-0002-5699-7634}}
+
+\affil{$^1$Institute for Functional Intelligent Materials, University of Singapore, Singapore}
+
+\email{kna@nus.edu.sg}
+
+\section*{Status} 
+% This section provides a brief history and status, why the field is still important, what will be gained with further advances. (400 words max)
+Materials science is an applied science -- its goal is to create new useful materials. The field as a whole is a generative model, which samples materials conditioned on the target properties. So it's only natural that efforts are underway to make this philosophical preposition a computational reality.
+
+Materials are 3D point clouds of a variable number of atoms. Their properties are invariant towards permutation, rotation and translation. As such, materials present a unique data modality for machine learning models and their representation posed a challenge in the early stage of the field. It has largely been addressed by graph neural networks~\cite{PhysRevLett.120.145301} and specialized symmetry-based representations~\cite{goodall2022rapid}. They form the core of generative models. Most of them consist of a diffusion or a transformer model trained on a large database produced with Density Functional Theory (DFT)~\cite{horton2025accelerated, ghahremanpour2018alexandria, saal2013materials}. These models are capable of generating novel thermodynamically stable materials~\cite{zeni2025generative, okabe2025structural}, but not quite ``solve'' material science. We review the limitations in the next section.
+
+\section*{Current and future challenges}
+% This section discusses the big research issues and challenges. (400 words max)
+\textit{Simulated data} Machine learning algorithms have an accuracy ceiling in the form of the quality of the training data -- and DFT has systematic errors. They can be classified as functional-driven, due to the approximate nature of the exchange-correlation (XC) functional, and density-driven, when an approximate XC functional produces a qualitatively incorrect electron density~\cite{PhysRevLett.111.073003}. Moreover, most of the important properties, such as mechanical, catalytic, and electron transport, are very expensive to compute even at DFT level of accuracy~\cite{yamazaki2025multipropertydirectedgenerativedesign}, resulting in small datasets, and difficulty verifying the results on models' prediction.
+
+Complicating the issue further, real materials are not perfect crystals. Disorder and defects are critically important for conductive, mechanical, optical, magnetic and chemical properties. Modeling them further increases costs by requiring a large simulation cell. Finally, high-throughput modeling of the material synthesis process is totally unfeasible. Processes like crystal growth, sintering, or chemical vapor deposition occur over long timescales and involve complex interactions between multiple phases, which are computationally prohibitive to simulate atomistically. The thermodynamic stability predicted by DFT only indicates that a material will not spontaneously decompose; it says nothing about whether there exists a kinetic pathway to form it from available precursors under achievable laboratory conditions~\cite{kim2025explainable}.
+
+\textit{Experimental data} Simulation has a problem in veracity of the causal link between inputs and outputs. Experiment, on the other hand, perfectly links a set of synthesis conditions and a final, tangible material with measurable properties. The problem is, however, that both input and output states are largely not observable. Recorded atomic positions, dynamic reaction pathways, and the local chemical environments are a matter of course for simulation, but are largely not observable in experiments~\cite{vasudevan2019materials}. The very notable and welcome exception is the determination of atomic structures for pure crystalline materials by X-ray diffraction (XRD), etc.~\cite{zagorac2019recent}. Experiments require specialized hardware and are generally expensive, limiting both dataset sizes and the ability to evaluate model predictions.
+
+\textit{Bias towards known material families} Generative models by design learn a probability distribution from the training data; they are very unlikely to generate out-of-distribution novel exotic materials~\cite{handoko2025artificialintelligencegenerativemodels}. The problem is common for all kinds of heuristic models, but is especially incapacitating for generative models. A mistake by a regression model can be detected by the downstream pipeline, at a cost. But if a new family of materials is never generated, there is no way to learn of its existence.
+
+\section*{Advances in science and technology to meet challenges}
+% This section discusses the advances in science technology needed to address the challenges. (400 words max)
+From the applied point of view, generative models currently piggy-back on the existing material design pipeline by supplying candidates to the screening pipelines. Proxy variables, such as chemical system and band gap, are used as property inputs -- not because they correspond well to the design targets, but because they are available.
+
+In general, machine learning models are made better by increasing the quality and quantity of the training data. In this respect, there are efforts to combine all the available DFT data into a single dataset~\cite{siron2025lemat}; combine simulation data with different fidelity~\cite{cui2025multi}.
+
+Active learning, as opposed to training on static datasets, addresses the out of distribution generalization challenge~\cite{nguyen2023hierarchical, merchant2023scaling, han2025invdesflowal, soleymanibrojeni2024active}. The concept is well-known, but the labor and computational costs of a practical implementation mean such works are rare.
+
+The idea of combining all the available data into one multimodal multiscale foundational ML model is fairly obvious and frequently discussed. Doing so involves conceptual algorithmic design challenges, along with a costly and laborious practical implementation. A step into this direction has been taken with LLMs, which are used to combine the structured data in databases with unstructured information from literature~\cite{sriram2024flowllm}, along with heuristic predictions of synthesizability~\cite{song2025accurate}
+
+Conceptually, materials science studies approximate solution of Schrödinger equation for practically useful systems. As such, there is a rough multiscale hierarchy of methods, where more precise low-level computations are used as a basis for faster larger-scale models: quantum chemistry $\rightarrow$ DFT $\rightarrow$ molecular dynamics $\rightarrow$ continuous modeling. AI is being used to improve speed and accuracy of those models, with most prominent successes being electron density prediction~\cite{grisafi2018transferable} and machine learning interatomic potentials~\cite{jacobs2025practical}. These approaches extend the capability of computer simulation to more interesting and useful properties.
+
+Finally, self-driving labs (SDL) are making experiments cheaper and more accessible~\cite{correa2018accelerating}. While they don't fundamentally address the core issues forming the gap between experiment and simulations, the orders of magnitude increase in the amount of the data holds a great promise on its own. Crucially, automated laboratories provide a way to quickly evaluate predictions of ML models, enabling active learning. Moreover, an SDL can provide a continuous stream of data, enabling the modeling and control of the synthesis process.
+
+\section*{Concluding remarks}
+% Include brief concluding remarks. This should not be longer than a short paragraph. (200 words max)
+The development of generative models for solid-state inorganic materials represents a significant leap towards the on-demand creation of materials with desired properties. While challenges persist in addressing the limitations of simulated data, the sparsity of experimental data, and the inherent bias towards known material families, ongoing advancements are promising. The integration of high-quality, diverse training data, the application of active learning strategies, and the emergence of multimodal foundational models are pushing the boundaries of what's possible. Furthermore, the increasing capabilities of AI in accelerating and refining multiscale computational methods, coupled with the proliferation of self-driving labs, are poised to revolutionize material discovery by providing a continuous feedback loop between prediction and experimental verification. These efforts collectively pave the way for a future where novel and exotic materials can be designed and synthesized with unprecedented efficiency.
+% As for why we can't have these nice things just yet? It seems the old adage holds true: thermodynamics proposes, but kinetics ultimately disposes.%
+% As for why we can't have these nice things just yet, the answer lies in the stubborn gap between digital perfection and physical reality. Our algorithms may dream of flawless crystals, but the universe, with its penchant for entropy and kinetic barriers, has yet to be impressed by our code.
+% So, why can't we have nice things? Because even the smartest AI can't outsmart the universe's love for chaos—dodgy densities, elusive experiments, and biases that cling like stubborn defects—but give it time, and we'll turn those "nice things" from pipe dreams into lab realitie
+\section*{Acknowledgments}
+% Please include any acknowledgements and funding information as appropriate.
+This research/project is supported by the Ministry of Education, Singapore, under its Research Centre of Excellence award to the Institute for Functional Intelligent Materials (I-FIM, project No. EDUNC-33-18-279-V12). This research is supported by the National Research Foundation, Singapore under its AI Singapore Programme (AISG Award No: AISG3-RP-2022-028).
+
+We have used LLMs. Namely we have supplied the draft of this chapter with the following prompt: ``Critically assess the following roadmap article draft. Fill in in the TODOs. Are the claims there well-substantiated? Are there any works that contradict the presented paradigm? Are there any important works or perspectives which are missing?'' to Gemini Deep Research, ChatGPT Deep Research, Qwen Deep Research, Grok, DeepSeek, Elicit, FutureHouse Falcon. We have also used Gemini with the following prompt on the semi-final verison: ``Critically assess the following roadmap mini-paper. Cover both the high-level substance and writing details.''
+
+% \section*{References}
+% Separate from the two-page limit) Maximum 20 references. 
+% For each reference please provide the full author list (including where this list exceeds 10 authors), and article title, to maintain style consistency in the combined roadmap article. Style should be consistent with all other contributions: see https://publishingsupport.iopscience.iop.org/questions/style-guide-journal-articles/
+\printbibliography
+\end{document}

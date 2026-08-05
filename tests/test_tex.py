@@ -45,6 +45,18 @@ def test_pilot_citations(pilot_tex):
     assert "chan2019lenia" in keys
     assert "vanchurin2022toward" in keys
     assert nocite_star is False
-    # the manuscript \input's six files that are not provided in tests/
-    assert len(missing) == 6
-    assert "section3.tex" in missing
+    # The pilot's six \input targets are now present (they are needed to compile it to PDF for the
+    # extraction oracle — see the slug's SOURCES.md), so nothing is unresolved. The count is
+    # deliberately not pinned: it is a property of which files happen to be checked in, not of the
+    # parser. The missing-include mechanism itself is covered by test_missing_include_is_reported.
+    assert missing == []
+
+
+def test_pilot_resolves_its_includes(pilot_tex):
+    """Include resolution over a real multi-file manuscript, not a synthetic two-liner.
+
+    `fu2023dreamsim` and `zhang2018perceptual` appear ONLY inside the appendices, so finding them
+    proves the \\input targets were actually read and their citations counted.
+    """
+    keys, _, _ = parse_cited_keys(pilot_tex)
+    assert {"fu2023dreamsim", "zhang2018perceptual"} <= keys

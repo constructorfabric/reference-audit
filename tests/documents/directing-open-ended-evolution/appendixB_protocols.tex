@@ -1,0 +1,436 @@
+\subsection*{Appendix B. Experimental protocols and reproducibility details}
+\label{appendix:protocols}
+
+This appendix gives the complete execution protocol for the empirical claims in Section~4.  The main text gives the claim logic and the reported interpretation; this appendix gives the parameterization, sampling rules, rollout horizons, evaluation windows and statistical units needed to reproduce the measurements.
+
+\subsubsection*{B.1 Claim-level pipeline}
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabular}{p{0.08\linewidth}p{0.15\linewidth}p{0.27\linewidth}p{0.23\linewidth}p{0.17\linewidth}}
+\toprule
+Claim & Substrate & Pipeline & Reported output & Statistical unit \\
+\midrule
+N0 & synthetic particles & Generate known trajectory families; compute $\Delta H(w,\tau)$; aggregate MSPD; evaluate event and role diagnostics where ground truth exists & Family scores, heatmaps, event error, role recovery & synthetic family/seed \\
+C1 & CA & Sweep all 18-bit rules; rank by transition-law MSPD; compare selected high-MSPD rules with random rules & optimized-vs-random transition-law MSPD & rule \\
+C1 & Flow-Lenia & Optimize checkpoints; sample matched random controls; run reusable A-rollouts; select $\tau$ on even metric windows; score on odd windows & matched contrast $\Delta^{C1}_{s,r}$ & independent matched group \\
+C1 & Particle Life++ & Optimize neural interaction weights; sample matched random controls; run reusable lagrangian rollouts; evaluate fixed post-hoc lag on held-out windows & matched contrast $\Delta^{C1}_{s,r}$ & independent matched group \\
+C2 & CA & Select branch boards from saved $\Delta H$ traces; perturb board sites; resume futures; measure Hamming divergence & association between $E_b$ and $B_b$ & branch state \\
+C2 & Flow-Lenia & Select branch states from APF A-rollouts across $E_b$ strata; perturb state copies; resume futures; measure CLIP-Chamfer divergence; compute pooled and within-trajectory correlations & pooled $r_P,r_S$ and per-trajectory correlations $\rho_i$ & branch state; source trajectory for robustness \\
+C5 & Flow-Lenia & For each checkpoint, run $A_\theta$, $C_\theta$, and early blocked $W_\theta$; release; compare late futures & anchored frustration contrast $\Delta^{C5}_{s,r}$ & independent matched group \\
+C5 & Particle Life++ & For each checkpoint, run $A_\theta$, $C_\theta$, and warmup-plus-cell-shuffle $W_\theta$; compare late futures & anchored frustration contrast $\Delta^{C5}_{s,r}$ & independent matched group \\
+\bottomrule
+\end{tabular}
+\caption{End-to-end experimental pipeline for the reported claims.  Each row can be read independently: it states the source data, the intervention or optimization step, the reported statistic and the unit used for statistical aggregation.}
+\label{tab:appendix-pipeline}
+\end{table}
+\FloatBarrier
+
+\subsubsection*{B.2 Synthetic calibration protocol}
+
+The synthetic calibration uses particles on the unit torus with shortest-periodic displacement.  The local empirical law is the distribution of particle displacements inside a metric window and lag.  The default calibration uses $64$ particles, $240$ time steps, one seed per family, and lag grid
+\[
+  \mathcal T=\{1,2,4,8,12,16\}.
+\]
+MSPD is computed from processed $\Delta H(w,\tau)$ maps.  Families S0, S1 and S3 are low-score controls; S4 separates stationary role heterogeneity from temporal MSPD; S5, S6 and S8 test event localization; S7 and S8 test scale response.
+
+\subsubsection*{B.3 Random-control sampling}
+
+Random controls are sampled separately for each substrate and matched to the same reporting group as the optimized checkpoint.  The sampling rule is part of the null model: it defines what counts as an unoptimized parameter from the same substrate family.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabular}{p{0.18\linewidth}p{0.32\linewidth}p{0.39\linewidth}}
+\toprule
+Substrate & Random parameter $\theta^{\mathrm{rand}}$ & Matching rule \\
+\midrule
+Life-like CA & Uniform random 18-bit totalistic birth/survival rule & Compared with selected high-MSPD rules under the same board and scoring protocol \\
+Flow-Lenia & Freshly sampled Flow-Lenia rule vector from the same initialization distribution used by the optimizer & Three random checkpoints are paired with each optimized group in C1 and C5 \\
+Particle Life++ & Fresh neural interaction-weight vector from the substrate-default initialization distribution & Three random checkpoints are paired with each optimized group in C1 and C5 \\
+\bottomrule
+\end{tabular}
+\caption{Random-control sampling.  Random controls are not resampled after seeing the post-hoc score; they are evaluated by the same reported protocol as the optimized checkpoints.}
+\label{tab:random-controls}
+\end{table}
+\FloatBarrier
+
+\subsubsection*{B.4 Optimization protocols}
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabular}{p{0.14\linewidth}p{0.27\linewidth}p{0.24\linewidth}p{0.25\linewidth}}
+\toprule
+Substrate & Optimized object and search & Rollout and metric budget during optimization & Optimization objective \\
+\midrule
+CA & Exhaustive enumeration of $2^{18}$ totalistic rules & transition-law MSPD on simulated boards; active-site weighting & rank rules by transition-law MSPD and evaluate selected rules on holdout boards \\
+Flow-Lenia & Sep-CMA-ES over flattened Flow-Lenia rule vectors; population size $16$; $500$ iterations; initial scale $\sigma=0.2$ & grid $384$; rollout length $300{,}000$; metric range $50{,}000$--$300{,}000$; window $20{,}000$; step $5{,}000$; lag grid $\{1000,2000,\ldots,10000\}$; 48 displacement samples; 16 projections; six null repetitions; 64 probe samples & minimize $-(\alpha\overline{\Delta H}+\beta\operatorname{MSPD})$ with $\alpha=0$, $\beta=1$ \\
+Particle Life++ & Sep-CMA-ES over neural pair-interaction weights; population size $8$; $500$ iterations; initial scale $\sigma=0.2$ & $600$ particles; six colors; rollout length $6000$; window $100$; step $50$; range $0$--$1000$; lag grid $\{5,10,15,20,25,30,35\}$; 48 displacement samples; 16 projections; six null repetitions; 64 particle samples & minimize $-(\lambda_M\operatorname{MSPD}+\lambda_H\overline{\Delta H})$ with nonzero mean-heterogeneity weight to avoid stationary random-weight basins \\
+\bottomrule
+\end{tabular}
+\caption{Optimization protocols.  These are optimization-time estimators; the reported C1 scores are computed by the post-hoc protocols in Appendix~B.5.}
+\label{tab:optimization-protocols}
+\end{table}
+\FloatBarrier
+
+Particle Life++ optimization uses $dt=0.02$, half-life $0.04$, interaction radius $r_{\max}=0.1$, repulsion boundary $\beta=0.3$, particle mass $0.1$, render radius $0.04$, sharpness $30.0$, toroidal boundary conditions and dense neighbor interactions.  Color updates are enabled.
+
+\subsubsection*{B.5 C1 post-hoc evaluation protocols}
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabular}{p{0.15\linewidth}p{0.23\linewidth}p{0.24\linewidth}p{0.28\linewidth}}
+\toprule
+Substrate & Rollout source & Metric grid and windowing & Reported score \\
+\midrule
+CA & holdout board simulations for selected and random rules & categorical transition laws; active-site weighting; same board/evaluation protocol for selected and random rules & transition-law MSPD \\
+Flow-Lenia & reusable $500{,}000$-step A-rollouts on grid $384$ with lagrangian APF chunks & metric range $50{,}000$--$300{,}000$; window $20{,}000$; step $5{,}000$; lag grid $\{500,600,\ldots,15000\}$; 48 samples; 16 projections; six null repetitions; 64 probes & choose $\tau^\star$ on even-indexed windows, report MSPD on odd-indexed windows \\
+Particle Life++ & reusable single-trajectory lagrangian rollouts with total horizon $24{,}000$ & evaluate steps $4000$--$24{,}000$; fixed $\tau=25$; window $100$; step $50$; 48 samples; 16 projections; six null repetitions; 64 particles & held-out fixed-lag MSPD on odd-indexed metric windows \\
+\bottomrule
+\end{tabular}
+\caption{C1 post-hoc evaluation.  The same post-hoc score is applied to optimized checkpoints and matched random controls within a substrate.}
+\label{tab:c1-posthoc}
+\end{table}
+\FloatBarrier
+
+The interleaved select/eval split is used whenever lag selection is nondegenerate.  It is chosen because these systems are temporally nonstationary: early and late windows can represent different dynamical regimes.  Interleaving prevents the selected lag from being scored on the same windows while keeping selection and evaluation distributed across comparable rollout phases.
+
+\subsubsection*{B.6 C2 branch-continuation protocols}
+
+For every branch state $b$, the C2 pipeline computes branch energy $E_b$, simulates perturbed futures, computes future divergence $B_b$, and then measures the association between $E_b$ and $B_b$.  Table~\ref{tab:c2-protocols} gives the numerical settings.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabular}{p{0.15\linewidth}p{0.25\linewidth}p{0.27\linewidth}p{0.23\linewidth}}
+\toprule
+Substrate & Branch sampling & Perturbation and continuation & Outcome distance \\
+\midrule
+CA & 24 branch windows sampled across the saved $\Delta H$ distribution & four continuations per branch; independently flip fraction $0.01$ of lattice sites; resume same CA rule for 64 steps & median pairwise future Hamming divergence \\
+Flow-Lenia & up to nine source trajectories; candidate steps at least $50{,}000$ with full $20{,}000$-step future horizon; five windows from each within-trajectory energy stratum: $E\le Q_{0.2}$, $Q_{0.4}\le E\le Q_{0.6}$, $E\ge Q_{0.8}$ & three continuations per branch; perturb $A$, $P$ and probe positions before resuming; branch seed also seeds the perturbation RNG & median pairwise CLIP-Chamfer distance between future videos \\
+\bottomrule
+\end{tabular}
+\caption{C2 branch-continuation protocol.  Branch strata are used to cover the within-trajectory energy range; the reported correlations use continuous branch energies.}
+\label{tab:c2-protocols}
+\end{table}
+\FloatBarrier
+
+For Flow-Lenia, the perturbation applied before continuation is
+\[
+  A\leftarrow\max(A+\eta_A,0),
+  \qquad \eta_A\sim\mathcal N(0,0.02^2),
+\]
+\[
+  P\leftarrow P+\eta_P,
+  \qquad \eta_P\sim\mathcal N(0,0.02^2),
+\]
+\[
+  q\leftarrow \operatorname{clip}_{[\sigma,L-\sigma]}(q+\eta_q),
+  \qquad \eta_q\sim\mathcal N(0,1.0^2),
+\]
+where $A$ is the activity field, $P$ is the internal channel field, $q$ denotes lagrangian probe positions and $L$ is the grid side length.  The Flow-Lenia CLIP-Chamfer analysis contains $135$ branch states.  The within-trajectory table contains nine source trajectories with fifteen branch states each.
+
+\subsubsection*{B.7 C5 blockwise-frustration protocols}
+
+C5 uses the same abstract intervention for both continuous substrates: interrupt early spatial co-organization while holding the checkpoint $\theta$ fixed, release the system, and compare late futures after subtracting ordinary seed-to-seed variability.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabular}{p{0.14\linewidth}p{0.26\linewidth}p{0.23\linewidth}p{0.27\linewidth}}
+\toprule
+Substrate & Rollout variants & Intervention implementation & Late evaluation \\
+\midrule
+Flow-Lenia & $A_\theta$: same-seed free rollout; $C_\theta$: different-seed free rollout; $W_\theta$: same-seed intervention rollout & first $500{,}000$ steps on a $384\times384$ grid partitioned into $3\times3$ isolated blocks with pad 5 and wall boundaries; release into normal global Flow-Lenia dynamics until $1{,}200{,}000$ steps & distance on steps $1{,}000{,}000$--$1{,}200{,}000$; CLIP image size 224; eight time samples; diagnostic MSPD uses fixed $\tau=3000$ \\
+Particle Life++ & $A_\theta$: same-seed free rollout; $C_\theta$: different-seed free rollout; $W_\theta$: same-seed intervention rollout & run freely for $10{,}000$ steps; apply $2\times2$ cell shuffle with strength $1.0$, no positional jitter and velocity mode ``keep''; resume normal toroidal dynamics until $24{,}000$ steps & distance on steps $20{,}000$--$24{,}000$; CLIP image size 224; eight time samples; diagnostic MSPD uses fixed $\tau=25$ \\
+\bottomrule
+\end{tabular}
+\caption{C5 intervention protocols.  The interventions differ because the substrates have different state representations, but both preserve $\theta$ and target early spatial organization rather than parameter changes.}
+\label{tab:c5-protocols}
+\end{table}
+\FloatBarrier
+
+For every checkpoint, the anchored score is
+\[
+  F_s(\theta)=d_s(A_\theta,W_\theta)-d_s(A_\theta,C_\theta).
+\]
+The first term measures the effect of the intervention relative to the same-seed reference.  The second term estimates ordinary seed-to-seed variability for the same checkpoint.  The matched contrast reported in Section~4 is
+\[
+  \Delta^{C5}_{s,r}=F_s(\theta^{\mathrm{opt}}_{s,r})-
+  \operatorname{median}_{j}F_s(\theta^{\mathrm{rand}}_{s,r,j}).
+\]
+
+\subsubsection*{B.8 Reported statistics}
+
+C1 and C5 use matched-group sign tests because the independent unit is the optimization group and the group counts are small.  For $n$ matched groups and $n_+$ positive contrasts, the one-sided sign-test value is
+\[
+  p=\Pr[\operatorname{Binomial}(n,1/2)\ge n_+].
+\]
+C2 reports pooled Pearson/Spearman correlations across branch states and within-trajectory correlations across branch states inside each source trajectory.  The within-trajectory readout is included to separate state-level association from a purely between-trajectory association.
+
+
+\subsubsection{B.9 Flow-Lenia update and RT tracer logging}
+\label{app:flow-lenia-algorithm}
+This appendix gives the substrate-level update used for the Flow-Lenia experiments.  The description is algorithmic rather than code-specific: implementation details such as FFT normalization, batch layout and JAX compilation do not change the mathematical update below.
+
+Let $\Omega=\{0,\ldots,L-1\}^2$ be the simulation grid, with the configured boundary rule applied whenever coordinates leave the domain.  The Flow-Lenia state consists of mass channels $A_t(x,c)\ge 0$ and internal channels $P_t(x,\ell)$, with $x\in\Omega$, $c=1,\ldots,C$ and $\ell=1,\ldots,K$.  The optimized checkpoint is a flat vector of offsets around a fixed base rule.  These offsets are clipped, added in raw-logit coordinates, passed through a sigmoid, and mapped to parameter ranges for
+\[
+  R,
+  \quad r_\ell,
+  \quad m_\ell,
+  \quad s_\ell,
+  \quad a_{\ell h},
+  \quad b_{\ell h},
+  \quad w_{\ell h},
+  \qquad
+  \ell=1,\ldots,K,
+\]
+where $h$ indexes the kernel components.  These parameters define a routed kernel bank.  If $c_0(\ell)$ is the input channel read by kernel $\ell$ and $\mathcal K_c$ is the set of kernels routed into output channel $c$, the normalized radial kernel has the form
+\[
+  K_\ell(z)
+  \propto
+  \mathrm{sigm}\!\left(-10(D_\ell(z)-1)\right)
+  \sum_h b_{\ell h}
+  \exp\!\left(-\frac{(D_\ell(z)-a_{\ell h})^2}{w_{\ell h}}\right),
+  \qquad
+  D_\ell(z)=\frac{\|z\|}{(R+15)r_\ell},
+\]
+with normalization $\sum_z K_\ell(z)=1$.
+
+One Flow-Lenia step is
+\[
+  U_\ell(x) = (K_\ell * A_{t, c_0(\ell)})(x),
+  \qquad
+  G_\ell(x)=\left[2\exp\!\left(-\frac{(U_\ell(x)-m_\ell)^2}{2s_\ell^2}\right)-1\right]P_t(x,\ell),
+\]
+\[
+  B_c(x)=\sum_{\ell\in\mathcal K_c}G_\ell(x).
+\]
+Here $B_c$ is the routed growth response for mass channel $c$.  The transport field is constructed from Sobel gradients of the routed response and of the total mass:
+\[
+  \widetilde F_c(x)=\nabla_S B_c(x),
+  \qquad
+  C_A(x)=\nabla_S\sum_{d=1}^C A_t(x,d),
+\]
+\[
+  \alpha_c(x)=\mathrm{clip}\!\left(\left(\frac{A_t(x,c)}{2}\right)^2,0,1\right),
+  \qquad
+  H_c(x)=(1-\alpha_c(x))\widetilde F_c(x)-\alpha_c(x)C_A(x),
+\]
+\[
+  F_t(x,c)=\mathrm{clip}\!\left(H_c(x),-m_{\rm step},m_{\rm step}\right).
+\]
+Here $m_{\rm step}=d_d-\sigma_{\rm RT}$, and the last clipping is componentwise in the two spatial coordinates.
+
+The fields are then reintegrated by the RT transport operator.  For each source cell $x$ and channel $c$, define the proposed target center
+\[
+  \mu_t(x,c)=x+\frac12+\mathrm{clip}\!\left(dt\,F_t(x,c),-m_{\rm step},m_{\rm step}\right).
+\]
+The RT footprint assigns a fraction of the source mass to target cell $y$ by
+\[
+  W_{x\to y,c}
+  =
+  \frac{1}{4\sigma_{\rm RT}^2}
+  \prod_{r=1}^2
+  \mathrm{clip}\!\left(
+    \frac12 - d_\Omega\!\left(y_r+\frac12,\mu_{t,r}(x,c)\right)+\sigma_{\rm RT},
+    0,
+    \min(1,2\sigma_{\rm RT})
+  \right),
+\]
+where $d_\Omega$ is the coordinate distance under the configured boundary rule.  The next mass field is
+\[
+  A_{t+1}(y,c)=\sum_{x\in\Omega} A_t(x,c)W_{x\to y,c}.
+\]
+The internal field $P_t$ is transported over the same RT footprints.  When multiple source cells contribute to the same target cell, the configured RT mixing rule selects or averages the incoming internal states.  In the stochastic mixing mode used by the substrate, an incoming source is selected with probability proportional to its incoming mass, and its internal state is assigned to the target location.  This gives $P_{t+1}$ and completes the state update
+\[
+  (A_{t+1},P_{t+1},F_t)=\Phi_\theta(A_t,P_t).
+\]
+
+The Lagrangian observation layer uses passive RT tracers.  In the reported Flow-Lenia MSPD runs, tracer positions are initialized from the current mass distribution: a cell is sampled with probability proportional to $\sum_c A_0(x,c)$, and the tracer is placed uniformly inside that cell.  If channel tracking is enabled, the tracer channel is sampled from the local mass proportions.  After each substrate step, tracers are updated using the logged field $F_t$ and the updated mass field $A_{t+1}$.  With resampled channels,
+\[
+  \Pr\{c_a(t+1)=c\mid q_a(t)\}
+  =
+  \frac{\mathcal I[A_{t+1,c}](q_a(t))}{\sum_d \mathcal I[A_{t+1,d}](q_a(t))+10^{-8}},
+\]
+where $\mathcal I$ is bilinear sampling at the tracer position.  The tracer velocity is the bilinearly sampled channel flow,
+\[
+  v_a(t)=\mathcal I[F_t(\cdot,c_a(t+1))](q_a(t)),
+\]
+or, in reduced-channel mode, the configured reduction of the sampled channel flows.  The RT tracer update is
+\[
+  \delta_a(t)=\mathrm{clip}\!\left(dt\,v_a(t),-m_{\rm step},m_{\rm step}\right),
+\]
+\[
+  q_a(t+1)=\Pi_\Omega\!\left(q_a(t)+\delta_a(t)+\lambda\varepsilon_a(t)\right),
+  \qquad
+  \varepsilon_a(t)\sim\mathrm{Unif}\bigl([-\sigma_{\rm RT},\sigma_{\rm RT}]^2\bigr),
+\]
+for the RT box-noise model.  Here $\lambda$ is the diffusion scale and $\Pi_\Omega$ applies the same boundary rule as the substrate.  The experiment logs the resulting coordinates as \texttt{lagrangian\_xy} and, when enabled, the tracer channels as \texttt{lagrangian\_c}.  MSPD is computed post-hoc from finite-lag displacement laws of these saved coordinates.
+
+
+The numerical tables distributed with the source package include the cross-substrate summary, synthetic calibration tables, the Flow-Lenia C2 branch-state table and the Flow-Lenia C2 within-trajectory correlation table.
+\subsubsection*{B.9  Particle Life++ substrate algorithm}
+\label{app:plife-plus-algorithm}
+
+This appendix gives the algorithmic form of Particle Life++ used in Section~4.  The substrate is a deterministic particle system after initialization when the network weights, initial state and boundary rule are fixed.
+
+\paragraph{State and initialization.}
+At step $n$, the state is
+\[
+  S_n=\{(x_i^n,v_i^n,c_i^n)\}_{i=1}^{N},
+  \qquad
+  x_i^n\in[0,L]^2,
+  \quad v_i^n\in\mathbb R^2,
+  \quad c_i^n\in\mathbb S^{K-1}.
+\]
+The implementation initializes positions uniformly in the square, velocities at zero, and colors by normalizing independent Gaussian vectors,
+\[
+  x_i^0\sim\mathrm{Unif}([0,L]^2),
+  \qquad
+  v_i^0=0,
+  \qquad
+  c_i^0=\xi_i/\|\xi_i\|_2,
+  \quad \xi_i\sim\mathcal N(0,I_K).
+\]
+
+\paragraph{Neural pair rule.}
+For each ordered pair $(i,j)$, the network receives the concatenated colors $[c_i,c_j]\in\mathbb R^{2K}$.  The architecture is
+\[
+  \mathbb R^{2K}
+  \xrightarrow{\mathrm{Dense}(8),\tanh}
+  \mathbb R^8
+  \xrightarrow{\mathrm{Dense}(8),\tanh}
+  \mathbb R^8
+  \xrightarrow{\mathrm{Dense}(8),\tanh}
+  \mathbb R^8
+  \xrightarrow{\mathrm{Dense}(1+K)}
+  \mathbb R^{1+K}.
+\]
+If the final output is $(y_{ij}^{(0)},y_{ij}^{(1:K)})$, then
+\[
+  \alpha_{ij}=1.5\tanh(y_{ij}^{(0)}),
+  \qquad
+  g_{ij}=\tanh(y_{ij}^{(1:K)}).
+\]
+The scalar $\alpha_{ij}$ controls the mechanical interaction amplitude and $g_{ij}$ controls the color drift of particle $i$ under particle $j$.
+
+\paragraph{Pair geometry and force law.}
+Let $\delta_{ij}$ be the displacement from $i$ to $j$.  Under the toroidal boundary used in the reported PLife++ experiments, $\delta_{ij}$ is the minimal-image displacement; under wall boundaries it is the ordinary displacement.  Define
+\[
+  \rho_{ij}=\|\delta_{ij}\|_2,
+  \qquad
+  e_{ij}=\frac{\delta_{ij}}{\rho_{ij}+10^{-8}},
+  \qquad
+  q_{ij}=\rho_{ij}/r_{\max}.
+\]
+The dimensionless force graph is
+\[
+\Phi(q;\alpha,\beta)=
+\begin{cases}
+  q/\beta-1, & q<\beta,\\[1mm]
+  \alpha\left(1-\dfrac{|2q-1-\beta|}{1-\beta}\right), & \beta<q<1,\\[2mm]
+  0, & \text{otherwise}.
+\end{cases}
+\]
+The pairwise force and color increment are
+\[
+  F_{ij}=r_{\max}\Phi(q_{ij};\alpha_{ij},\beta)e_{ij},
+  \qquad
+  \Delta c_{ij}=g_{ij}\max(0,1-\rho_{ij}/r_{\max}).
+\]
+The dense implementation evaluates all ordered pairs.  The self-pair gives zero mechanical force because $\delta_{ii}=0$, but it can contribute to color drift through $g_\theta(c_i,c_i)$.
+
+\paragraph{Integration step.}
+The acceleration and color drift are
+\[
+  a_i^n=\frac{1}{m}\sum_{j=1}^{N}F_{ij}^n,
+  \qquad
+  \dot c_i^n=\sum_{j=1}^{N}\Delta c_{ij}^n.
+\]
+With damping factor $\mu=0.5^{\Delta t/h}$, the semi-implicit update is
+\[
+  v_i^{n+1}=\mu v_i^n+\Delta t\,a_i^n,
+  \qquad
+  \widetilde x_i^{n+1}=x_i^n+\Delta t\,v_i^{n+1}.
+\]
+The boundary map then gives $x_i^{n+1}=\mathrm{boundary}(\widetilde x_i^{n+1})$ and updates $v_i^{n+1}$ only for wall reflections.  For toroidal boundaries, $x_i^{n+1}=\widetilde x_i^{n+1}\bmod L$ and velocity is unchanged.  If color updates are enabled,
+\[
+  \widetilde c_i^{n+1}=c_i^n+\Delta t\,\dot c_i^n,
+  \qquad
+  c_i^{n+1}=\widetilde c_i^{n+1}/\|\widetilde c_i^{n+1}\|_2.
+\]
+Particle identities $i=1,\ldots,N$ are the local carriers for MSPD, and the empirical local laws are built from finite-lag displacements of the stored positions $x_i^n$.
+
+The PLife++ experiments use $N=600$, $K=6$, $d=2$, $\beta=0.3$, $m=0.1$, $\Delta t=0.02$, $h=0.04$, $r_{\max}=0.1$, $L=1.0$, toroidal boundary, dense neighbor mode, color updates enabled, render radius $0.04$, sharpness $30.0$ and black background.
+
+
+\subsection{B.10 branch perturbation protocols}
+\label{app:c2-branch-perturbations}
+
+C2 uses substrate-native perturbations of saved branch states.  The parameter vector $\theta$ is never changed; only the current simulator state is modified before continuation.  The values below are the explicit parameters used for the reported C2 experiments.
+
+\paragraph{Cellular automata.}
+A CA branch state is a binary board sampled from the selected rule trajectory.  For each selected branch window, the branch time is the center of the window.  Each continuation is initialized by independently choosing a random subset of board sites and flipping their binary states:
+\[
+  x'(u)=
+  \begin{cases}
+  1-x(u), & u\in S_{\mathrm{flip}},\\
+  x(u), & u\notin S_{\mathrm{flip}},
+  \end{cases}
+  \qquad
+  |S_{\mathrm{flip}}|=\max\{1,\operatorname{round}(0.01|\Lambda|)\}.
+\]
+The same Life-like rule is then resumed from $x'$.  The reported CA C2 parameters are
+\[
+  n_{\mathrm{windows}}=24,\qquad
+  M=4,\qquad
+  \text{flip fraction}=0.01,\qquad
+  \text{future horizon}=64\ \text{steps}.
+\]
+The outcome distance is normalized Hamming divergence between future board states, averaged over the resumed horizon.
+
+\paragraph{Flow-Lenia.}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth,height=0.84\textheight,keepaspectratio]{figures/c2_branching_branch_selection_preview.png}
+  \caption{Flow-Lenia C2 branch-selection preview.  Each panel is one source trajectory, with branch-energy values derived from the processed $\Delta H$ heatmap.  The selected branch times cover low, middle and high within-trajectory energy strata; the continuous branch energy $E_b$ is used in the reported correlations.}
+  \label{fig:c2-branch-selection-preview}
+\end{figure}
+
+A Flow-Lenia branch state is a saved APF snapshot containing the activity field $A$, internal field $P$, Lagrangian tracer coordinates $q$, tracer channel labels $c$ when present, and simulator RNG state.  For each branch state, each continuation receives independent Gaussian state noise before resuming:
+\[
+  A'=\max\{0,A+\epsilon_A\},
+  \qquad
+  \epsilon_A\sim \mathcal N(0,0.02^2),
+\]
+\[
+  P'=P+\epsilon_P,
+  \qquad
+  \epsilon_P\sim \mathcal N(0,0.02^2),
+\]
+\[
+  q'=B_\Omega(q+\epsilon_q),
+  \qquad
+  \epsilon_q\sim \mathcal N(0,1.0^2),
+\]
+where $B_\Omega$ applies the tracker boundary rule in the stored tracer-coordinate system.  The tracer channel labels are copied unchanged.  The branch seed is folded into the resumed RNG, so different continuations receive independent simulator and RT-noise realizations after the branch.
+
+The reported Flow-Lenia C2 selection protocol uses nine source trajectories.  For each source trajectory, branch states are sampled from three strata of the branch-energy distribution:
+\[
+  n_{\mathrm{high}}=5,\qquad n_{\mathrm{mid}}=5,\qquad n_{\mathrm{low}}=5.
+\]
+The high pool is the top $20\%$ of $E_b$ values, the low pool is the bottom $20\%$, and the mid pool is the central quantile band $40\%$--$60\%$.  The selection seed is $12345$, the minimum branch step is $50{,}000$, the refractory separation is $5{,}000$ simulation steps, and each requested branch step is snapped to the nearest saved APF snapshot.  Each branch state has
+\[
+  M=3,\qquad
+  \text{future horizon}=20{,}000\ \text{simulation steps}.
+\]
+The reported future divergence uses CLIP--Chamfer distance between future rendered-frame feature clouds; the feature extraction uses at most four APF chunks and at most eight snapshots per chunk.
+
+Figure~\ref{fig:c2-branch-selection-preview} shows the branch-selection strata on representative Flow-Lenia $\Delta H$ heatmaps.  Vertical markers indicate selected branch times; the colors correspond to the low, mid and high branch-energy strata used only for sampling coverage.
+
+

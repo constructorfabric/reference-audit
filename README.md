@@ -1,8 +1,8 @@
 # reference-audit
 
-Audit the references in a paper. Given a `.bib` bibliography and the `.tex` that cites it,
-`reference-audit` figures out **which real-world document each reference actually points to** and
-flags ones that don't match anything real (hallucinated references).
+Audit the references in a paper. Given a `.bib` bibliography and the `.tex` that cites it — or just
+the paper's **PDF** — `reference-audit` figures out **which real-world document each reference
+actually points to** and flags ones that don't match anything real (hallucinated references).
 
 For every entry it returns one of three verdicts:
 
@@ -23,9 +23,11 @@ uncited citations.
 For each entry the tool runs a funnel that prefers cheap, deterministic evidence and only escalates
 to an LLM when needed:
 
-1. **Parse** the `.bib` (and resolve `\cite`/`\nocite` in the `.tex`), normalizing DOIs, ISBNs,
-   arXiv ids, OpenAlex Work ids (an `openalex.org/W…` URL becomes a first-class identifier) and
-   Google Books volume ids (a `books.google.…/books?id=…` URL).
+1. **Parse** the input — either the `.bib` (resolving `\cite`/`\nocite` in the `.tex`), or a PDF, from
+   which a locally-run [GROBID](https://github.com/grobidOrg/grobid) extracts both the printed
+   reference list and the in-text citation markers. Either way, DOIs, ISBNs, arXiv ids, OpenAlex Work
+   ids (an `openalex.org/W…` URL becomes a first-class identifier) and Google Books volume ids (a
+   `books.google.…/books?id=…` URL) are normalized identically, and everything below is unchanged.
 2. **Query** multiple scholarly databases — Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open
    Library, Google Books — both by identifier and by title/author. A cited OpenAlex Work id or
    Google Books volume id is resolved directly to that work (the authoritative key for entries —
@@ -107,6 +109,11 @@ network or LLM calls. A transient outage never counts as "no match".
 - Python 3.14
 - [`uv`](https://docs.astral.sh/uv/)
 - An OpenAI API key (for the LLM adjudication step)
+- **For PDF input only:** a running GROBID. It is not managed by this tool — start one with:
+  ```bash
+  podman run -d --name grobid -p 8070:8070 docker.io/grobid/grobid:0.8.2.1-crf
+  ```
+  The first start takes ~30 s while the models load. `docker run` works the same way.
 
 ## Setup
 
@@ -128,6 +135,9 @@ CORE_API_KEY=...
 PAPER_SEARCH_MCP_UNPAYWALL_EMAIL=you@example.org
 OPENLIBRARY_EMAIL=you@example.org   # sent in the User-Agent on Open Library requests (polite identification)
 GOOGLE_BOOKS_API_KEY=...            # Google Books per-project quota (the keyless endpoint shares a global daily quota that is routinely exhausted)
+
+# Optional — only used for PDF input; overridable per-run with --grobid
+GROBID_URL=http://localhost:8070
 ```
 
 Only `OPENAI_API_KEY` is needed to run the full pipeline; the data sources used by default
@@ -137,9 +147,15 @@ book coverage at scale. You can also run with no LLM at all (`--no-llm`, see bel
 
 ## Usage
 
+Two input forms — a manuscript with its bibliography, or a PDF on its own:
+
 ```bash
 uv run reference-audit audit <main.tex> <references.bib> [options]
+uv run reference-audit audit <paper.pdf> [options]
 ```
+
+They are mutually exclusive: a PDF *is* the whole input, since GROBID extracts both its reference list
+and its in-text citations, so passing a `.bib` alongside one is rejected.
 
 Example, against the bundled pilot:
 
@@ -151,16 +167,15 @@ uv run reference-audit audit \
 
 ```
 Reference audit
-  28 entries  ·  26 cited  ·  2 uncited  ·  7 with issues  ·  1 commented twins
-  verdicts: 27 matched  ·  0 no-match  ·  0 ambiguous  ·  1 unresolved
+  28 entries  ·  28 cited  ·  0 uncited  ·  7 with issues  ·  1 commented twins
+  verdicts: 28 matched  ·  0 no-match  ·  0 ambiguous  ·  0 unresolved
   types: article=18, book=2, inproceedings=5, misc=3
 
 CAPITAL OFFENCES — No hallucinated citations
 
-UNABLE TO VERIFY (1) — could not conclusively rule out a hallucination (network/LLM error, unfamiliar entry type, dead link, …):
-...
+UNABLE TO VERIFY — For all other references at least one matching artifact was positively identified
 
-ISSUES (6) — other problems to review:
+ISSUES (7) — other problems to review:
 
 [article] wolpert2007  (cited)
     Using self-dissimilarity to quantify complexity
@@ -168,7 +183,7 @@ ISSUES (6) — other problems to review:
     ⚠ DOI normalized from URL form ('https://doi.org/10.1002/cplx.20165' → '10.1002/cplx.20165')
     ✓ exactly one match (high) — Matched a single work via crossref.
 
-[inproceedings] fu2023dreamsim  (UNCITED)
+[inproceedings] fu2023dreamsim  (cited)
     DreamSim: Learning New Dimensions of Human Visual Similarity using Synthetic Data
     ids: (no identifier)
     ⚠ no DOI/arXiv id (will attempt DOI backfill)
@@ -199,7 +214,12 @@ NO ISSUES (18) — verified, nothing to fix:
 | `--fresh` | Ignore cached results and re-query everything. |
 | `--cache PATH` | Cache DB location. Default: `<bib_dir>/.reference_audit/cache.db`. |
 | `--model NAME` | Override the LLM model (default `gpt-5.4-mini`). |
+| `--grobid URL` | GROBID base URL for PDF input. Default `http://localhost:8070` (or `GROBID_URL`). |
 | `--fail-on hallucinated\|multiple` | Exit non-zero if any entry gets that verdict — for gating submissions in CI. |
+
+`--no-network` applies to `.tex` + `.bib` input only. A PDF's reference list comes from an HTTP call to
+GROBID, so there is no offline parse path for it, and combining the two is rejected rather than
+quietly redefining what the flag promises.
 
 Example — fail a CI check if any reference looks hallucinated, as JSON:
 
@@ -254,6 +274,33 @@ This is **abstract-only** in v1 (never full text) and **advisory**: it never cha
 identification verdict. The JSON report carries the full per-citation `alignment_findings`
 (status, evidence quote, confidence) for tooling and AI agents.
 
+### Auditing a PDF
+
+```bash
+podman run -d --name grobid -p 8070:8070 docker.io/grobid/grobid:0.8.2.1-crf   # wait ~30 s
+uv run reference-audit audit paper.pdf
+```
+
+GROBID supplies both the reference list and the in-text citations, so the audit proceeds exactly as it
+would from authored sources. What differs is that the input is now an *extraction*, and the report says
+so rather than leaving you to assume otherwise:
+
+- The header is marked `references extracted from PDF`, and an `INPUT NOTES` block lists what the
+  extraction could not recover.
+- Each entry shows the printed reference number (`[article] b12  (ref #13, cited)`), since the key is a
+  GROBID-assigned id and means nothing on its own. A reference GROBID could not title is shown with the
+  raw text it read, so you can find it in the PDF.
+- Counts a PDF cannot support are not faked. Commented twins and unresolved `\input`s are omitted
+  entirely. If GROBID links no in-text citation markers at all, the report says `citedness unknown` and
+  lists *nothing* as uncited — rather than claiming every reference is uncited.
+- A reference with neither a title nor an identifier is reported as uncheckable and no source is
+  queried for it, instead of a title-less search returning an arbitrary paper that could be scored as a
+  match.
+
+Failures are named, never degraded into an empty bibliography: an unreachable or failing GROBID, a PDF
+with no text layer, and a PDF with no detectable reference list each exit non-zero with the specific
+reason (and, for an unreachable service, the command to start one).
+
 ## Development
 
 ```bash
@@ -264,6 +311,42 @@ uv run cfs validate    # validate the governance artifacts and code traceability
 Tests mock all database and LLM calls, so the suite is fast and offline. When the tool gets a case
 wrong, the fix is captured as a new test with the recorded response (see
 [`architecture/SPEC.md`](architecture/SPEC.md), "General Design Principles").
+
+### The PDF extraction oracle
+
+Extraction fidelity is measured rather than assumed. Each test document is compiled to PDF from its own
+`.tex` + `.bib`, so that `.bib` is ground truth for whatever GROBID reads back out; extracted references
+are matched to printed ones by identifier and normalized title (there are no shared keys), and the
+results are asserted against pinned floors.
+
+These tests need a LaTeX toolchain and a running GROBID. When either is missing they **skip** with a
+message naming what to start; with `REFERENCE_AUDIT_LIVE=1` they are **required**, and a missing
+dependency fails instead of skipping — so a broken setup cannot sit green indefinitely.
+
+```bash
+uv run python tests/pdf_fixtures.py --all --preflight-only    # what would a compile need?
+uv run python tests/pdf_fixtures.py --all --compile           # build the PDFs
+REFERENCE_AUDIT_LIVE=1 uv run pytest -k pdf                   # measure, then assert the floors
+```
+
+Build artifacts land in a gitignored `tests/documents/<slug>/.build/<version>/`; nothing is written
+next to the fixtures. The committed oracle is GROBID's TEI XML for the smallest document
+(`tests/fixtures/tei/`, with a `.provenance.txt` recording the GROBID image, request parameters and
+TeX Live version) — never a PDF. Regenerate it with `--grobid <url> --write-tei`.
+
+Two deliberate behaviors of the harness:
+
+- **Missing source files are never stubbed.** A compile that lacks an `\input` target, `.sty` or `.bst`
+  fails with *every* missing file listed at once, so they can be supplied in one pass. Each document's
+  `SOURCES.md` records where its auxiliary files came from.
+- **Missing figures are the one substitution**, since a bibliography does not depend on them. They are
+  replaced by generated placeholder images, and that substitution is stated in the build report and in
+  the recorded fixture's provenance — page layout differs from the published article, which does not
+  affect reference extraction.
+
+The pinned numbers are a **regression floor for the recorded GROBID image and bibliography styles, not
+a fidelity claim for arbitrary PDFs**: these bibliographies were typeset by BibTeX from clean data,
+which is materially easier than what real-world PDFs contain.
 
 ## Constructor Fabric
 
@@ -278,7 +361,9 @@ Concretely:
 - **Governed artifacts** live in [`architecture/`](architecture/) — the specification and design
   (SPEC, PRD, DESIGN, DECOMPOSITION) plus per-feature documents
   ([`features/parsing.md`](architecture/features/parsing.md),
-  [`features/identification.md`](architecture/features/identification.md)). These are the source of
+  [`features/identification.md`](architecture/features/identification.md),
+  [`features/citation-alignment.md`](architecture/features/citation-alignment.md),
+  [`features/pdf-input.md`](architecture/features/pdf-input.md)). These are the source of
   truth for what the system is meant to do.
 - **Code traceability** links implementation back to those artifacts via `@cpt-*` markers in
   `src/`, so each governed requirement maps to the code that fulfills it. Both the offline parse
@@ -349,7 +434,9 @@ uv run cfs update            # update studio (kits are left alone unless you pas
 
 ```
 src/reference_audit/
-  parsing/     # .bib / .tex / identifier parsing
+  parsing/     # .bib / .tex / identifier parsing; context.py = the shared sentence definition
+  pdf/         # PDF input: grobid.py (the only network module — one client, one named error per
+               #   failure mode) + tei.py (pure TEI -> BibEntry / CitationContext mapping)
   sources/     # modular adapters: Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open Library,
                #   Google Books, publisher (DOI landing-page citation export), web (cited-page fetch),
                #   render (headless-browser rendering of JS single-page-app pages); + routing
@@ -363,10 +450,15 @@ src/reference_audit/
   report.py    # text / JSON rendering
   config.py    # AuditConfig (model, keys, thresholds)
   models.py    # pydantic domain models
+  inputs.py    # which input shape the CLI arguments name (.tex + .bib, or a .pdf)
   cli.py       # command-line entry point (Typer)
 architecture/  # governed specification & design (SPEC, PRD, DESIGN, DECOMPOSITION, features)
 tests/
-  documents/   # test papers: <paper-title-slug>/<version>.{tex,bib} (initial, polished, …)
+  documents/   # test papers: <paper-title-slug>/<version>.{tex,bib} (initial, polished, …),
+               #   plus the auxiliary LaTeX sources needed to compile them (see each SOURCES.md)
+  fixtures/tei/# recorded GROBID output + provenance, so the mapper is verifiable offline
+  pdf_fixtures.py # not a test: preflight + compile + TEI capture, runnable by hand
+  pdf_oracle.py   # matches extracted references to printed ones and scores the difference
   *.py         # mocked unit/integration tests; the pilot paper is the development oracle
 ```
 

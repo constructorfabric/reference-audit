@@ -1,0 +1,65 @@
+\subsubsection*{Appendix A. Proofs of the consistency statements}
+\label{method:appendix-proof}
+
+\paragraph{Proof of Proposition 1.}
+All objects used in the proof are restated here.  Fix a finite set of windows \(k=1,\ldots,K\).  For each window, let \(m_k\) be a probability measure on local carriers, let \(L_{i,k}\) be the population transition law of carrier \(i\), and define
+\[
+  H_k=
+  \iint D(L_{i,k},L_{j,k})\,m_k(di)m_k(dj).
+\]
+Let \(i_1,\ldots,i_n\) be sampled carriers and let \(\widehat L_{i_a,k}\) be empirical transition laws.  Define
+\[
+  \widehat H_k=
+  \frac{2}{n(n-1)}
+  \sum_{a<b}D(\widehat L_{i_a,k},\widehat L_{i_b,k}).
+\]
+By the pairwise plug-in consistency assumption,
+\[
+  \widehat H_k
+  -
+  \frac{2}{n(n-1)}
+  \sum_{a<b}D(L_{i_a,k},L_{i_b,k})
+  \xrightarrow[]{p}0.
+\]
+By the carrier sampling law of large numbers,
+\[
+  \frac{2}{n(n-1)}
+  \sum_{a<b}D(L_{i_a,k},L_{i_b,k})
+  \xrightarrow[]{p}
+  H_k.
+\]
+Thus \(\widehat H_k\xrightarrow[]{p}H_k\).  The pooled-null assumption gives \(\widehat H_k^0\xrightarrow[]{p}0\), hence
+\[
+  \widehat{\Delta H}_k=\widehat H_k-\widehat H_k^0
+  \xrightarrow[]{p}H_k.
+\]
+Since \(\phi\) is continuous at \(H_k\),
+\[
+  \phi(\widehat{\Delta H}_k)
+  \xrightarrow[]{p}
+  \phi(H_k).
+\]
+The number of windows is finite, so the empirical trace vector converges in probability to the population windowed trace vector.
+
+Let \(a\in\mathbb R^K\).  The finite-grid functional has the form
+\[
+  \mathfrak M(a)=
+  \frac{
+    \sum_{j=1}^{J-1}w_j
+    \frac{\|C_j a-U_jC_{j+1}a\|_2^2}
+         {\|C_ja\|_2^2+\eta^2}
+  }{
+    \sum_{j=1}^{J-1}w_j
+  },
+\]
+where \(C_j\) and \(U_j\) are fixed linear maps, \(w_j>0\), and \(\eta>0\).  This map is continuous on \(\mathbb R^K\), because every denominator is bounded below by \(\eta^2\).  The continuous mapping theorem gives convergence of the empirical MSPD to the windowed population target.
+
+\paragraph{Proof of Proposition 2.}
+Let \(h\in L^2([0,T])\).  For a window grid, let \(P_Kh\) denote the piecewise-window approximation whose value on each window is the average of \(h\) on that window.  For regular window grids with maximal diameter tending to zero,
+\[
+  P_Kh\to h
+  \quad\text{in }L^2([0,T]).
+\]
+This is the standard convergence of local averages to the underlying \(L^2\) function.  The local-stationarity assumption in the proposition states that the population windowed trace differs from these local averages by a quantity tending uniformly to zero.  Therefore the windowed trace converges to \(h\) in \(L^2\).
+
+The continuous pathwise MSPD is obtained by applying temporal coarse-graining, differentiating with respect to logarithmic scale, taking squared \(L^2\) norms, adding a positive denominator floor, and integrating over temporal scales.  The finite-grid functional applies discrete coarse-graining, a finite-difference approximation to the logarithmic scale derivative, and a finite quadrature over scales.  By the assumed convergence of the discrete coarse-graining operators and the scale quadrature to their continuous counterparts, and by the positive denominator floor, the finite-grid MSPD of the windowed trace converges to the continuous pathwise MSPD of \(h\).  This proves the deterministic approximation claim.

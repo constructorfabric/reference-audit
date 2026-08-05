@@ -1,0 +1,55 @@
+\subsubsection*{Appendix C. Optimization and post-hoc evaluation protocols}
+\label{app:optimization-protocols}
+
+This appendix records the optimization protocols used for the three substrates in Section~4.  In all cases, the optimizer or selector produces a parameter object $\theta$, while the reported C1 numbers are computed by a post-hoc MSPD protocol applied equally to optimized and matched random controls.
+
+\paragraph{Life-like cellular automata.}
+The optimized object is the 18-bit totalistic Life-like rule code.  The search evaluates all $2^{18}$ birth/survival rules on a periodic $64\times64$ binary board.  The sweep uses rollout length $T=2048$, burn-in $512$, window size $64$, window step $16$, active-cell sample cap $256$, Jensen--Shannon transition-law distance, pair sample $512$, one null repetition, initial density sampled from $[0.05,0.4]$, eight random initial boards per rule, random seed $0$, JAX metric batch size $8$ and evaluation batch size $512$.
+
+For C1, the optimized candidate is the top rule from the completed sweep.  It is re-evaluated against $32$ random Life-like rules on $32$ fresh Bernoulli holdout boards drawn from the same initialization-density law.  The CA transition symbol is the categorical before-after neighborhood event
+\[
+  a_t(i)=\operatorname{code}(x_t|_{i+B},x_{t+1}(i)),
+\]
+with active-support weighting as described in Section~4.1.
+
+\paragraph{Flow-Lenia.}
+Flow-Lenia optimization uses Sep-CMA-ES on the flattened rule vector $\theta$.  The optimization substrate uses grid size $128$, $C=3$ activity channels, kernel size parameter $k=9$, three kernel components, routing matrix $(2,1,0;0,2,1;1,0,2)$, $dd=5$, $dt=0.2$, $\sigma=0.65$, wall boundary, stochastic mixing, random-patch initialization with patch size $20$ and four seed patches, $P$-color rendering, mutations enabled with size $40$, probability $0.05$ and scale $1.0$, and no food or volcano fields.  The optimization rollout length is $300{,}000$ simulator steps and states are sampled every $50$ steps.
+
+The optimizer uses batch size $1$, population batch $8$, population size $8$, $100$ iterations and initial standard deviation $0.2$.  The optimization-time MSPD estimator uses $8192$ Lagrangian tracers initialized from mass, mass-weighted flow reduction, resampled tracer channels, RT box noise with diffusion scale $1.0$, window size $20{,}000$, window step $5{,}000$, metric range $50{,}000$--$300{,}000$, trainable lag grid $\{1000,2000,\ldots,10000\}$, $48$ displacement samples, minimum $4$ samples, $16$ projections, six null repetitions, $64$ sampled tracers, preprocessing mode \texttt{clip}, $\alpha=0$, $\beta=1$ and $\epsilon=10^{-12}$.
+
+The reported Flow-Lenia C1 score is not the noisy optimization-time value.  It is recomputed from reusable A-run rollouts at grid size $384$ and horizon $50{,}000-300{,}000$, with one trajectory per checkpoint and Lagrangian/APF chunks saved during rollout.  The post-hoc lag grid is $\tau\in\{500,600,\ldots,15000\}$ with window size $20{,}000$, window step $5{,}000$, $48$ samples, $16$ projections, six null repetitions and $64$ sampled tracers.  Even-indexed metric windows select $\tau^\star$ and odd-indexed windows report the held-out score.
+
+\paragraph{Particle Life++.}
+Particle Life++ optimization uses Sep-CMA-ES on the neural pair-interaction weights $\theta$ of $f_\theta(c_i,c_j)$.  The optimization substrate uses $600$ particles, $6$ colors, two spatial dimensions, $\beta=0.3$, mass $0.1$, $\Delta t=0.02$, half-life $0.04$, interaction radius $r_{\max}=0.1$, render radius $0.04$, sharpness $30.0$, color updates enabled, world size $1.0$, toroidal boundary, dense neighbor mode and black background.  The rollout length during optimization is $6000$ steps with sampling every step.
+
+The optimizer uses substrate-default parameter initialization, batch size $1$, population batch $8$, population size $8$, $500$ iterations and initial standard deviation $0.2$.  The optimization-time metric reads particle positions \texttt{state\_x}, unwraps toroidal positions, uses trainable lag grid $\{5,10,15,20,25,30,35\}$, window size $100$, window step $50$, metric range $0$--$1000$, $48$ displacement samples, minimum $4$ samples, $16$ projections, six null repetitions, $64$ sampled particles, preprocessing mode \texttt{clip}, $\alpha=1$, $\beta=1$ and $\epsilon=10^{-3}$.  The objective includes both the MSPD term and a mean-heterogeneity term, which prevents CMA-ES from remaining in low-motion stationary basins of random neural weights.
+
+The reported PLife++ C1 score is computed post hoc from reusable single-trajectory rollouts rather than directly from optimization-time scores.  The post-hoc dynamics use the same substrate profile as the C5 simulation, total horizon $24{,}000$ steps and sampling every step.  MSPD is evaluated on steps $4000$--$24{,}000$ with fixed $\tau=25$, window size $100$, window step $50$, toroidal unwrapping, $48$ samples, $16$ projections, six null repetitions and $64$ sampled particles.  Seven optimized groups are compared with three matched random baselines per group.
+
+\paragraph{Matched random controls.}
+For Flow-Lenia and Particle Life++, matched random checkpoints are sampled from the same Sep-CMA-ES initialization distribution as the corresponding optimizer, with zero optimization updates.  For matched group $r$ and random index $j$, the random seed is
+\[
+  s_{r,j}=s_0+10000r+\lfloor j/P\rfloor,
+\]
+where $P=8$ is the CMA-ES population size and $j\bmod P$ selects the member from the first generated population.  Flow-Lenia uses $s_0=200002$ with strategy-default mean initialization; Particle Life++ uses $s_0=200001$ with substrate-default mean initialization.  These random checkpoints are simulated and scored by the same post-hoc protocols as optimized checkpoints.
+
+\paragraph{Image encoder used for rollout-distance features.}
+\label{app:encoder-description}
+The representation-space distances used in C2 and C5 use the same fixed image-encoder backend as the ASAL-style CLIP evaluation.  In all reported CLIP--Chamfer computations, $f$ is the ASAL \texttt{clip} backend: OpenAI CLIP ViT-B/32, loaded as \texttt{openai/clip-vit-base-patch32} through the HuggingFace \texttt{FlaxCLIPModel} and \texttt{AutoProcessor}.  The encoder is frozen and is not trained on the generated rollouts.
+
+Each rendered RGB frame $R(t)$ is represented as an array with values in $[0,1]$.  If necessary, it is resized to $224\times224$ by bilinear interpolation, normalized by the CLIP image-processor mean and standard deviation, and passed through the CLIP image tower.  The resulting image feature is normalized to unit Euclidean norm:
+\[
+  f(R)
+  =
+  \frac{\operatorname{CLIP}_{\mathrm{img}}\!\left(
+  \operatorname{norm}_{\mu,\sigma}\!\left(
+  \operatorname{resize}_{224}(R)
+  \right)\right)}
+  {\left\|
+  \operatorname{CLIP}_{\mathrm{img}}\!\left(
+  \operatorname{norm}_{\mu,\sigma}\!\left(
+  \operatorname{resize}_{224}(R)
+  \right)\right)
+  \right\|_2}.
+\]
+Thus all frame embeddings used in the Chamfer computation lie on the unit sphere, and pairwise frame distance is the cosine distance $d_{\cos}(u,v)=1-u^\top v$.  This encoder is used only to measure future-rollout outcome divergence in C2 and C5; it is not part of the MSPD definition or the MSPD optimization objective.

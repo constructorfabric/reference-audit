@@ -7,6 +7,7 @@
   - [2.1 Parsing - HIGH](#21-parsing---high)
   - [2.2 Identification & Verdict - HIGH](#22-identification--verdict---high)
   - [2.3 Citation Alignment - MEDIUM](#23-citation-alignment---medium)
+  - [2.4 PDF Input - HIGH](#24-pdf-input---high)
 - [3. Feature Dependencies](#3-feature-dependencies)
 
 <!-- /toc -->
@@ -188,11 +189,69 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
 
 ---
 
+### 2.4 [PDF Input](features/pdf-input.md) - HIGH
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-feature-pdf-input`
+
+- **Purpose**: Accept a PDF as the whole audited input — a locally-run GROBID converts it to TEI, and a
+  pure mapper turns that TEI into the `BibEntry`s and `CitationContext`s the rest of the pipeline
+  already consumes, so nothing downstream changes. **IMPLEMENTED (not yet @cpt-traced).**
+
+- **Depends On**: `cpt-referenceaudit-feature-parsing`
+
+- **Scope**:
+  - Send a PDF to an operator-supplied GROBID instance and return its TEI (one request per run)
+  - Map TEI `<biblStruct>` elements to `BibEntry` via the shared `entry_from_fields` seam
+  - Map in-text `<ref type="bibr">` markers to `CitationContext` via the shared sentence definition
+  - Report per-reference extraction gaps as entry issues, and input-level caveats as report notes
+  - Name every failure mode distinctly instead of degrading to an empty reference list
+  - Measure extraction fidelity against documents compiled from a known `.bib`
+
+- **Out of scope**:
+  - Managing the GROBID container (start/stop/health administration)
+  - Scanned or image-only PDFs (no OCR)
+  - Extractors other than GROBID, and PDF *output*
+
+- **Requirements Covered**:
+
+  - [ ] `p1` - `cpt-referenceaudit-fr-audit-pdf`
+  - [ ] `p1` - `cpt-referenceaudit-nfr-extraction-fidelity`
+
+- **Domain Model Entities**:
+  - BibEntry
+  - CitationContext
+  - AuditReport
+
+- **Design Principles Covered**:
+
+  - [ ] `p1` - `cpt-referenceaudit-principle-pure-tei-mapping`
+
+- **Design Constraints Covered**:
+
+  - [ ] `p1` - `cpt-referenceaudit-constraint-grobid-local-only`
+
+- **Design Components**:
+
+  - [ ] `p1` - `cpt-referenceaudit-component-pdf`
+
+- **API**:
+  - `reference_audit.pipeline.run_pdf_audit(...)`
+  - `reference_audit.pipeline.build_pdf_parse_report(...)`
+  - `reference_audit.pdf.tei.parse_tei(...)`
+  - `reference_audit.pdf.grobid.GrobidClient`
+
+- **Sequences**:
+
+  - [ ] `p1` - `cpt-referenceaudit-seq-audit-pdf`
+
+---
+
 ## 3. Feature Dependencies
 
 ```text
 cpt-referenceaudit-feature-parsing
     ↓
+    ├─→ cpt-referenceaudit-feature-pdf-input
     ├─→ cpt-referenceaudit-feature-identification
     │       ↓
     └─────→ cpt-referenceaudit-feature-citation-alignment
@@ -205,3 +264,8 @@ cpt-referenceaudit-feature-parsing
   produces.
 - `cpt-referenceaudit-feature-citation-alignment` requires both: it needs the citing contexts from
   the parse slice and the resolved artifact (plus its abstract) from identification.
+- `cpt-referenceaudit-feature-pdf-input` requires `cpt-referenceaudit-feature-parsing`: it is an
+  alternative *front end* that emits the parse slice's own models, reusing its entry-construction seam
+  and its sentence definition. It is a sibling of identification rather than a dependency of it —
+  identification, citation alignment and reporting consume its output unchanged, which is the whole
+  point of mapping into the existing models.

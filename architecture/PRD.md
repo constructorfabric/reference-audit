@@ -19,6 +19,7 @@
   - [5.1 Parsing & Bookkeeping (implemented)](#51-parsing--bookkeeping-implemented)
   - [5.2 Identification & Verdict (implemented)](#52-identification--verdict-implemented)
   - [5.3 Citation Alignment](#53-citation-alignment)
+  - [5.4 PDF Input](#54-pdf-input)
 - [6. Non-Functional Requirements](#6-non-functional-requirements)
   - [6.1 NFR Inclusions](#61-nfr-inclusions)
   - [6.2 NFR Exclusions](#62-nfr-exclusions)
@@ -118,6 +119,12 @@ editions against Open Library, backfills missing DOIs/ISBNs, and reports the can
 **ID**: `cpt-referenceaudit-actor-database`
 
 **Role**: An external scholarly source (Crossref, OpenAlex, Semantic Scholar, arXiv, Open Library, Google Books, the DOI landing-page citation export, and the cited web page itself) queried to identify and compare artifacts. Not contacted on the `--no-network` parse-only path.
+
+#### GROBID Extraction Service
+
+**ID**: `cpt-referenceaudit-actor-grobid`
+
+**Role**: An operator-supplied [GROBID](https://github.com/grobidOrg/grobid) instance (a local container by default) that converts a PDF into TEI XML, from which both the printed reference list and the in-text citation markers are read. Contacted only when the audited input is a PDF, and asked to perform no third-party lookups of its own. Not managed by this system: if it is not reachable, the run fails with the command to start it rather than producing a partial bibliography.
 
 ## 3. Operational Concept & Environment
 
@@ -235,6 +242,27 @@ when the abstract is silent or absent, and never altering the identification ver
 
 **Actors**: `cpt-referenceaudit-actor-reviewer`, `cpt-referenceaudit-actor-ai-agent`
 
+### 5.4 PDF Input
+
+> **Checkbox semantics:** a checked box marks a requirement implemented **and** traced to code. The
+> requirement below is `[ ]` — implemented and covered by tests, but instruction-level `@cpt` tracing
+> to code is follow-on work (see the [PDF Input feature](features/pdf-input.md)).
+
+#### Audit a PDF with no authored sources
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-fr-audit-pdf`
+
+The system **MUST** accept a PDF as the whole audited input (`reference-audit audit paper.pdf`),
+extracting from it both the printed reference list as `BibEntry` records and the in-text citation
+occurrences as `CitationContext` records, so a paper with no available `.tex`/`.bib` is audited by the
+same pipeline. Bookkeeping that has no meaning for a PDF **MUST** be reported as inapplicable or
+unknown rather than as zero — in particular, when no in-text citation marker can be linked to a
+bibliography entry, no reference may be reported as uncited.
+
+**Rationale**: For mass automated processing the available artifact is a PDF; requiring authored LaTeX sources would exclude most real inputs.
+
+**Actors**: `cpt-referenceaudit-actor-author`, `cpt-referenceaudit-actor-ai-agent`, `cpt-referenceaudit-actor-grobid`
+
 ## 6. Non-Functional Requirements
 
 ### 6.1 NFR Inclusions
@@ -259,6 +287,23 @@ The networked path **MUST** memoize database and LLM responses to bound cost and
 **Threshold**: Repeated audits of the same inputs reuse cached responses rather than re-querying.
 
 **Rationale**: Database and LLM calls are slow and metered; caching keeps repeated audits cheap.
+
+#### Fidelity of PDF reference extraction
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-nfr-extraction-fidelity`
+
+Reference extraction from a PDF **MUST** meet pinned fidelity floors measured against ground truth, and
+**MUST NOT** fabricate an identifier it did not read: a DOI broken across a line may be completed only
+from that reference's own printed text, never inferred.
+
+**Threshold**: Measured against documents compiled from a known `.bib` (so the `.bib` is ground truth):
+at least the pinned fraction of printed entries matched by identifier or normalized title, and zero
+DOIs that disagree with the printed one beyond the per-document allowance recorded with its reason.
+Pinned values are **regression floors for the recorded GROBID image and bibliography styles, not
+fidelity guarantees for arbitrary third-party PDFs** — the oracle's bibliographies are BibTeX-typeset
+from clean data, which is materially easier than the PDFs found in the wild.
+
+**Rationale**: Extraction quality determines everything downstream; a silently truncated identifier would send the auditor to the wrong document and be reported with full confidence.
 
 ### 6.2 NFR Exclusions
 
@@ -361,6 +406,32 @@ Contracts this library expects from external systems.
 
 **Alternative Flows**:
 - **No abstract available / not `exactly_one`**: the citation is `unverifiable` with the reason stated, never `contradicted`.
+
+#### Audit a PDF
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-usecase-audit-pdf`
+
+**Actor**: `cpt-referenceaudit-actor-author`
+
+**Preconditions**:
+- A born-digital PDF with a text layer and a bibliography exists; a GROBID instance is reachable.
+
+**Main Flow**:
+1. The author runs the audit on the PDF alone, with no `.bib` and no `.tex`.
+2. The system sends the PDF to GROBID once and maps the returned TEI into reference records and
+   in-text citing contexts.
+3. Each reference is identified and screened exactly as a `.bib`-derived one is.
+4. The report states that the references were extracted rather than authored, and flags any reference
+   GROBID could not read well enough to check.
+
+**Postconditions**:
+- The author has the same audit they would get from authored sources, plus explicit notes on what the
+  extraction could and could not recover.
+
+**Alternative Flows**:
+- **GROBID unreachable / failing / the PDF unparseable**: the run stops with the specific reason and the command to start the service; no partial bibliography is reported.
+- **No reference list found in the TEI**: the run stops with "nothing to audit" rather than reporting a clean bill of health.
+- **No in-text marker links to a bibliography entry**: citedness is reported as unknown and no reference is listed as uncited.
 
 ## 9. Acceptance Criteria
 

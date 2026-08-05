@@ -1,0 +1,563 @@
+\subsection{4 Experiments}
+\label{experiments}
+
+This section evaluates MSPD as an empirical instrument for measuring temporally organized heterogeneity in local transition dynamics. The experiments are designed to separate this target from two simpler alternatives: visual novelty and raw motion magnitude. We first specify the substrates and shared evaluation protocol, then report each claim in a self-contained form, with the tested object, control construction, statistic, result, and interpretation stated locally.
+
+
+\begin{table*}[t]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.18}
+\begin{tabular}{@{}p{0.045\textwidth}p{0.25\textwidth}p{0.25\textwidth}p{0.28\textwidth}p{0.08\textwidth}@{}}
+\toprule
+Claim & Scientific claim & Operational test & Reported statistic & Figure \\
+\midrule
+N0
+& MSPD should reproduce the obvious complexity ordering on basic synthetic examples: simulations with minimal organized spatial or temporal structure should receive lower scores than simulations with more structured spatial or temporal dynamics.
+& We evaluate MSPD on synthetic families selected to cover three basic regimes: low-complexity negative controls, spatial organization through persistent local roles, and temporal organization where the relevant structure changes over time.
+& Family-level MSPD, processed $\Delta H$, event localization, and role-recovery scores against the known synthetic labels.
+& Figs.~\ref{fig:synthetic-summary}, \ref{fig:synthetic-heatmaps} \\
+\addlinespace[0.60em]
+
+C1
+& MSPD-optimized parameters produce higher held-out complexity scores than matched random parameters from the same substrate.
+& For each substrate, we compare optimized checkpoints with random checkpoints sampled from the same parameterization, using the same post-hoc MSPD evaluation protocol and disjoint selection/evaluation windows.
+& $\Delta^{C1}_{s,r}$ is the optimized score minus the median matched-random score, $S_s(\theta^{\mathrm{opt}}_{s,r})-\mathrm{median}_{j}S_s(\theta^{\mathrm{rand}}_{s,r,j})$.
+& Figs.~\ref{fig:ca-c1}, \ref{fig:c1-flow}, \ref{fig:c1-plife}, \ref{fig:c1-tau-profiles} \\
+\addlinespace[0.60em]
+
+C2
+& High-$\Delta H$ states should correspond to states with higher instability to external interventions. 
+& Saved branch states are assigned a present-time branch energy $E_b$, resumed under small state perturbations, and scored by the resulting future divergence $B_b$.
+& Pooled correlation between $E_b$ and $B_b$, plus within-source-trajectory correlations that test whether the association remains after removing trajectory-level effects.
+& Figs.~\ref{fig:ca-c2}, \ref{fig:c2-flow} \\
+\addlinespace[0.60em]
+
+C5
+& Higher MSPD corresponds to stronger scale-dependent frustration: high-complexity systems exhibit larger differences between the dynamics expressed at different spatial extents.
+& For each checkpoint, we run three matched rollouts: an unconstrained same-seed rollout, an unconstrained different-seed rollout, and a same-seed rollout with an early spatial constraint. After the constraint is released, we compare the post-release states to measure the excess effect of the constrained history relative to ordinary seed-to-seed variation.
+& $\Delta^{C5}_{s,r}$ is the optimized intervention score minus the median matched-random intervention score; $F_s$ subtracts ordinary seed-to-seed variability from the intervention effect.
+& Figs.~\ref{fig:c5-flow}, \ref{fig:c5-plife} \\
+\bottomrule
+\end{tabular}
+\caption{Claim-level organization of Section~4. The table separates each scientific claim from the operational test used to evaluate it. C1 and C5 use independent matched optimization groups as statistical units. C2 uses branch states as observations and source trajectories as robustness units for the within-trajectory analysis. Scale separation, biodiversity, and NN-OEE transfer are not claims in this section.}
+\label{tab:claim-map}
+\end{table*}
+
+
+\FloatBarrier
+
+\subsubsection*{4.1 Substrates, optimized objects and local transition laws}
+\label{experiments:substrates}
+
+The same MSPD construction is applied to different substrates by changing only the local carrier and the empirical local transition law.  Table~\ref{tab:optimized-objects} gives the object optimized or selected in each substrate; the paragraphs below define the observable used by the estimator and the optimization object used in C1.  Appendix~C gives the exact optimization, random-control and post-hoc evaluation protocols.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabular}{p{0.16\linewidth}p{0.30\linewidth}p{0.43\linewidth}}
+\toprule
+Substrate & Optimized or selected object $\theta$ & Evaluation object used by MSPD \\
+\midrule
+Life-like CA & 18-bit totalistic birth/survival rule & Categorical law of local before-after neighborhood events \\
+Flow-Lenia & Rule vector controlling routed kernels, growth/gating and transport in $\Phi_\theta$ & Empirical laws of finite-time displacements of passive mass probes \\
+Particle Life++ & Neural pair-interaction weights in $f_\theta(c_i,c_j)$ & Empirical laws of finite-time particle displacements \\
+\bottomrule
+\end{tabular}
+\caption{Substrate-specific measurement objects.  The optimized parameter is not always the same kind of object: it is a discrete rule for CA, a continuous rule vector for Flow-Lenia, and neural interaction weights for Particle Life++.  The reported MSPD score is always computed post-hoc from empirical local transition laws.}
+\label{tab:optimized-objects}
+\end{table}
+\FloatBarrier
+
+\paragraph{Life-like cellular automata.}
+A Life-like cellular automaton is simulated on a periodic lattice $\Lambda$ with alphabet $A=\{0,1\}$ and Moore neighborhood $B=\{-1,0,1\}^2$:
+\[
+  x_t\in A^\Lambda,
+  \qquad x_{t+1}(i)=f_\theta(x_t|_{i+B}).
+\]
+The selected object $\theta$ is the 18-bit totalistic rule code.  For C1, the optimization protocol is an exhaustive sweep over the same $2^{18}$ Life-like rule space; the reported optimized rule is the top MSPD rule from this sweep, and matched controls are random rules drawn from the same space.  Since there is no velocity variable, the local transition event is categorical,
+\[
+  a_t(i)=\bigl(x_t|_{i+B},x_{t+1}(i)\bigr)\in A^B\times A,
+\]
+and the empirical local transition law in window $I_k$ is
+\[
+  \widehat T_i(I_k)(a)=\frac{1}{|I_k|}\sum_{t\in I_k}\mathbf 1[a_t(i)=a].
+\]
+Only sites active within the local neighborhood during the window are weighted in sparse boards.  This prevents empty background from dominating the transition-law average. In the MSPD notation, this corresponds to choosing the spatial averaging measure $\mu_w$ as the normalized counting measure on the window-active support,
+\[
+A_w=\{x:\text{the local neighborhood of }x\text{ is active at least once during window }w\},
+\qquad
+\mu_w(x)=\frac{\mathbf 1{x\in A_w}}{|A_w|}.
+\]
+Thus the reported MSPD average is not taken with respect to the uniform measure over the full board, but with respect to the empirical active-support measure induced by the current window.
+
+
+
+\paragraph{Flow-Lenia.}
+Flow-Lenia is a mass-conserving continuous cellular automaton: its state is stored as fields on a periodic grid, while pattern motion is produced by reintegrating transported mass through a flow induced by the rule.  We represent the state by an activity or mass field and an internal channel field,
+\[
+  A_t:\Omega\to\mathbb R_{\ge 0}^{C},
+  \qquad
+  P_t:\Omega\to\mathbb R^{K},
+\]
+where $A_t$ is the transported material and $P_t$ stores the internal state carried with that material.  For a decoded rule $\theta$, one update is written as the following composition:
+\[
+  R_t = K_\theta * A_t,
+  \qquad
+  U_t=\Gamma_\theta(R_t,A_t,P_t),
+\]
+\[
+  F_t=\mathcal G_\theta(U_t,A_t,P_t),
+\]
+\[
+  A_{t+1}=\mathcal R_A(A_t;F_t),
+  \qquad
+  P_{t+1}=\mathcal R_P(P_t,U_t;F_t,A_{t+1}).
+\]
+Here $K_\theta*A_t$ denotes the routed convolutional responses, $\Gamma_\theta$ is the pointwise growth/gating computation that produces the local update signal $U_t$, $\mathcal G_\theta$ converts this signal into the transport field $F_t:\Omega\to\mathbb R^{2\times C}$, and $\mathcal R_A,\mathcal R_P$ are the reintegration operators that move the mass field and the carried internal field through this transport.  Equivalently, the composition defines the one-step map
+\[
+  (A_{t+1},P_{t+1},F_t)=\Phi_\theta(A_t,P_t).
+\]
+A checkpoint is the flattened rule vector $\theta$.  After decoding, $\theta$ specifies the routed convolution kernels, growth parameters, gating parameters, flow construction and reintegration rule used in the update. $\theta$ is optimized by Sep-CMA-ES; candidate rules are scored during search by a lower-budget Lagrangian MSPD estimate, and the reported score is recomputed post hoc from reusable higher-resolution rollouts.  Appendix B~\ref{app:flow-lenia-algorithm} gives the algorithmic form of this update.
+
+MSPD is evaluated on Lagrangian tracer trajectories logged during the Flow-Lenia rollout.  Tracer positions $q_a(t)$ are initialized from the mass field and advanced after each Flow-Lenia step by the same reintegration-tracking machinery used by the substrate; see Appendix B~\ref{app:flow-lenia-algorithm} for the implementation-level update,
+\[
+  (q_a(t+1),c_a(t+1))
+  =
+  \mathcal T_{\mathrm{RT}}
+  \bigl(q_a(t),c_a(t);A_{t+1},F_t,\eta_a(t)\bigr),
+\]
+where $c_a(t)$ is the optional tracer channel and $\eta_a(t)$ denotes the injected RT noise.  The saved coordinates define the local empirical law used by MSPD:
+\[
+  \widehat V_a(I_k,\tau)
+  =
+  \frac{1}{|I_{k,\tau}|}
+  \sum_{t\in I_{k,\tau}}
+  \delta_{\Delta_\Omega(q_a(t),q_a(t+\tau))}.
+\]
+Thus Flow-Lenia MSPD measures heterogeneity in finite-lag transported-mass motion.
+
+\paragraph{Particle Life++.}
+Particle Life++ is a neural pair-interaction particle system on a toroidal substrate with state
+\[
+  S_n=\{(x_i^n,v_i^n,c_i^n)\}_{i=1}^{N},
+  \qquad x_i^n\in[0,L]^2,
+  \quad v_i^n\in\mathbb R^2,
+  \quad c_i^n\in S^{K-1}.
+\]
+For an ordered pair $(i,j)$, the network $f_\theta$ maps colors to an interaction strength and a color $c_i$ update,
+\[
+  (\alpha_{ij},g_{ij})=f_\theta(c_i,c_j).
+\]
+
+With minimal-image displacement $\delta_{ij}$, distance $\rho_{ij}=\|\delta_{ij}\|_2$, direction $e_{ij}=\delta_{ij}/(\rho_{ij}+\epsilon)$, interaction radius $r_{\max}$, and repulsion boundary $\beta$, the pairwise network output is converted into a force contribution and a color-change contribution,
+\[
+  F_{ij}=r_{\max}\Phi(\rho_{ij}/r_{\max};\alpha_{ij},\beta)e_{ij},
+  \qquad
+  \Delta c_{ij}=g_{ij}\max(0,1-\rho_{ij}/r_{\max}).
+\]
+Here $F_{ij}$ is the contribution of particle $j$ to the mechanical force acting on particle $i$, and $\Delta c_{ij}$ is the corresponding contribution to the color update of particle $i$.  These pairwise terms are accumulated as
+\[
+  F_i=\sum_{j\ne i}F_{ij},
+  \qquad
+  \dot c_i=\sum_{j\ne i}\Delta c_{ij}.
+\]
+With timestep $\Delta t$, particle mass $m$, and damping half-life $h$, the state update is
+\[
+  v_i^{n+1}=2^{-\Delta t/h}v_i^n+\frac{\Delta t}{m}F_i^n,
+  \qquad
+  x_i^{n+1}=\operatorname{wrap}_{[0,L]^2}\!\left(x_i^n+\Delta t\,v_i^{n+1}\right),
+\]
+\[
+  c_i^{n+1}=
+  \operatorname{normalize}\!\left(c_i^n+\Delta t\,\dot c_i^n\right).
+\]
+Particle identities are the local carriers, and MSPD uses empirical laws of finite-time particle displacements. Appendix~B gives the algorithmic substrate specification.  The optimized object is the neural-network parameter vector $\theta$ in $f_\theta$.
+
+Random neural weights in this substrate often settle into low-motion stationary basins: forces cancel or are damped before sustained relative motion develops.  In that regime, particles have narrow and similar displacement laws across windows, suppressing both mean heterogeneity and MSPD. $\theta$ is optimized by Sep-CMA-ES.  The optimization-time objective includes a nonzero mean-heterogeneity term to leave this basin before the MSPD term selects temporally structured regimes. The reported score is a post-hoc MSPD score evaluated by the same protocol for optimized checkpoints and random controls.
+
+\subsubsection*{4.2 Shared evaluation choices}
+\label{experiments:shared}
+
+The experiments use matched controls because MSPD scales depend on the substrate, rollout budget and local transition representation.  For substrate $s$ and independent group $r$, the optimized checkpoint is $\theta^{\mathrm{opt}}_{s,r}$ and the matched random controls are
+\[
+  \theta^{\mathrm{rand}}_{s,r,1},\ldots,\theta^{\mathrm{rand}}_{s,r,J}.
+\]
+A matched random control is sampled from the same optimization initialization distribution used by the optimizer but is not selected by the optimization objective. The comparison therefore asks whether the optimization procedure found a higher-MSPD region of the same parameter space, rather than whether one substrate has larger raw MSPD than another.
+
+For Flow-Lenia and Particle Life++, the optimization-time estimator is lower budget than the reported estimator.  All C1 claims use a fixed post-hoc protocol:
+\[
+  S(\theta)=\widehat{\operatorname{MSPD}}(\theta).
+\]
+When a lag grid is used, lag selection is performed on even-indexed metric windows and the selected lag is scored on odd-indexed held-out windows:
+\[
+  \tau^\star(\theta)=\arg\max_{\tau\in\mathcal T}S_{\mathrm{select}}(\theta,\tau),
+  \qquad
+  S(\theta)=S_{\mathrm{eval}}(\theta,\tau^\star(\theta)).
+\]
+This split is interleaved rather than early/late because ALife rollouts are nonstationary.  A prefix/suffix split would often compare transient assembly against late stationary behavior and would make selection and evaluation measure different regimes.  Alternating windows keep both splits distributed across the same temporal phases while still preventing the selected lag from being evaluated on the exact windows that selected it.
+
+C2 and C5 require distances between future rollouts. Direct pixel-space distances are a poor default for this purpose because they compare synchronized arrays rather than simulation regimes.  A coherent object translated from one corner of the frame to another can dominate pixel MSE even when the qualitative regime is unchanged; conversely, two independent gaussian noise renderings can have large pixel-wise discrepancy while representing the same visually homogeneous regime.  This is the same failure mode that motivates learned perceptual distances in image comparison: deep visual features have been shown to correlate better with human perceptual similarity than shallow pixel-level metrics such as PSNR or SSIM~\cite{zhang2018perceptual}, and more recent metrics explicitly target holistic human similarity judgments beyond local pixel or patch agreement~\cite{fu2023dreamsim}.
+
+We therefore use a fixed image encoder as a pragmatic representation-space readout for future-rollout separation, following the foundation-model evaluation practice of ASAL~\cite{kumar2024automating}.  The encoder is not used to define MSPD and is not part of the optimization objective.  It is used only after rollouts have been generated, to quantify whether two future continuations occupy similar or different rendered outcome regimes.  The exact encoder backend and preprocessing are specified in Appendix~\ref{app:encoder-description}.  For a rendered frame $R_a(t)$ from rollout $a$, we compute the normalized feature
+\[
+  z_a(t)=\frac{f(R_a(t))}{\|f(R_a(t))\|_2},
+  \qquad
+  Z_a=\{z_a(t):t\in U_a\}.
+\]
+With cosine distance $d_{\cos}(u,v)=1-u^\top v$, two rollout futures are compared as feature clouds by the symmetric Chamfer distance
+\[
+  d_{\mathrm{Ch}}(Z_a,Z_b)=
+  \frac{1}{|Z_a|}\sum_{u\in Z_a}\min_{v\in Z_b}d_{\cos}(u,v)
+  +
+  \frac{1}{|Z_b|}\sum_{v\in Z_b}\min_{u\in Z_a}d_{\cos}(u,v).
+\]
+
+This choice should be read as a measurement proxy, not as a ground-truth notion of dynamical equivalence.  Neural image encoders are trained on particular image distributions, and ALife renderings---especially cellular automata or sparse particle systems---can be out of domain.  In such cases the feature distance may be noisier or may emphasize visual attributes that are not dynamically central.  We nevertheless use this readout because C2 and C5 require a phase-tolerant distance between future rendered outcomes, and no pixel-space alternative provides a reliable comparison of translated, phase-shifted, or visually noisy simulations at the qualitative level relevant for these tests.
+
+\subsubsection*{4.3 N0: controlled synthetic calibration}
+\label{experiments:synthetic}
+
+\textbf{Purpose.}  N0 checks that the finite estimator responds to transition-law structure whose ground truth is known.  The test separates raw motion, stationary role heterogeneity, temporally extended transitions and split events before the estimator is applied to optimized ALife systems.
+
+Each synthetic rollout contains particles on the torus,
+\[
+  q_i(t)\in \mathbb T^2=[0,1)^2,
+  \qquad i=1,\ldots,N,
+\]
+with shortest-periodic displacement
+\[
+  \Delta_{\mathbb T^2}(q,q')=((q'-q+1/2)\bmod 1)-1/2.
+\]
+For a window $I_k$ and lag $\tau$, the empirical transition law is
+\[
+  \widehat V_{i,k,\tau}
+  =\frac{1}{|I_{k,\tau}|}
+  \sum_{t\in I_{k,\tau}}
+  \delta_{\Delta_{\mathbb T^2}(q_i(t),q_i(t+\tau))},
+  \qquad I_{k,\tau}=\{t\in I_k:t+\tau\in I_k\}.
+\]
+MSPD is computed from the resulting windowed heterogeneity trace.
+
+Rendered examples of the synthetic calibration families are provided in Appendix~\ref{app:synthetic-rendered-examples}; the N0 scores themselves are computed from particle trajectories rather than from rendered frames.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\begin{tabular}{p{0.07\linewidth}p{0.31\linewidth}p{0.29\linewidth}p{0.20\linewidth}}
+\toprule
+Family & Generator & Interpretation target & Observed response \\
+\midrule
+S0 & Static particles & zero-motion null & MSPD $=0$ \\
+S1 & Homogeneous Brownian or Gaussian motion & motion without local role structure & low MSPD $3.46\times10^{-5}$ \\
+S3 & One coherent moving blob & organized but locally homogeneous motion & near-zero MSPD $5.45\times10^{-8}$ \\
+S4 & Two fixed role velocities & stationary heterogeneity without temporal organization & high amplitude, low MSPD \\
+S5 & Global synchronous velocity switch & changepoint without role spread & low event-localization signal \\
+S6 & Staggered switch times & temporally extended heterogeneity & event error $0$, high MSPD \\
+S7 & Multi-scale moving blobs & scale calibration & selected lag in expected range \\
+S8 & Blob splitting into moving groups & split event plus role emergence & event error $0$, largest MSPD \\
+\bottomrule
+\end{tabular}
+\caption{Synthetic calibration families.  The suite includes null controls, stationary heterogeneity controls and time-localized transition generators, so a high score cannot be attributed merely to motion or to a constant mixture of roles.}
+\label{tab:synthetic-calibration}
+\end{table}
+
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{figures/synthetic_calibration_summary_clean.png}
+\caption{Synthetic calibration summary.  Panel A reports selected MSPD scores by family; Panel B reports processed $\Delta H$ amplitude.  The high-MSPD cases are the temporally extended switch and split-transition generators.}
+\label{fig:synthetic-summary}
+\end{figure}
+\FloatBarrier
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{figures/synthetic_delta_h_heatmaps_clean.png}
+\caption{Synthetic $\Delta H$ maps.  Horizontal position is window index, vertical position is lag $\tau$, and color is local transition heterogeneity.  Temporally extended transition systems concentrate high $\Delta H$ around designed transition intervals, while null and homogeneous controls remain low.}
+\label{fig:synthetic-heatmaps}
+\end{figure}
+\FloatBarrier
+
+\textbf{Result and interpretation.}
+The synthetic results separate three quantities that can otherwise be confused: visible motion, the average level of local heterogeneity measured by processed $\Delta H$, and MSPD as temporal organization of that heterogeneity trace.
+
+S0 is the zero-motion null case.  All displacement laws collapse to the same point mass, so both processed $\Delta H$ and MSPD are zero up to numerical precision.
+
+S1 contains motion but no organized difference between particle roles.  The stochastic motion creates finite-window fluctuations in processed $\Delta H$, but the heterogeneity trace has no structured temporal organization and therefore gives a low MSPD score.
+
+S3 is a coherent moving blob.  It is visually organized, but the particles move with nearly the same local transition law; both processed $\Delta H$ and MSPD remain near zero.  This is the negative control showing that coherent object motion is not by itself complexity for MSPD.
+
+S4 plants stationary role heterogeneity.  Different particles have persistently different transition laws, so the processed $\Delta H$ amplitude is high.  The MSPD score is much smaller because the role structure is essentially stationary across windows; this separates mean heterogeneity from temporally organized complexity.
+
+S5 plants a synchronous global switch.  The system changes over time, but the change is shared by nearly all particles at once, so the windowed local transition laws remain nearly homogeneous and the MSPD response is low.  This is a resolution-dependent failure case for detecting fast synchronous transitions: MSPD is only sensitive to temporal structure that is resolved by the chosen window and lag grid. Reducing the window length would make the estimator more sensitive to short events, but it would also reduce the number of displacement samples used to estimate each $\Delta H_{k,\tau}$, making the heterogeneity trace and the resulting MSPD score more stochastic.  For such fast events, the appropriate remedy is to increase the temporal resolution of the logged trajectory, so that shorter physical windows can be used while retaining enough samples for stable $\Delta H$ estimation.
+
+
+S6 uses staggered transition times.  The transition is spread across particles and windows, so local transition laws differ in a temporally extended way.  This produces both visible $\Delta H$ event structure and a high MSPD score.
+
+S7 contains multi-scale moving groups.  It gives the largest processed $\Delta H$ amplitude because persistent groups have clearly different transition laws, but its MSPD is lower than S8 because much of this organization is stable rather than reorganizing over time.
+
+S8 combines a split event with role emergence.  The system starts from a coherent object and then separates into multiple groups with different motion regimes; this produces the largest MSPD score even though its mean $\Delta H$ amplitude is below S7.  The case illustrates the intended distinction: MSPD rewards temporally organized changes in local heterogeneity, not simply the largest average heterogeneity.
+
+Taken together, N0 shows that the finite estimator behaves as intended on basic cases.  MSPD remains low for static dynamics, homogeneous motion, coherent common motion, and mostly global changes.  It increases when heterogeneity is organized across time through staggered transitions, split events, or evolving role structure.  In this sense, ``complexity'' in the reported MSPD score means multiscale temporal organization of local transition-law heterogeneity, not raw motion magnitude, visual novelty, or the average $\Delta H$ level alone.
+
+
+\subsubsection*{4.4 C1: optimization against matched random controls}
+\label{experiments:c1}
+
+\textbf{Purpose.}  C1 tests whether optimizing the MSPD objective produces checkpoints with larger held-out MSPD than matched random controls from the same substrate parameterization.  The comparison is within substrate and within matched group.
+
+\textbf{Statistic.}  For substrate $s$ and independent group $r$,
+\[
+  \Delta^{C1}_{s,r}
+  =S_s(\theta^{\mathrm{opt}}_{s,r})
+  -\operatorname{median}_{j}S_s(\theta^{\mathrm{rand}}_{s,r,j}).
+\]
+The reported evidence is the number of positive matched groups, the median contrast and an exact one-sided sign test over matched groups.  The sign test is used because the number of independent optimization groups is small and no normal approximation is required.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabular}{p{0.20\linewidth}p{0.20\linewidth}p{0.20\linewidth}p{0.16\linewidth}p{0.16\linewidth}}
+\toprule
+Substrate & Positive groups & Median contrast & Sign-test $p$ & Status \\
+\midrule
+Life-like CA & separated optimized set & large positive shift & not applicable & confirmed by sweep \\
+Flow-Lenia & $6/9$ & $5.24\times10^{-5}$ & $0.254$ & not confirmed \\
+Particle Life++ & $7/7$ & $0.00267$ & $0.0078$ & confirmed \\
+\bottomrule
+\end{tabular}
+\caption{C1 results.  The CA result is a discrete rule-search result; Flow-Lenia and Particle Life++ are matched continuous-parameter optimization results.}
+\label{tab:c1-results}
+\end{table}
+\FloatBarrier
+
+\paragraph{Life-like CA.}
+The CA experiment evaluates the selected high-MSPD rules against random rules using the same categorical transition-law MSPD score.  The selected rules are separated from random controls, confirming that the estimator can be optimized in a substrate without a velocity variable.  This result should be interpreted relative to the evaluation distribution: MSPD is measured over rollouts generated from the specified initialization protocol, not over all possible configurations of a rule.  Consequently, even computationally universal systems such as Life need not have high MSPD under a given initialization ensemble; the score reflects the complexity expressed by typical sampled rollouts, rather than the maximal behavior that the rule can realize under carefully constructed initial conditions.
+
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{figures/ca_c1_optimized_vs_random_paper.png}
+  \caption{
+  Cellular-automata C1 result.  Left: post-hoc MSPD for matched random rules and the optimized/selected rule.  Right: MSPD scores of the top Life-like rule candidates from the exhaustive rule sweep.
+  }
+  \label{fig:ca-c1}
+\end{figure}
+
+
+\FloatBarrier
+
+\paragraph{Flow-Lenia.}
+The Flow-Lenia contrast is positive in most groups but is not statistically confirmed under the current optimization protocol.  This is a statement about the present finite-budget optimization and evaluation protocol, not a negative result about the existence of high-MSPD Flow-Lenia parameters.  The likely limiting factor is noisy rollout-level candidate evaluation during optimization.  In a complex stochastic substrate such as Flow-Lenia, MSPD requires a more precise trajectory-level estimate: increasing the number of independent rollouts or tracer-trajectory samples per candidate would reduce evaluation noise and make the optimization signal less dependent on a single rollout realization.  Under the present budget, the held-out post-hoc comparison does not give enough matched-group evidence for C1 in Flow-Lenia.
+
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\linewidth]{figures/flow_c1_paired_raw_paper.png}
+\caption{C1 for Flow-Lenia.  Blue points are optimized checkpoints, gray points are matched random controls, and black marks denote random-control medians.  The matched contrast is positive in $6/9$ groups but not statistically confirmed.}
+\label{fig:c1-flow}
+\end{figure}
+\FloatBarrier
+
+\paragraph{Particle Life++.}
+Particle Life++ gives a statistically confirmed optimized-vs-random MSPD increase.  This large contrast is also mechanistically interpretable.  Many random neural interaction networks enter low-motion stationary regimes after damping, which makes particle displacement laws narrow and similar across windows.  Optimized checkpoints leave this basin and maintain moving particle groups with different interaction histories.  The measured increase is therefore both a post-hoc MSPD increase and a contrast against a random-weight baseline with a strong stationary attractor.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\linewidth]{figures/plife_c1_paired_raw_paper.png}
+\caption{C1 for Particle Life++.  Blue points are optimized checkpoints, gray points are matched random controls, and black marks denote random-control medians.  All matched groups are positive.}
+\label{fig:c1-plife}
+\end{figure}
+\FloatBarrier
+
+\paragraph{Lag selection audit.}
+Flow-Lenia and Particle Life++ use the same post-hoc lag-selection protocol. For every optimized checkpoint and matched random control, candidate lags are scored on selection windows, and the reported MSPD is evaluated on disjoint held-out evaluation windows at the selected lag.  The same lag grid, selection windows, evaluation windows, and selection rule are applied to optimized and random checkpoints, so the paired contrasts compare systems under the same right to choose $\tau$ rather than under a lag fixed only for one substrate.
+
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\linewidth]{figures/flow_c1_tau_profiles.png}
+\caption{Per-lag C1 MSPD profiles for Flow-Lenia.  The left panel is the selection split used to choose $\tau^\star$; the right panel is the held-out split used for the reported score.}
+\label{fig:c1-tau-profiles}
+\end{figure}
+\FloatBarrier
+
+\subsubsection*{4.5 C2: local heterogeneity and future perturbation sensitivity}
+\label{experiments:c2}
+
+\textbf{Purpose.}  C2 tests a state-level interpretation of $\Delta H$.  It asks whether a saved state with larger present-time local transition heterogeneity has futures that separate more strongly after a small substrate-specific state perturbation.
+
+\textbf{Design.}  A branch state $b=(i,t)$ is a saved state from source trajectory $i$ at branch time $t$.  Its present-time score is the branch energy
+\[
+  E_b
+  =\frac{1}{|\mathcal T_{\mathrm{adm}}|}
+  \sum_{\tau\in\mathcal T_{\mathrm{adm}}}\phi(\Delta H(w_b,\tau)),
+\]
+where $w_b$ is the window containing $b$, $\mathcal T_{\mathrm{adm}}$ is the admissible lag set, and $\phi$ is the nonnegative preprocessing used by the MSPD pipeline.  The same state is copied into $M$ continuations and each copy is modified by a small perturbation that is native to the substrate state space: bit flips for cellular automata and Gaussian state/tracer noise for Flow-Lenia.  The perturbed copies are then resumed under the same simulator and the same parameter vector $\theta$,
+\[
+  Y_{b,1},\ldots,Y_{b,M}.
+\]
+Future sensitivity is
+\[
+  B_b=\operatorname{median}_{p<q}d_{\mathrm{out}}(Y_{b,p},Y_{b,q}).
+\]
+The branch sampler covers low, middle and high quantiles of $E_b$ within each source trajectory.  These labels are sampling strata only; the reported statistics use the continuous values of $E_b$ and $B_b$.
+
+\textbf{Statistic.}  The pooled readout is Pearson and Spearman correlation over sampled branch states.  To test that the signal is not only a between-trajectory effect, we also compute within-trajectory correlations
+\[
+  \rho_i=\operatorname{Spearman}_t(E_{i,t},B_{i,t})
+\]
+for each source trajectory $i$.  The source trajectory, not the individual branch state, is the aggregation unit for this robustness check.
+
+
+\paragraph{Cellular automata.}
+For CA, $E_b$ is computed from categorical transition-law $\Delta H$.  A branch state is the saved binary board $x_t$ at the selected branch time.  For each continuation $m=1,\ldots,M$, we draw a subset $S_m\subset\Lambda$ of lattice sites uniformly without replacement and flip those sites before resuming the same Life-like rule:
+\[
+  x^{(m)}_t(u)=
+  \begin{cases}
+    1-x_t(u), & u\in S_m,\\
+    x_t(u), & u\notin S_m .
+  \end{cases}
+\]
+The subset size is fixed as a small fraction of the board; the numerical value used in the reported experiment is given in Appendix~\ref{app:c2-branch-perturbations}.  Each perturbed board is then evolved forward with the same rule and the same boundary convention.  The future distance between two continuations is computed in the same binary-state geometry used for the CA transition-law setting: normalized Hamming distance between the resumed boards, aggregated over the continuation horizon,
+\[
+  d_{\mathrm{CA}}(Y_p,Y_q)
+  =
+  \frac{1}{H}
+  \sum_{h=1}^{H}
+  \frac{1}{|\Lambda|}
+  \sum_{u\in\Lambda}
+  \mathbf 1\!\left[
+    x^{(p)}_{t+h}(u)\ne x^{(q)}_{t+h}(u)
+  \right].
+\]
+The branch sensitivity score is the median pairwise continuation distance,
+\[
+  B_b=\operatorname{median}_{p<q}d_{\mathrm{CA}}(Y_p,Y_q).
+\]
+This gives a discrete-substrate C2 check: branch states with larger categorical transition-law heterogeneity are tested for larger future divergence under small bit-level changes to the current board.
+
+
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.62\linewidth]{figures/ca_c2_delta_h_branching_paper.png}
+\caption{C2 for cellular automata.  Each point is a sampled branch state.  The horizontal axis is transition-law $\Delta H$ at the branch window, and the vertical axis is median pairwise Hamming divergence between perturbed continuations.}
+\label{fig:ca-c2}
+\end{figure}
+\FloatBarrier
+
+\paragraph{Flow-Lenia.}
+Flow-Lenia provides the quantitative C2 test. For a branch state
+\[
+  b=(i,t),\qquad s_b=(A_b,P_b,q_b,c_b,\mathrm{rng}_b),
+\]
+each continuation is generated by copying $s_b$, adding independent state-level noise, and resuming the same decoded rule $\theta$:
+\[
+  A^{(m)}_b=\max\{0,A_b+\epsilon^{(m)}_A\},
+  \qquad
+  \epsilon^{(m)}_A\sim\mathcal N(0,\sigma_A^2),
+\]
+\[
+  P^{(m)}_b=P_b+\epsilon^{(m)}_P,
+  \qquad
+  \epsilon^{(m)}_P\sim\mathcal N(0,\sigma_P^2),
+\]
+\[
+  q^{(m)}_b=B_\Omega(q_b+\epsilon^{(m)}_q),
+  \qquad
+  \epsilon^{(m)}_q\sim\mathcal N(0,\sigma_q^2).
+\]
+Here $B_\Omega$ is the tracker boundary rule, $q_b$ denotes the Lagrangian tracer coordinates, and $m=1,\ldots,M$ indexes independent continuations.  The tracer channel state $c_b$ and the decoded rule $\theta$ are kept fixed; only the current simulator state and branch RNG realization differ across continuations.  The outcome distance is the CLIP--Chamfer distance between future rendered-frame feature clouds.
+
+Branch states are sampled within each source trajectory from three branch-energy strata.  The labels \textit{low}, \textit{mid} and \textit{high} refer to low, middle and high quantiles of $E_b$ inside the same source trajectory; they are used only to cover the energy range during sampling.  All reported C2 statistics use the continuous values of $E_b$ and $B_b$, not the stratum labels.  Appendix~\ref{app:c2-branch-perturbations} gives the numerical noise scales, quantile thresholds, branch counts and a visualization of the selected branch points.
+
+
+\textbf{Interpretation and boundary.}
+The CA experiment is a discrete-substrate check of the same C2 logic.  It uses categorical transition-law $\Delta H$, bit-level changes to the saved board, and Hamming future divergence.  The positive trend in Fig.~\ref{fig:ca-c2} indicates that branch states with larger categorical transition-law heterogeneity tend to produce larger divergence after small changes to the current board.  This shows that the C2 readout is not specific to continuous Flow-Lenia fields or to a neural image-distance metric.
+
+Flow-Lenia provides the main quantitative C2 evidence.  The pooled branch-state association is positive, with Pearson $r=0.540$ and Spearman $r=0.618$ over $n=135$ branch states.  The within-trajectory analysis gives the stronger state-level check: within-trajectory Spearman correlation is positive in $8/9$ source trajectories, with median $\rho_i=0.289$ and mean $0.290$; within-trajectory Pearson correlation is positive in $9/9$, with median $r_i=0.266$ and mean $0.318$.
+
+Together, these results support the interpretation that $\Delta H$ marks branch-sensitive states within fixed rollouts, not only globally unstable source trajectories.  The effect size is moderate and the number of independent Flow-Lenia source trajectories is limited.  The claim is therefore a state-level association under the specified substrate-specific branching and future-distance protocols, not a universal causal statement about all state changes or all Flow-Lenia regimes.
+
+
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.96\linewidth]{figures/flow_c2_pooled_and_within_paper.png}
+\caption{C2 for Flow-Lenia.  Panel A shows the pooled branch-state association between branch energy $E_b$ and future divergence $B_b$; colors and markers denote low, middle and high within-trajectory energy strata used for sampling.  Panel B shows within-trajectory Spearman correlations sorted across the nine source trajectories.  The positive within-trajectory pattern shows that the pooled association is not solely a between-trajectory artifact.}
+\label{fig:c2-flow}
+\end{figure}
+\FloatBarrier
+
+\subsubsection*{4.6 C5: blockwise frustration and history dependence}
+\label{experiments:c5}
+
+\textbf{Purpose.}  C5 tests whether optimized systems depend on early spatial co-development.  The intervention is designed to disrupt early spatial integration while keeping the checkpoint $\theta$ fixed.  Late futures are compared after the intervention has been released, so the measurement is not merely the immediate damage caused by inserting walls or shuffling cells.
+
+\textbf{Design.}  For each checkpoint $\theta$, three rollout variants are generated:
+\[
+  A_\theta = \text{same-seed free rollout},
+  \qquad
+  C_\theta = \text{different-seed free rollout},
+  \qquad
+  W_\theta = \text{same-seed early-intervention rollout}.
+\]
+The intervention implementation is substrate-specific: Flow-Lenia uses isolated spatial blocks during the early phase, whereas Particle Life++ uses a cell-shuffle intervention after warmup.  Both implementations instantiate the same abstract intervention: disrupt large-scale spatial co-organization without changing $\theta$.
+
+\textbf{Statistic.}  The checkpoint-level anchored frustration score is
+\[
+  F_s(\theta)=d_s(A_\theta,W_\theta)-d_s(A_\theta,C_\theta).
+\]
+The first term measures the effect of the early intervention; the second term estimates ordinary seed-to-seed variability for the same checkpoint.  The matched optimization contrast is
+\[
+  \Delta^{C5}_{s,r}
+  =F_s(\theta^{\mathrm{opt}}_{s,r})
+  -\operatorname{median}_{j}F_s(\theta^{\mathrm{rand}}_{s,r,j}).
+\]
+A positive value means that optimized checkpoints show larger intervention-minus-seed effects than matched random controls.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabular}{p{0.20\linewidth}p{0.30\linewidth}p{0.14\linewidth}p{0.16\linewidth}p{0.12\linewidth}}
+\toprule
+Substrate & Intervention & Positive groups & Median contrast & Sign-test $p$ \\
+\midrule
+Flow-Lenia & early isolated blocks, then release & $7/9$ & $0.00506$ & $0.0898$ \\
+Particle Life++ & warmup, $2\times2$ cell shuffle, then release & $6/7$ & $0.00477$ & $0.0625$ \\
+\bottomrule
+\end{tabular}
+\caption{C5 results.  Both substrates show positive matched contrasts in most independent groups, but the current group counts support a directional history-dependence result rather than a high-confidence significance claim.}
+\label{tab:c5-results}
+\end{table}
+\FloatBarrier
+
+\paragraph{Flow-Lenia.}
+The Flow-Lenia intervention prevents mass and internal channels from communicating across a $3\times3$ spatial partition during the early phase, then releases the assembled block states into the normal global dynamics.  This tests whether the late behavior depends on early cross-region co-development.  The result is positive in $7/9$ matched groups with median contrast $0.00506$ and one-sided sign-test value $p=0.0898$.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\linewidth]{figures/flow_c5_frustration_paper.png}
+\caption{C5 for Flow-Lenia.  Each bar is the optimized-minus-random matched contrast of the anchored frustration score $F_s(\theta)=d(A,W)-d(A,C)$.  Positive values mean that the optimized checkpoint is more affected by early blockwise disruption than matched random controls after seed variability is subtracted.}
+\label{fig:c5-flow}
+\end{figure}
+\FloatBarrier
+
+\paragraph{Particle Life++.}
+Particle Life++ uses a cell-shuffle intervention rather than walls because particles are not arranged on a fixed spatial field.  After a free warmup, the plane is divided into cells and the cell arrangement is permuted while preserving within-cell coordinates and velocities.  This disrupts large-scale spatial organization without injecting a direct velocity kick.  The result is positive in $6/7$ matched groups with median contrast $0.00477$ and one-sided sign-test value $p=0.0625$.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\linewidth]{figures/plife_c5_frustration_paper.png}
+\caption{C5 for Particle Life++.  Each bar is the optimized-minus-random matched contrast of the anchored frustration score $F_s(\theta)=d(A,W)-d(A,C)$.  The sign pattern is directionally consistent with stronger history dependence in optimized checkpoints under the current protocol.}
+\label{fig:c5-plife}
+\end{figure}
+\FloatBarrier
+
+\subsubsection*{4.7 Section-level conclusion}
+\label{experiments:conclusion}
+
+The experiments support a narrow but coherent interpretation.  The synthetic suite validates that MSPD responds to temporally organized local heterogeneity.  C1 shows that the score is optimizable in CA and Particle Life++ under the reported protocols, while the current Flow-Lenia optimization is directionally positive but not statistically confirmed.  C2 shows that high-$\Delta H$ Flow-Lenia branch states have more separated perturbed futures, including within source trajectories.  C5 shows directionally consistent history-dependence effects in Flow-Lenia and Particle Life++, but the matched-group counts are small and the evidence should be treated as underpowered rather than conclusive.

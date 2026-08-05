@@ -1,7 +1,8 @@
 """`reference-audit` command-line interface (Typer).
 
-`audit` runs the async pipeline (parse + identify, cached). `--no-network` gives the M1 parse-only
-report. `--no-llm`/`--fail-on` are accepted now and become load-bearing as later milestones land.
+`audit` runs the async pipeline (parse + identify, cached) over either a `.tex` + `.bib` pair or a
+single PDF. `--no-network` gives the parse-only report (pair input only — a PDF's reference list comes
+from an HTTP call to GROBID, so there is no offline parse for it).
 """
 
 from __future__ import annotations
@@ -12,12 +13,19 @@ from pathlib import Path
 import typer
 
 from reference_audit.config import AuditConfig
-from reference_audit.pipeline import EmptyBibliographyError, build_parse_report, run_audit
+from reference_audit.inputs import InvalidInputError, PdfInput, default_cache_path, resolve_input
+from reference_audit.pdf.grobid import GrobidError
+from reference_audit.pipeline import (
+    EmptyBibliographyError,
+    build_parse_report,
+    run_audit,
+    run_pdf_audit,
+)
 from reference_audit.report import render_json, render_text
 
 app = typer.Typer(
     add_completion=False,
-    help="Audit .bib/.tex references: identify artifacts, screen for hallucinations.",
+    help="Audit .bib/.tex or PDF references: identify artifacts, screen for hallucinations.",
 )
 
 
@@ -28,11 +36,17 @@ def main() -> None:
 
 @app.command()
 def audit(
-    tex: Path = typer.Argument(
-        ..., exists=True, dir_okay=False, help="Manuscript .tex (for cited/uncited bookkeeping)."
+    document: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        help="Manuscript .tex (paired with a .bib), or a .pdf whose references GROBID extracts.",
     ),
-    bib: Path = typer.Argument(
-        ..., exists=True, dir_okay=False, help="Bibliography .bib to audit."
+    bib: Path | None = typer.Argument(
+        None,
+        exists=True,
+        dir_okay=False,
+        help="Bibliography .bib to audit. Required with a .tex; must be omitted with a .pdf.",
     ),
     fmt: str = typer.Option("text", "--format", "-f", help="Output format: text | json | both."),
     no_network: bool = typer.Option(
@@ -50,17 +64,39 @@ def audit(
         None, "--cache", help="Cache DB path (default: <bib_dir>/.reference_audit/cache.db)."
     ),
     model: str | None = typer.Option(None, "--model", help="LLM model override."),
+    grobid: str | None = typer.Option(
+        None, "--grobid", help="GROBID base URL for PDF input (default http://localhost:8070)."
+    ),
     fail_on: str | None = typer.Option(
         None, "--fail-on", help="Exit non-zero if any verdict matches: hallucinated | multiple."
     ),
 ) -> None:
-    """Audit a .bib with its .tex. Identifies each reference and screens for hallucinations."""
+    """Audit a .bib with its .tex, or a PDF on its own.
+
+    With a PDF, GROBID supplies both the reference list and the in-text citations, so no .bib is
+    needed. Either way each reference is identified and screened for hallucinations.
+    """
     if fmt not in ("text", "json", "both"):
         raise typer.BadParameter("format must be one of: text, json, both")
 
     try:
+        source = resolve_input(document, bib)
+    except InvalidInputError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    if no_network and isinstance(source, PdfInput):
+        # --no-network is a contract ("this run contacts nothing"), and --grobid can point at any
+        # host, so we cannot honestly weaken it to "no *remote* network" for a PDF. Reject it rather
+        # than quietly redefining what the flag promises.
+        raise typer.BadParameter(
+            "--no-network cannot be combined with a PDF: the reference list and the in-text "
+            "citations are extracted by the GROBID service over HTTP, so a PDF has no offline parse "
+            "path. Pass a .tex + .bib pair for the offline parse-only report."
+        )
+
+    try:
         if no_network:
-            report = build_parse_report(tex, bib)
+            report = build_parse_report(source.tex_path, source.bib_path)
         else:
             updates: dict = {}
             if model:
@@ -69,17 +105,21 @@ def audit(
                 updates["use_llm"] = False
             if check_citations:
                 updates["check_alignment"] = True
+            if grobid:
+                updates["grobid_url"] = grobid
             config = AuditConfig().model_copy(update=updates)
-            cache_path = cache or (bib.parent / ".reference_audit" / "cache.db")
-            report = run_audit(
-                tex,
-                bib,
-                config=config,
-                cache_path=cache_path,
-                fresh=fresh,
-                progress=sys.stderr.isatty(),
-            )
-    except EmptyBibliographyError as exc:
+            cache_path = cache or default_cache_path(source)
+            common = {
+                "config": config,
+                "cache_path": cache_path,
+                "fresh": fresh,
+                "progress": sys.stderr.isatty(),
+            }
+            if isinstance(source, PdfInput):
+                report = run_pdf_audit(source.pdf_path, **common)
+            else:
+                report = run_audit(source.tex_path, source.bib_path, **common)
+    except (EmptyBibliographyError, GrobidError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 

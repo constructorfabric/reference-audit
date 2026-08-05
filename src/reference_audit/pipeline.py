@@ -8,6 +8,7 @@ verdict → report.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -24,6 +25,8 @@ from reference_audit.matching.sameobject import cluster_accepted
 from reference_audit.matching.scoring import bucket
 from reference_audit.matching.verdict import build_verdict
 from reference_audit.matching.webcheck import check_web_reference
+from reference_audit.pdf.grobid import GrobidClient, GrobidRequestError
+from reference_audit.pdf.tei import TeiParseError, parse_tei
 from reference_audit.models import (
     AuditReport,
     BibEntry,
@@ -171,6 +174,116 @@ def build_parse_report(tex_path: str | Path | None, bib_path: str | Path) -> Aud
     # @cpt-end:cpt-referenceaudit-flow-parsing-build-report:p1:inst-build-report
 
 
+@dataclass
+class PdfParse:
+    """One PDF's parse output: the report plus the citing contexts recovered from the same TEI.
+
+    The contexts ride along rather than being re-derived because getting them again would mean
+    re-uploading the PDF — the TEI that carries the reference list carries the citations too.
+    """
+
+    report: AuditReport
+    contexts: dict[str, list[CitationContext]]
+    contexts_available: bool
+
+
+# @cpt-flow:cpt-referenceaudit-flow-pdf-input-audit-pdf:p1
+async def build_pdf_parse_report(pdf_path: str | Path, *, client: GrobidClient) -> PdfParse:
+    """Parse a PDF into an `AuditReport` plus citing contexts, via one GROBID request.
+
+    GROBID supplies BOTH the reference list (TEI `<listBibl>/<biblStruct>` → `BibEntry`) and the
+    in-text citations (`<ref type="bibr">` → `CitationContext`), so neither a `.bib` nor a `.tex` is
+    involved. The `.bib`-specific bookkeeping is reported honestly rather than fabricated: see the
+    `AuditReport` field comments for what each one means for a PDF.
+
+    Raises `GrobidError` (service unreachable / failing / this PDF unparseable) or
+    `EmptyBibliographyError` (TEI parsed, but it contains no reference list).
+    """
+    path = Path(pdf_path)
+    tei_xml = await client.fulltext_tei(path)
+    try:
+        parsed = parse_tei(tei_xml)
+    except TeiParseError as exc:
+        # Surfaced as a request error: from the user's side the service returned something unusable.
+        raise GrobidRequestError(str(exc)) from exc
+
+    if not parsed.entries:
+        raise EmptyBibliographyError(
+            f"GROBID found no reference list in {path.name} (0 bibliography entries in the TEI). "
+            "Is this a full paper with a bibliography, rather than a slide deck, poster, or an "
+            "excerpt with its references removed?"
+        )
+
+    # Citedness depends on GROBID having linked in-text markers to bibliography items. When it linked
+    # none, we do not know which references are cited — reporting them all as 'uncited' would be a
+    # fabrication, so citedness is declared unavailable and the uncited list is suppressed.
+    linking_available = parsed.markers_seen > 0
+    linked = parsed.linked_keys()
+
+    audits: list[EntryAudit] = []
+    for entry in parsed.entries:
+        entry.cited = entry.key in linked
+        issues = _parse_issues(entry) + parsed.extraction_failures.get(entry.key, [])
+        audits.append(EntryAudit(entry=entry, verdict=None, issues=issues))
+
+    uncited = (
+        sorted(e.key for e in parsed.entries if e.key not in linked) if linking_available else []
+    )
+    by_type: dict[str, int] = {}
+    for e in parsed.entries:
+        by_type[e.entry_type.value] = by_type.get(e.entry_type.value, 0) + 1
+
+    no_anchor = sum(1 for e in parsed.entries if not e.title and not e.ids.any_present())
+    notes = [
+        f"references and in-text citations were extracted from {path.name} by GROBID; both are "
+        "extraction results, not authored source files",
+    ]
+    if parsed.unresolved_markers:
+        notes.append(
+            f"{parsed.unresolved_markers} in-text citation marker(s) could not be linked to a "
+            "reference by GROBID; they are not counted as citations"
+        )
+    if not linking_available:
+        notes.append(
+            "GROBID linked no in-text citation markers in this document, so cited/uncited "
+            "bookkeeping is unavailable — no reference is reported as uncited"
+        )
+    if no_anchor:
+        notes.append(
+            f"{no_anchor} reference(s) yielded neither a title nor an identifier and could not be "
+            "checked at all; they are listed with the raw text GROBID read"
+        )
+
+    summary = {
+        "total_entries": len(parsed.entries),
+        "cited": sum(1 for e in parsed.entries if e.cited),
+        "uncited": len(uncited),
+        "cited_but_missing": len(parsed.dangling_targets),
+        "commented_twins": 0,        # inapplicable: a PDF has no commented-out entries
+        "missing_includes": 0,       # inapplicable: a PDF has no \input targets
+        "entries_with_issues": sum(1 for a in audits if a.issues),
+        "by_type": by_type,
+        "citation_markers": parsed.markers_seen,
+        "unresolved_citation_markers": parsed.unresolved_markers,
+        "references_without_title_or_id": no_anchor,
+    }
+
+    report = AuditReport(
+        entries=audits,
+        # A TEI target points into the same document's own bibliography, so a dangling one means
+        # malformed TEI, not a missing reference. Normally empty; reported, never swallowed.
+        cited_but_missing=list(parsed.dangling_targets),
+        uncited=uncited,
+        commented_twins=[],
+        missing_includes=[],
+        summary=summary,
+        input_kind="pdf",
+        citation_linking="available" if linking_available else "unavailable",
+        notes=notes,
+    )
+    return PdfParse(report=report, contexts=parsed.contexts, contexts_available=linking_available)
+
+
 def _verdict_summary(report: AuditReport) -> dict[str, int]:
     counts = {"none": 0, "exactly_one": 0, "multiple": 0, "unresolved": 0}
     for a in report.entries:
@@ -232,6 +345,7 @@ class AuditPipeline:
         cache: AuditCache | None = None,
         adapters: list[SourceAdapter] | None = None,
         llm: LLMClient | None = None,
+        grobid: GrobidClient | None = None,
     ):
         self.config = config
         self.cache = cache
@@ -249,14 +363,27 @@ class AuditPipeline:
             )
         else:
             self.llm = None
-        # Per-key citing contexts for the alignment check, populated by `run` when enabled.
+        # Per-key citing contexts for the alignment check, populated by `run`/`run_pdf`.
         self._citation_contexts: dict[str, list[CitationContext]] = {}
+        # False only when a PDF's in-text citation markers could not be linked at all — then a
+        # missing context is a reportable extraction failure, not an expected absence.
+        self._contexts_available = True
+        # Built lazily: a .bib/.tex run must never construct a GROBID client, let alone contact it.
+        self._grobid_client = grobid
+        self._owns_grobid = grobid is None
+
+    def _grobid(self) -> GrobidClient:
+        if self._grobid_client is None:
+            self._grobid_client = GrobidClient(self.config.grobid_url)
+        return self._grobid_client
 
     async def aclose(self) -> None:
         for adapter in self.adapters:
             await adapter.aclose()
         if self.llm is not None:
             await self.llm.aclose()
+        if self._owns_grobid and self._grobid_client is not None:
+            await self._grobid_client.aclose()
 
     async def run(
         self, tex_path: str | Path | None, bib_path: str | Path, *, progress: bool = False
@@ -266,6 +393,23 @@ class AuditPipeline:
         # up front. Without a manuscript there is no context, so the check simply produces nothing.
         if self.config.check_alignment and tex_path is not None:
             self._citation_contexts = parse_citation_contexts(tex_path)
+        return await self._audit_all(report, progress=progress)
+
+    async def run_pdf(self, pdf_path: str | Path, *, progress: bool = False) -> AuditReport:
+        """Audit a PDF: GROBID supplies both its reference list and its in-text citations.
+
+        A sibling of `run` rather than an extra optional parameter on it — the two inputs need
+        different arguments, and an `isinstance`/`None`-sniffing signature would make every existing
+        call site ambiguous for no gain.
+        """
+        parsed = await build_pdf_parse_report(pdf_path, client=self._grobid())
+        # Contexts come free from the same TEI we already had to fetch, so they are always kept; the
+        # alignment check itself still gates on `config.check_alignment`.
+        self._citation_contexts = parsed.contexts
+        self._contexts_available = parsed.contexts_available
+        return await self._audit_all(parsed.report, progress=progress)
+
+    async def _audit_all(self, report: AuditReport, *, progress: bool) -> AuditReport:
         tasks = [asyncio.ensure_future(self._audit_entry(a)) for a in report.entries]
         # Advance a bar as each entry resolves; verdicts land in-place on the audit objects, so
         # completion order is irrelevant. `disable` keeps tests and library callers silent.
@@ -296,6 +440,17 @@ class AuditPipeline:
     # @cpt-dod:cpt-referenceaudit-dod-identification-identify-artifact:p1
     async def _audit_entry_inner(self, audit: EntryAudit) -> None:
         entry = audit.entry
+        # A reference with neither a title nor any identifier gives the matcher nothing to search on.
+        # A title-less metadata query would return an arbitrary paper, which the scorer could then
+        # accept as a match — inventing a verdict out of nothing. Report it as uncheckable instead.
+        # Near-impossible from a .bib; routine when GROBID cannot structure a printed reference.
+        if not entry.title and not entry.ids.any_present():
+            audit.verdict = None
+            audit.issues.append(
+                "no title and no identifier — nothing to search on; this reference could not be "
+                "checked"
+            )
+            return
         if self.cache is not None:
             # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-cache-lookup
             cached = self.cache.get_entry_verdict(entry.content_hash)
@@ -738,6 +893,14 @@ class AuditPipeline:
             return
         contexts = self._citation_contexts.get(audit.entry.key, [])
         if not contexts:
+            # For a .bib/.tex run, no context is an expected absence (uncited entry, or no manuscript
+            # given) and stays silent. For a PDF whose markers GROBID could not link at all, it is an
+            # extraction failure the user asked for a check on — say so rather than passing quietly.
+            if not self._contexts_available:
+                audit.issues.append(
+                    "no in-text citation markers could be linked in this document, so citation "
+                    "alignment was not checked for any reference"
+                )
             return
         try:
             findings = await resolve_alignment_findings(
@@ -1018,6 +1181,40 @@ async def _run_async(
         await pipeline.aclose()
 
 
+async def _run_pipeline(
+    run: Callable[[AuditPipeline], Awaitable[AuditReport]],
+    config: AuditConfig,
+    cache: AuditCache | None,
+) -> AuditReport:
+    pipeline = AuditPipeline(config, cache=cache)
+    try:
+        return await run(pipeline)
+    finally:
+        await pipeline.aclose()
+
+
+def _run_sync(
+    run: Callable[[AuditPipeline], Awaitable[AuditReport]],
+    config: AuditConfig | None,
+    cache_path: str | Path | None,
+    fresh: bool,
+) -> AuditReport:
+    """Shared body of the synchronous entry points: build config + cache, run, tear down."""
+    config = config or AuditConfig()
+    cache: AuditCache | None = None
+    if cache_path is not None:
+        cache = AuditCache(
+            cache_path, pipeline_version=config.pipeline_version, model=config.model
+        )
+        if fresh:
+            cache.clear()
+    try:
+        return asyncio.run(_run_pipeline(run, config, cache))
+    finally:
+        if cache is not None:
+            cache.close()
+
+
 def run_audit(
     tex_path: str | Path | None,
     bib_path: str | Path,
@@ -1028,16 +1225,18 @@ def run_audit(
     progress: bool = False,
 ) -> AuditReport:
     """Synchronous entry point used by the CLI: build config + cache, run, tear down."""
-    config = config or AuditConfig()
-    cache: AuditCache | None = None
-    if cache_path is not None:
-        cache = AuditCache(
-            cache_path, pipeline_version=config.pipeline_version, model=config.model
-        )
-        if fresh:
-            cache.clear()
-    try:
-        return asyncio.run(_run_async(tex_path, bib_path, config, cache, progress))
-    finally:
-        if cache is not None:
-            cache.close()
+    return _run_sync(
+        lambda p: p.run(tex_path, bib_path, progress=progress), config, cache_path, fresh
+    )
+
+
+def run_pdf_audit(
+    pdf_path: str | Path,
+    *,
+    config: AuditConfig | None = None,
+    cache_path: str | Path | None = None,
+    fresh: bool = False,
+    progress: bool = False,
+) -> AuditReport:
+    """Synchronous entry point for a PDF input — the `run_audit` counterpart used by the CLI."""
+    return _run_sync(lambda p: p.run_pdf(pdf_path, progress=progress), config, cache_path, fresh)

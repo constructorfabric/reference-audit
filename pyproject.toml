@@ -45,6 +45,12 @@ dev = [
 asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+# --strict-markers: an unregistered marker is an error, not a silently-never-selected test.
+addopts = "--strict-markers"
+markers = [
+    "pdf_build: compiles a test document to PDF; needs a local TeX Live (pdflatex/xelatex + bibtex).",
+    "grobid: needs a reachable GROBID service (GROBID_URL, default http://localhost:8070).",
+]
 
 [tool.reference-audit]
 # placeholder section; runtime config lives in reference_audit.config.AuditConfig

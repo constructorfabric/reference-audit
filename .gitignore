@@ -15,6 +15,11 @@ __pycache__/
 # Reference-audit local cache DB
 .reference_audit/
 
+# LaTeX + GROBID build artifacts for the PDF-input extraction oracle. Fully regenerable with
+# `uv run python tests/pdf_fixtures.py` — the committed oracle is the TEI XML under tests/fixtures/,
+# never a PDF, and never the placeholder figures the harness generates.
+tests/documents/*/.build/
+
 # Studio generated runtime (config/ is tracked; these are generated)
 .cf-studio/.core/
 .cf-studio/.gen/

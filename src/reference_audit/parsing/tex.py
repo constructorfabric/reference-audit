@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from reference_audit.models import CitationContext
+from reference_audit.parsing.context import MIN_CONTEXT_CHARS, collapse, sentence_span
 
 _VERBATIM_ENVS = ("lstlisting", "verbatim", "minted", "Verbatim", "alltt")
 _VERBATIM_RE = re.compile(
@@ -29,11 +30,7 @@ _INPUT_RE = re.compile(r"\\(?:input|include)\s*\{([^}]+)\}")
 _CITE_CMD_RE = re.compile(
     r"\\(?P<cmd>(?:no)?cite[a-zA-Z]*)\s*(?:\[[^\]]*\])*\s*\{(?P<keys>[^}]*)\}"
 )
-_SENT_END_RE = re.compile(r"[.!?]")
 _LATEX_CMD_RE = re.compile(r"\\[a-zA-Z]+\*?")
-# A cleaned context shorter than this (bare macro shells, a lone cite) is extended with its
-# preceding sentence so the LLM has an actual claim to judge.
-_MIN_CONTEXT_CHARS = 15
 
 
 def strip_comments(text: str) -> str:
@@ -122,31 +119,7 @@ def _clean_context(span: str) -> str:
     span = _CITE_CMD_RE.sub(" ", span)     # the citation macro is not part of the claim
     span = _LATEX_CMD_RE.sub(" ", span)    # \emph, \textbf, ... — keep the argument text, drop the name
     span = span.replace("{", " ").replace("}", " ").replace("~", " ").replace("\\", " ")
-    return re.sub(r"\s+", " ", span).strip()
-
-
-def _sentence_span(text: str, start: int, end: int) -> tuple[int, int]:
-    """Bounds of the sentence (or paragraph-bounded fragment) containing text[start:end]. A sentence
-    boundary is a `.`/`!`/`?` followed by whitespace; a blank line also bounds it."""
-    left = 0
-    for m in _SENT_END_RE.finditer(text, 0, start):
-        e = m.end()
-        if e < len(text) and text[e].isspace():
-            left = e
-    para = text.rfind("\n\n", left, start)
-    if para != -1:
-        left = para + 2
-
-    right = len(text)
-    for m in _SENT_END_RE.finditer(text, end):
-        e = m.end()
-        if e >= len(text) or text[e].isspace():
-            right = e
-            break
-    para = text.find("\n\n", end, right)
-    if para != -1:
-        right = para
-    return left, right
+    return collapse(span)
 
 
 def parse_citation_contexts(tex_path: str | Path) -> dict[str, list[CitationContext]]:
@@ -168,11 +141,11 @@ def parse_citation_contexts(tex_path: str | Path) -> dict[str, list[CitationCont
         cmd = m.group("cmd")
         if cmd.startswith("nocite"):
             continue
-        left, right = _sentence_span(text, m.start(), m.end())
+        left, right = sentence_span(text, m.start(), m.end())
         cleaned = _clean_context(text[left:right])
-        if len(cleaned) < _MIN_CONTEXT_CHARS:
+        if len(cleaned) < MIN_CONTEXT_CHARS:
             # fold in the preceding sentence so there is an actual claim to judge
-            prev_left, _ = _sentence_span(text, max(left - 2, 0), max(left - 1, 0))
+            prev_left, _ = sentence_span(text, max(left - 2, 0), max(left - 1, 0))
             cleaned = _clean_context(text[prev_left:right])
         for raw in m.group("keys").split(","):
             key = raw.strip()

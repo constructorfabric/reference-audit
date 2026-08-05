@@ -72,9 +72,22 @@ class AuditConfig(BaseSettings):
     web_render_timeout: float = 30.0      # seconds before a render is treated as a (retryable) error
     web_render_virtual_time_ms: int = 15000  # JS virtual-time budget given to the headless browser
 
+    # --- PDF input (GROBID) ---
+    # The service is NOT managed by this package. Point this at a running instance; a PDF input with
+    # no reachable GROBID is a reported failure, never a silently empty reference list.
+    #   podman run -d --name grobid -p 8070:8070 docker.io/grobid/grobid:0.8.2.1-crf
+    # Intentionally NOT declared with alias="GROBID_URL": a non-aliased field already reads its
+    # upper-cased env var, whereas an aliased one silently ignores by-name construction here
+    # (`populate_by_name` is not set), which would make AuditConfig(grobid_url=...) a no-op in tests.
+    grobid_url: str = "http://localhost:8070"
+
     # --- Cache / pipeline ---
     cache_path: Path | None = None        # default: <bib_dir>/.reference_audit/cache.db
-    pipeline_version: str = "0.15"        # bump when thresholds/prompts/rules change
+    # Bump when thresholds/prompts/rules change, or when a new verdict-producing path lands.
+    # 0.16: PDF input via GROBID — TEI entry-type inference changes source routing, and an entry with
+    #       neither a title nor an identifier is now reported unresolved instead of being searched on
+    #       (a title-less query could previously score an arbitrary paper as a match).
+    pipeline_version: str = "0.16"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

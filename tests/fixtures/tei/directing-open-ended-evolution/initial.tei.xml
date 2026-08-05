@@ -1,0 +1,866 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xml:space="preserve" xmlns="http://www.tei-c.org/ns/1.0" 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xsi:schemaLocation="http://www.tei-c.org/ns/1.0 https://raw.githubusercontent.com/kermitt2/grobid/master/grobid-home/schemas/xsd/Grobid.xsd"
+ xmlns:xlink="http://www.w3.org/1999/xlink">
+	<teiHeader xml:lang="en">
+		<fileDesc>
+			<titleStmt>
+				<title level="a" type="main">Directing Open-Ended Evolution in Artificial Life via Multi-Scale Path Divergence</title>
+			</titleStmt>
+			<publicationStmt>
+				<publisher/>
+				<availability status="unknown"><licence/></availability>
+			</publicationStmt>
+			<sourceDesc>
+				<biblStruct>
+					<analytic>
+						<author>
+							<persName><forename type="first">Mikhail</forename><surname>Akhtyrchenko</surname></persName>
+							<affiliation key="aff0">
+								<orgName type="institution">Constructor University</orgName>
+								<address>
+									<settlement>Bremen</settlement>
+									<country key="DE">Germany</country>
+								</address>
+							</affiliation>
+						</author>
+						<author>
+							<persName><forename type="first">Mikhail</forename><forename type="middle">I</forename><surname>Katsnelson</surname></persName>
+							<affiliation key="aff1">
+								<orgName type="institution">Constructor Knowledge Labs</orgName>
+								<address>
+									<settlement>Bremen</settlement>
+									<country key="DE">Germany</country>
+								</address>
+							</affiliation>
+							<affiliation key="aff3">
+								<orgName type="department">Institute for Molecules and Materials</orgName>
+								<orgName type="institution">Radboud University</orgName>
+								<address>
+									<settlement>Nijmegen</settlement>
+									<region>Netherlands</region>
+								</address>
+							</affiliation>
+						</author>
+						<author>
+							<persName><forename type="first">Andrey</forename><surname>Ustyuzhanin</surname></persName>
+							<affiliation key="aff0">
+								<orgName type="institution">Constructor University</orgName>
+								<address>
+									<settlement>Bremen</settlement>
+									<country key="DE">Germany</country>
+								</address>
+							</affiliation>
+							<affiliation key="aff1">
+								<orgName type="institution">Constructor Knowledge Labs</orgName>
+								<address>
+									<settlement>Bremen</settlement>
+									<country key="DE">Germany</country>
+								</address>
+							</affiliation>
+							<affiliation key="aff2">
+								<orgName type="department">Institute for Functional Intelligent Materials</orgName>
+								<orgName type="institution">NUS</orgName>
+								<address>
+									<country key="SG">Singapore</country>
+								</address>
+							</affiliation>
+						</author>
+						<title level="a" type="main">Directing Open-Ended Evolution in Artificial Life via Multi-Scale Path Divergence</title>
+					</analytic>
+					<monogr>
+						<imprint>
+							<date/>
+						</imprint>
+					</monogr>
+					<idno type="MD5">81E834296A4536955EB28FB3342BB371</idno>
+				</biblStruct>
+			</sourceDesc>
+		</fileDesc>
+		<encodingDesc>
+			<appInfo>
+				<application version="0.8.2" ident="GROBID" when="2026-08-02T10:35+0000">
+					<desc>GROBID - A machine learning software for extracting information from scholarly documents</desc>
+					<label type="revision">0c5e0cf</label>
+					<label type="parameters">startPage=-1, endPage=-1, consolidateCitations=0, consolidateHeader=0, consolidateFunders=0, includeRawAffiliations=false, includeRawCitations=true, includeRawCopyrights=false, generateTeiIds=false, generateTeiCoordinates=[], sentenceSegmentation=false, flavor=null</label>
+					<ref target="https://github.com/kermitt2/grobid"/>
+				</application>
+			</appInfo>
+		</encodingDesc>
+		<profileDesc>
+			<abstract>
+<div xmlns="http://www.tei-c.org/ns/1.0"><p>Open-ended evolution (OEE) in artificial life is typically driven by uninterpretable, black-box neuralnetwork complexity metrics, leaving life-like systems disconnected from physical theories of complexity. We introduce MSPD (Multi-Scale Path Divergence, denoted 𝐷 𝑃 ), a renormalization-groupinspired scalar that quantifies the temporal multiscale organization of heterogeneity in local transition laws. MSPD is defined at the population level as a functional of the realised trajectory and is computed as a windowed finite-resolution estimator, with consistency between the two stated as a proposition. The metric is an explicit formula and plays a dual role: as a gradient-free fitness function and as a post-hoc analytical lens on any simulation that exposes local transition laws. Empirically, MSPD-optimized parameters produce higher held-out complexity scores than matched random parameters from the same substrate. High-Δ𝐻 states correspond to states with higher instability to external interventions, so the metric tracks the biology of the underlying dynamics rather than noise. Higher MSPD corresponds to stronger scale-dependent frustration: high-complexity systems exhibit larger differences between the dynamics expressed at different spatial extents, linking MSPD directly to the frustration criterion of biological complexity in the sense of Vanchurin et al. [23]. The same protocol transfers beyond the primary Flow-Lenia substrate to Life-like cellular automata and Particle Life++, where C1, C2 and C5 all hold. A single explicit formula thus both directs open-ended evolution and provides a principled bridge to the physics of complexity that black-box drivers do not.</p></div>
+			</abstract>
+		</profileDesc>
+	</teiHeader>
+	<text xml:lang="en">
+		<body>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="1">Introduction</head><p>The origin of complexity, and first of all biological complexity, is one of the main challenges of contemporary science, and many efforts have been applied to deal with it. Trying to make a more or less complete list of various approaches is a hopeless task, but we should at least mention numerous attempts to establish relations between concepts and methods of statistical physics and the problem of life and its evolution <ref type="bibr" target="#b10">[11,</ref><ref type="bibr" target="#b11">12,</ref><ref type="bibr" target="#b5">6,</ref><ref type="bibr" target="#b18">19,</ref><ref type="bibr" target="#b6">7,</ref><ref type="bibr" target="#b7">8,</ref><ref type="bibr" target="#b25">26,</ref><ref type="bibr" target="#b22">23,</ref><ref type="bibr" target="#b23">24]</ref>. It is clear that such a complicated problem should be attacked from different sides. One direction is more traditional: the analysis of true biological information in terms of statistical physics, including glassiness <ref type="bibr" target="#b10">[11,</ref><ref type="bibr" target="#b11">12]</ref>, frustration in general <ref type="bibr" target="#b25">[26,</ref><ref type="bibr" target="#b7">8]</ref>, percolation <ref type="bibr" target="#b5">[6,</ref><ref type="bibr" target="#b7">8]</ref>, emergent phenomena and universality classes <ref type="bibr" target="#b6">[7]</ref>, and, last but not least, analogies with machine learning <ref type="bibr" target="#b23">[24]</ref>. Another direction is Artificial Life (ALife), that is, building in silico models with relatively simple rules but complicated behaviour, where everything is in principle under control, which gives us hope to better understand the road from simplicity to complexity. The approach is intended to be complementary to the biological one but, hopefully, in the end should tell us something important about real living systems and their evolution. The question, however, is how to formally define complexity.</p><p>Again, it looks like a hopeless task to mention all existing approaches to the formal definition of complexity. Some of them are related to the idea that structural complexity is determined by scaling properties of the system and its hierarchical organization, that is, by the dissimilarity between the images of the system considered at different scales. This idea has appeared many times in various contexts <ref type="bibr" target="#b26">[27,</ref><ref type="bibr" target="#b13">14,</ref><ref type="bibr" target="#b1">2]</ref>.</p><p>Probably its most suitable formalization was suggested in <ref type="bibr" target="#b0">[1]</ref> as "multiscale structural complexity" (MSSC). The definition is computationally simple and, at the same time, has been demonstrated to be useful in many different fields, including analysis of the complexity of quantum states and detection of quantum phase transitions <ref type="bibr" target="#b20">[21]</ref> and analysis of human visual perception <ref type="bibr" target="#b8">[9]</ref>. However, this definition is static and, to be applied to an evolving system, needs a modification adding not only spatial but also temporal scales.</p><p>A central goal of ALife is open-ended evolution-the sustained generation of novel forms and behaviors <ref type="bibr" target="#b21">[22,</ref><ref type="bibr" target="#b12">13,</ref><ref type="bibr" target="#b19">20,</ref><ref type="bibr" target="#b17">18]</ref>. Neural-network-based open-endedness metrics drive this effectively but are black boxes: they yield results without principles and cannot be connected to physical theories of complexity. MSSC offered a physics-grounded alternative for static spatial patterns, but life is inherently dynamic. We extend MSSC temporally, replacing the spatial coarse-graining scale 𝜆 with an observational window 𝑊 , and ask: can a single explicit scalar simultaneously optimize for complexity and reveal its physical basis? Thus, here we replace MSSC with Multi-Scale Path Divergence (MSPD), which can in a sense be considered as its dynamical analogue and generalization. Its explicit definition is given below.</p><p>We validate MSPD in Flow-Lenia <ref type="bibr" target="#b16">[17]</ref>, a mass-conservative continuous cellular automaton in the Lenia family <ref type="bibr" target="#b2">[3]</ref> supporting diverse life-like gliders, and transfer experiments to two qualitatively different substrates: Life-like cellular automata (discrete-state lattices with totalistic update rules) and Particle Life++ (neural-network-mediated pairwise particle interactions). The discrete CA substrate exercises the categorical transition-law form of MSPD, while Particle Life++ shares with Flow-Lenia the Lagrangian displacement form and connects to a broader Lagrangian thread in ALife exemplified by Particle Lenia <ref type="bibr" target="#b15">[16]</ref>.</p><p>Here we apply this new metric to the analysis of some general properties of life formulated within the analogy between biological evolution and multiscale learning <ref type="bibr" target="#b23">[24]</ref>, and especially to the role of frustration, which has been suggested as the main cause of complexity not only in physical but also in biological systems <ref type="bibr" target="#b25">[26]</ref>. A key empirical result is that higher MSPD corresponds to stronger scale-dependent frustration: in optimized systems, the dynamics expressed under an early spatial constraint differ from the unconstrained dynamics by more than would be expected from ordinary seed-to-seed variation. This intervention-based measurement links MSPD directly to the frustration criterion of biological complexity in the sense of Vanchurin et al. <ref type="bibr" target="#b22">[23]</ref> (building on the spin-glass framing of biological complexity by Wolf et al. <ref type="bibr" target="#b25">[26]</ref>), without the metric being optimised for frustration.</p><p>Figure <ref type="figure" target="#fig_0">1</ref> summarises the full pipeline: Lagrangian particle tracking, the per-window pairwise dissimilarity Δ𝐻, the cross-window aggregation that yields 𝐷 𝑃 , and the evolutionary loop that closes back onto the simulation.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Contributions.</head><p>• We introduce MSPD, a temporal extension of spatial MSSC defined as a functional of the realised trajectory via local transition laws, with a consistent windowed finite-resolution estimator. • Used as a fitness function and as a lens, MSPD separates optimized parameters from matched random controls on the same substrate, and high-Δ𝐻 states are linked to higher instability under external interventions. • MSPD-optimized systems exhibit elevated scale-dependent frustration under matched constrainedrollout interventions, linking MSPD to the Vanchurin et al. frustration criterion of biological complexity without being optimised for it. • The protocol transfers beyond the primary Flow-Lenia substrate: C1, C2 and C5 also hold on Life-like cellular automata and Particle Life++. </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2">Background and Related Work</head><p>2.1 MSSC and renormalization-grounded complexity. Spatial Multi-Scale Structural Complexity <ref type="bibr" target="#b0">[1]</ref> defines the complexity of a pattern as the cumulative cross-scale dissimilarity under successive Kadanoff/RG (renormalization group) <ref type="bibr" target="#b24">[25,</ref><ref type="bibr" target="#b14">15]</ref> coarse-graining: a system is structurally complex to the extent that its representations at adjacent spatial resolutions disagree. Unlike Kolmogorov-style or computational-mechanics measures, MSSC is computed directly from continuous field data without abstract ensembles or 𝜖-machine inference; it peaks for hierarchically nested structures (spin spirals, biological tissues) and drops to near-zero for both white noise and uniform fields. Subsequent work <ref type="bibr" target="#b8">[9]</ref> shows that MSSC also tracks human perceptual judgements of visual complexity once the highestand lowest-frequency scales are filtered out -an empirical observation that motivates the log-spaced window choice we adopt for MSPD in §3.2. MSPD inherits this RG architecture intact: the coarsegraining scale 𝜆 is replaced by an observation window 𝑊 , and the cross-scale dissimilarity is computed in trajectory-distribution space rather than image space.</p><p>2.2 Continuous ALife substrates. Lenia <ref type="bibr" target="#b2">[3]</ref> generalised Conway's Game of Life to a continuous spacetime-state framework, replacing discrete rule tables with integro-differential update rules and producing a taxonomy of self-maintaining gliders. Flow-Lenia <ref type="bibr" target="#b16">[17]</ref> adds strict mass conservation: patterns must compete for finite material resources, which is the thermodynamic precondition for ecosystemic dynamics and the substrate on which we run our primary experiments. Particle Lenia <ref type="bibr" target="#b15">[16]</ref>, Particle Life, and the classical Boids model take a strictly Lagrangian view, modelling matter as discrete interacting particles rather than as scalar fields. MSPD applies uniformly across these substrates because each one exposes explicit particle trajectories -whether as native state in particle systems or as passive tracers injected into a Flow-Lenia mass field.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.3">Open-endedness drivers.</head><p>Open-ended evolution is a recognised grand challenge of ALife <ref type="bibr" target="#b21">[22]</ref>: objective-driven evolutionary algorithms collapse on deceptive landscapes, motivating a family of alternatives that target diversity or novelty instead of a single objective. Lehman &amp; Stanley <ref type="bibr" target="#b12">[13]</ref> introduced Novelty Search, abandoning fitness in favour of behavioural novelty; Soros &amp; Stanley <ref type="bibr" target="#b19">[20]</ref> enumerated necessary conditions for OEE in cellular substrates; and Pugh, Soros &amp; Stanley <ref type="bibr" target="#b17">[18]</ref> formalised Quality-Diversity (QD), which maintains a tessellated archive of high-performing, behaviourally diverse solutions. Two recent ALife-specific drivers are particularly relevant: Leniabreeder <ref type="bibr" target="#b3">[4]</ref> applies QD to Lenia using either hand-crafted descriptors or autoencoder-latent embeddings, and ASAL <ref type="bibr" target="#b9">[10]</ref> uses a vision-language foundation model as the interestingness judge over simulation videos. The shared limitation of all of these drivers is that their notion of "interesting" is either hand-tuned or learned, and is therefore not connected to physical theories of complexity -the gap MSPD addresses with an explicit, formula-based scalar. <ref type="bibr" target="#b25">[26]</ref> following the previous observations of Laughlin and others <ref type="bibr" target="#b10">[11,</ref><ref type="bibr" target="#b11">12]</ref> argue that biological systems are forms of frustrated matter: analogues of spin glasses, in which competing interactions prevent the system from settling into any single global equilibrium and instead produce a rugged landscape with a broad distribution of relaxation timescales. Vanchurin et al. <ref type="bibr" target="#b22">[23]</ref> extend this picture into a multilevel-learning theory of evolution and identify frustration / non-ergodicity as an operational signature of living systems. This is the physical criterion that MSPD-optimised systems satisfy post-hoc ( §4, C5) without ever being optimised for it -the bridge that turns MSPD from a fitness function into a diagnostic of life-likeness.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.4">Physical theories of life. Wolf, Katsnelson &amp; Koonin</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="2.5">Trajectory and Wasserstein analysis.</head><p>Comparing distributions of particle trajectories requires a topology-aware divergence: KL and MMD lose meaning or scale poorly when distributions have disjoint or near-disjoint supports, which is generic in trajectory data because each particle traces out a different region of phase space. The Wasserstein-1 metric (Earth Mover's Distance) supplies the right notion of distance -the minimal cost of transporting one distribution onto another, accounting for the underlying metric of the space. Full 𝑊 1 scales cubically in the number of samples; we therefore use its sliced approximation SW 1 , which projects distributions onto random one-dimensional directions and averages closed-form 1-D Wasserstein distances. SW 1 is metric-equivalent to 𝑊 1 on bounded supports while costing 𝑂(𝑛 log 𝑛) per projection, which is what makes the per-particle, per-window comparison over thousands of tracers tractable.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3">Method</head><p>MSPD measures the temporal organization of heterogeneity in local dynamics. The construction begins with a formal model for systems whose states are configurations of local degrees of freedom. From the transition law of such a system we obtain local transition laws. Their pairwise variation defines state-level dynamical heterogeneity. Along a realised trajectory this gives a scalar heterogeneity trace, and MSPD measures how this trace changes across temporal coarse-graining scales.</p><p>The section is organized as follows. We first define the configuration model and the local transition laws induced by the dynamics. We then define state-level heterogeneity and the pathwise MSPD functional. The final part derives the computable estimator as a windowed finite-resolution approximation to the theoretical quantity and states the consistency relation between the two.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.1">Configuration model for local dynamics</head><p>We model the observed system by a configuration space. Let (ℐ, ℬ ℐ ) be a measurable index space for local degrees of freedom. An element 𝑖 ∈ ℐ is one local component of the system: for example a lattice site, a particle, an agent, a spatial sample, or a sampled material element. Let (𝐸, ℬ 𝐸 ) be the local state space. A configuration is a map</p><formula xml:id="formula_0">𝑥 ∶ ℐ → 𝐸,</formula><p>where 𝑥(𝑖) is the local state of degree of freedom 𝑖. We assume that the admissible configurations form a measurable space (𝒳, ℬ 𝒳 ) with 𝒳 ⊆ 𝐸 ℐ . The sigma-algebra ℬ 𝒳 is generated by the coordinate maps ev 𝑖 ∶ 𝒳 → 𝐸, ev 𝑖 (𝑥) = 𝑥(𝑖).</p><p>The time-Δ𝑡 dynamics is a Markov kernel</p><formula xml:id="formula_1">𝑃 Δ𝑡 ∶ 𝒳 × ℬ 𝒳 → [0, 1].</formula><p>For each current configuration 𝑥, 𝑃 Δ𝑡 (𝑥, ⋅) is the probability law of the next configuration. In deterministic dynamics, this kernel is induced by an update map Φ Δ𝑡 ∶ 𝒳 → 𝒳, where</p><formula xml:id="formula_2">𝑃 Δ𝑡 (𝑥, ⋅) = 𝛿 Φ Δ𝑡 (𝑥) .</formula><p>The notation 𝑃 Δ𝑡 (𝑥, 𝑑𝑦) denotes integration with respect to the probability measure over future configurations 𝑦.</p><p>The configuration model also requires a way to average over local degrees of freedom. We write</p><formula xml:id="formula_3">𝑚 𝑥 ∈ 𝒫(ℐ)</formula><p>for the sampling measure in configuration 𝑥. This measure encodes which local components contribute to the measured dynamical heterogeneity and with what weight. Uniform weighting over sites, uniform weighting over agents, activity weighting, and mass weighting define different dynamical observables. Thus 𝑚 𝑥 is part of the formal measurement specification: it determines the contribution of local degrees of freedom to the system-level average.</p><p>The objects ℐ, 𝐸, 𝒳, 𝑃 Δ𝑡 , 𝑚 𝑥 , and the transition-law distance introduced below specify the local dynamical observable to which MSPD is applied. They are not numerical details of the estimator. They define the formal description of the dynamics being measured.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.2">Local transition laws</head><p>The key local object is the transition law induced by the system dynamics at one local degree of freedom. For a current configuration 𝑥 and 𝑖 ∈ ℐ, define 𝐺 𝑥,𝑖 ∶ 𝒳 → 𝐸 × 𝐸, 𝐺 𝑥,𝑖 (𝑦) = (𝑥(𝑖), 𝑦(𝑖)).</p><p>This map returns the before-after local state pair at 𝑖 when the next configuration is 𝑦. The local transition law is the pushforward measure</p><formula xml:id="formula_4">𝑇 𝑖 Δ𝑡 (𝑥) = (𝐺 𝑥,𝑖 ) # 𝑃 Δ𝑡 (𝑥, ⋅) ∈ 𝒫(𝐸 × 𝐸).<label>(1)</label></formula><p>Equivalently, for measurable 𝐵 ⊆ 𝐸 × 𝐸, 𝑇 𝑖 Δ𝑡 (𝑥)(𝐵) = 𝑃 Δ𝑡 (𝑥, {𝑦 ∈ 𝒳 ∶ (𝑥(𝑖), 𝑦(𝑖)) ∈ 𝐵}) . The law 𝑇 𝑖 Δ𝑡 (𝑥) is obtained from the transition kernel and the coordinate 𝑖. No additional feature map is introduced. In deterministic dynamics,</p><formula xml:id="formula_5">𝑇 𝑖 Δ𝑡 (𝑥) = 𝛿 (𝑥(𝑖),Φ Δ𝑡 (𝑥)(𝑖)) .</formula><p>When 𝐸 is a vector space, transition-pair laws can be represented as laws of local increments. Let</p><formula xml:id="formula_6">∇ Δ𝑡 (𝑒, 𝑒 ′ ) = 𝑒 ′ -𝑒 Δ𝑡 .</formula><p>The local increment law is</p><formula xml:id="formula_7">𝑉 𝑖 Δ𝑡 (𝑥) = (∇ Δ𝑡 ) # 𝑇 𝑖 Δ𝑡 (𝑥) ∈ 𝒫(𝐸).<label>(2)</label></formula><p>For moving particles, agents, or transported material samples, this is a displacement or velocity law.</p><p>For discrete local states, such as spins or finite-state automata, the transition-pair law 𝑇 𝑖 Δ𝑡 (𝑥) remains the appropriate object.</p><p>Although the examples considered later have local or short-range update rules, the definition of 𝑇 𝑖 Δ𝑡 (𝑥) does not require strict locality of interactions. The transition law may depend on the full configuration 𝑥. Long-range interactions are represented through their effect on the local transition laws. The version used here compares one-component transition laws. If the object of interest is the heterogeneity of joint transitions, the same construction can be applied to finite blocks 𝐵 ⊂ ℐ, replacing 𝑖 by 𝐵 and using</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>𝑇 𝐵</head><p>Δ𝑡 (𝑥) = (𝑦 ↦ (𝑥| 𝐵 , 𝑦| 𝐵 )) # 𝑃 Δ𝑡 (𝑥, ⋅).</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.3">State-level dynamical heterogeneity</head><p>Let 𝐷 be a distance or divergence between probability measures on 𝐸 × 𝐸. The state-level dynamical heterogeneity is</p><formula xml:id="formula_8">ℋ Δ𝑡 (𝑥) = ∬ ℐ×ℐ 𝐷 (𝑇 𝑖 Δ𝑡 (𝑥), 𝑇 𝑗 Δ𝑡 (𝑥)) 𝑚 𝑥 (𝑑𝑖)𝑚 𝑥 (𝑑𝑗).<label>(3)</label></formula><p>If increment laws are used, the corresponding form is</p><formula xml:id="formula_9">ℋ Δ𝑡 (𝑥) = ∬ ℐ×ℐ 𝐷 (𝑉 𝑖 Δ𝑡 (𝑥), 𝑉 𝑗 Δ𝑡 (𝑥)) 𝑚 𝑥 (𝑑𝑖)𝑚 𝑥 (𝑑𝑗),<label>(4)</label></formula><p>where 𝐷 is now a distance between probability measures on 𝐸.</p><p>The definition compares the transition laws of two local degrees of freedom sampled from the same state. If all local degrees of freedom have the same transition law 𝑚 𝑥 -almost everywhere, then ℋ Δ𝑡 (𝑥) = 0. If different parts of the state have different local transition laws, then ℋ Δ𝑡 (𝑥) &gt; 0. A simple mixture illustrates the value of ℋ Δ𝑡 . Suppose the local degrees of freedom split into two transition types with laws 𝐿 1 and 𝐿 2 . If the first type has mass 𝑝 under 𝑚 𝑥 and the second has mass 1 -𝑝, then ℋ Δ𝑡 (𝑥) = 2𝑝(1 -𝑝)𝐷(𝐿 1 , 𝐿 2 ).</p><p>For a homogeneous state, 𝑝 = 0 or 𝑝 = 1, the heterogeneity is zero. For a mixed state it is positive whenever the two transition laws differ. For example, if local components are Brownian particles with two diffusion laws, then 𝐿 1 and 𝐿 2 are the corresponding Gaussian increment laws. A single-diffusivity Brownian system has zero state heterogeneity, while a two-diffusivity mixture has positive heterogeneity proportional to 2𝑝(1 -𝑝) and to the distance between the two Gaussian transition laws.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.4">Pathwise and system-level MSPD</head><p>State-level heterogeneity is an instantaneous quantity. To obtain a dynamical complexity for a system, we study how this quantity evolves along trajectories. A system is specified together with an evaluation protocol: an initial-condition law and any internal randomness of the update. Together with the transition kernel, this induces a probability law ℙ 𝒮 on realised trajectories 𝜉 = (𝑥 𝑡 ) 𝑡≥0 in 𝒳. The coordinate process is 𝑋 𝑡 (𝜉) = 𝑥 𝑡 .</p><p>A realised trajectory 𝜉 first defines the raw heterogeneity trace</p><formula xml:id="formula_11">𝑔 𝜉 (𝑡) = ℋ Δ𝑡 (𝑋 𝑡 (𝜉)). (<label>6</label></formula><formula xml:id="formula_12">)</formula><p>The score is applied to a nonnegative measurement trace</p><formula xml:id="formula_13">ℎ 𝜉 (𝑡) = 𝜙(𝑔 𝜉 (𝑡)),<label>(7)</label></formula><p>where 𝜙 is fixed as part of the measurement specification. In the ideal case 𝜙 may be the identity; in finite computations it is the same positive/floor preprocessing used on the empirical heterogeneity estimates. The average level of ℎ 𝜉 is the heterogeneity amplitude. MSPD measures a different property: the temporal organization of this heterogeneity across scales.</p><p>Let 𝒜 𝑟 be temporal coarse-graining at scale 𝑟, and set</p><formula xml:id="formula_14">ℎ 𝑟 = 𝒜 𝑟 ℎ.</formula><p>A trace is multiscale when its coarse-grained versions change nontrivially as the observation scale is varied. Temporal scale is multiplicative: changing the scale from 10 to 20 and from 100 to 200 represents the same relative change of resolution. We therefore use the logarithmic scale derivative</p><formula xml:id="formula_15">𝜕 log 𝑟 ℎ 𝑟 = 𝑟𝜕 𝑟 ℎ 𝑟 .</formula><p>For a probability measure 𝑞 over temporal scales and a floor 𝜂 &gt; 0, the pathwise MSPD of a nonnegative trace ℎ is</p><formula xml:id="formula_16">MSPD[ℎ] = ∫ ‖𝜕 log 𝑟 ℎ 𝑟 ‖ 2 2,𝑡 ‖ℎ 𝑟 ‖ 2 2,𝑡 + 𝜂 2 𝑞(𝑑 log 𝑟).<label>(8)</label></formula><p>The numerator measures the scale sensitivity of the heterogeneity trace. The denominator normalizes by the signal power at that scale and prevents small residual traces from producing large relative scores.</p><p>Two limiting cases are immediate. If ℎ(𝑡) ≡ 0, then ℎ 𝑟 ≡ 0 for every 𝑟, so MSPD[ℎ] = 0. If ℎ(𝑡) ≡ 𝑐 for a constant 𝑐 &gt; 0, then every coarse-grained trace is again constant and 𝜕 log 𝑟 ℎ 𝑟 = 0. Thus MSPD[ℎ] = 0 even though the heterogeneity amplitude is positive. Stationary heterogeneity and temporally organized heterogeneity are therefore separated by construction.</p><p>The system-level quantity is obtained by applying the pathwise functional first and then averaging over realised trajectories:</p><formula xml:id="formula_17">MSPD(𝒮) = 𝔼 𝜉∼ℙ 𝒮 [MSPD[ℎ 𝜉 ]] .<label>(9)</label></formula><p>This order matters because the pathwise functional is nonlinear. Averaging heterogeneity traces before applying MSPD can cancel temporal structure across trajectories. For ergodic systems, a long trajectory estimates a typical pathwise value. For non-ergodic systems, the value is tied to the specified distribution of initial conditions and seeds.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.5">Windowed finite-resolution target</head><p>The state-level quantity ℋ Δ𝑡 (𝑥) is defined from population transition laws at a configuration. In simulations these transition laws are not observed directly. A single deterministic transition provides one before-after sample for each local component, while ℋ Δ𝑡 compares transition laws. The computable quantity is therefore introduced through an intermediate population object: a finite-resolution, windowed target. This target is still defined at the population level, but it uses the same temporal resolution and observation windows as the estimator.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Let</head><p>𝐼 𝑘 = [𝑎 𝑘 , 𝑎 𝑘 + 𝑠] be an observation window of duration 𝑠, and let 𝐼 𝑘,𝜏 = {𝑢 ∈ 𝐼 𝑘 ∶ 𝑢 + 𝜏 ∈ 𝐼 𝑘 } be the admissible set of start times for a finite-difference transition at lag 𝜏 . For a realised trajectory 𝜉, let 𝑍 𝜉 𝑖 (𝑡) denote the local state or local coordinate observed at degree of freedom 𝑖 and time 𝑡. For vector-valued local observations, define the windowed finite-resolution transition law 𝐿 𝜉 𝑖,𝑘,𝜏 = (𝑢 ↦ 𝑍 𝜉 𝑖 (𝑢 + 𝜏 ) -𝑍 𝜉 𝑖 (𝑢) 𝜏 ) # Unif(𝐼 𝑘,𝜏 ). (10) For systems whose local state is discrete or non-vectorial, the map inside the pushforward is replaced by the transition-pair map 𝑢 ↦ (𝑍 𝜉 𝑖 (𝑢), 𝑍 𝜉 𝑖 (𝑢 + 𝜏 )). Thus 𝐿 𝜉 𝑖,𝑘,𝜏 is the population law of local transitions observed over the window 𝐼 𝑘 at temporal resolution 𝜏 . Estimator resolution. The pair (𝑠, 𝜏 ) fixes the resolution at which local transition laws are measured from a finite rollout. It is selected from the simulation and logging protocol, not from the downstream claim being tested. Small lags can make the finite difference 𝑍 𝜉 𝑖 (𝑢 + 𝜏 ) -𝑍 𝜉 𝑖 (𝑢) 𝜏 dominated by jitter, numerical noise, or short-scale stochastic motion. Small windows give too few samples to estimate the law 𝐿 𝜉 𝑖,𝑘,𝜏 reliably. Conversely, very large lags or windows mix distinct local regimes and remove fast transitions. We therefore use an admissible scale range rather than arbitrary values of 𝑠 and 𝜏 . A scale pair is admissible when the number of transition samples 𝑚 𝑘 (𝑠, 𝜏 ) = |𝐼 𝑘,𝜏 | exceeds a fixed minimum, neighboring lag estimates have reached a stable regime, and split-window estimates do not vary more than the between-carrier heterogeneity they are meant to resolve. One practical diagnostic for lag stability is 𝑅 𝜏 (𝑠) = median 𝑘 𝐷( L 𝜉 𝑘,𝜏 , L 𝜉 𝑘,𝜏 + ) , L 𝜉 𝑘,𝜏 = ∫ 𝐿 𝜉 𝑖,𝑘,𝜏 𝑚 𝜉 𝑘 (𝑑𝑖), where 𝜏 + is the next lag in the candidate grid. The lower admissible lag is chosen after the sharp jitterdominated changes in 𝑅 𝜏 (𝑠) have subsided. A practical diagnostic for window stability is a split-window discrepancy, 𝐸 𝑠 (𝜏 ) = median 𝑖,𝑘 𝐷(𝐿 𝜉,first 𝑖,𝑘,𝜏 , 𝐿 𝜉,second 𝑖,𝑘,𝜏</p><p>) ,</p><p>where the two laws are estimated from the first and second halves of the same window. The window length is chosen large enough for this sampling error to be small, but not so large that the two halves systematically represent different dynamical regimes. The same calibrated admissible-scale protocol is used for optimized systems and controls.</p><p>The corresponding windowed heterogeneity target is</p><formula xml:id="formula_18">𝐻 𝜉 𝑘,𝜏 = ∬ 𝐷 (𝐿 𝜉 𝑖,𝑘,𝜏 , 𝐿 𝜉 𝑗,𝑘,𝜏 ) 𝑚 𝜉 𝑘 (𝑑𝑖)𝑚 𝜉 𝑘 (𝑑𝑗),<label>(11)</label></formula><p>where 𝑚 𝜉 𝑘 is the sampling law over local degrees of freedom on the same window. Equation <ref type="bibr" target="#b10">(11)</ref> is not an empirical estimator. It is the population heterogeneity associated with the finite observation window and finite transition lag.</p><p>The link to the ideal trace is a local-stationarity approximation. If local transition statistics do not vary substantially inside 𝐼 𝑘 , then the raw windowed target approximates the local temporal average of the raw heterogeneity trace:</p><formula xml:id="formula_19">𝐻 𝜉 𝑘,𝜏 ≈ 1 |𝐼 𝑘 | ∫ 𝐼 𝑘 𝑔 𝜉 (𝑢) 𝑑𝑢.<label>(12)</label></formula><p>The trace fed into MSPD is the preprocessed trace ℎ 𝜉 = 𝜙(𝑔 𝜉 ). The corresponding population windowed trace is</p><formula xml:id="formula_20">ℎ ⋆ 𝑘,𝜏 = 𝜙(𝐻 𝜉 𝑘,𝜏 ), 𝑘 = 1, … , 𝐾.<label>(13)</label></formula><p>Under the same local-stationarity assumption, ℎ ⋆ 𝑘,𝜏 approximates the local average of the preprocessed trace,</p><formula xml:id="formula_21">ℎ ⋆ 𝑘,𝜏 ≈ 1 |𝐼 𝑘 | ∫ 𝐼 𝑘 ℎ 𝜉 (𝑢) 𝑑𝑢. (<label>14</label></formula><formula xml:id="formula_22">)</formula><p>Thus the windowed target is the finite-resolution bridge between the state-level definition and the computable time series. The finite-grid MSPD functional used on a window-indexed trace is defined as follows. Let 𝑎 = (𝑎 1 , … , 𝑎 𝐾 ) ∈ ℝ 𝐾 . Let ℛ = {𝑟 1 , … , 𝑟 𝐽 } be a finite ordered scale grid, and write 𝑟 + 𝑗 = 𝑟 𝑗+1 . For each 𝑟 𝑗 , let 𝒞 𝑟 𝑗 ∶ ℝ 𝐾 → ℝ 𝐾 𝑗 be a discrete temporal coarse-graining operator, and let</p><formula xml:id="formula_23">𝑈 𝑟 𝑗 ∶ ℝ 𝐾 𝑗+1 → ℝ 𝐾 𝑗</formula><p>map the trace coarse-grained at the next scale back to the grid of 𝒞 𝑟 𝑗 𝑎. Block averaging with repetition upsampling is one implementation; the definition only requires fixed linear coarse-graining and reconstruction operators. The finite-grid MSPD functional is</p><formula xml:id="formula_24">𝔐 ℛ (𝑎) = ∑ 𝐽-1 𝑗=1 𝑤 𝑗 ‖𝒞 𝑟 𝑗 𝑎-𝑈 𝑟 𝑗 𝒞 𝑟 + 𝑗 𝑎‖ 2 2 ‖𝒞 𝑟 𝑗 𝑎‖ 2 2 +𝜂 2 MSPD ∑ 𝐽-1 𝑗=1 𝑤 𝑗 . (<label>15</label></formula><formula xml:id="formula_25">)</formula><p>The windowed finite-resolution MSPD target is then</p><formula xml:id="formula_26">MSPD win 𝜉,𝜏 = 𝔐 ℛ (ℎ ⋆ 1,𝜏 , … , ℎ ⋆ 𝐾,𝜏 ).<label>(16)</label></formula><p>This is the population quantity targeted by the finite computation.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.6">Empirical estimator and consistency statement</head><p>The empirical estimator replaces each population law 𝐿 𝜉 𝑖,𝑘,𝜏 by a finite empirical law. For a sampled local carrier 𝑖 in window 𝐼 𝑘 , choose sample times 𝑢 𝑘,1 , … , 𝑢 𝑘,𝑚 ∈ 𝐼 𝑘,𝜏 and define</p><formula xml:id="formula_27">L𝑖,𝑘,𝜏 = 1 𝑚 𝑚 ∑ 𝑞=1 𝛿 𝑍 𝜉 𝑖 (𝑢 𝑘,𝑞 +𝜏)-𝑍 𝜉 𝑖 (𝑢 𝑘,𝑞 ) 𝜏 . (<label>17</label></formula><formula xml:id="formula_28">)</formula><p>For transition-pair systems the atom in Eq. ( <ref type="formula" target="#formula_27">17</ref>) is replaced by (𝑍 𝜉 𝑖 (𝑢 𝑘,𝑞 ), 𝑍 𝜉 𝑖 (𝑢 𝑘,𝑞 + 𝜏 )). If 𝑖 1 , … , 𝑖 𝑛 are sampled local carriers in window 𝐼 𝑘 , the empirical pairwise heterogeneity is</p><formula xml:id="formula_29">Ĥ𝑘 = 2 𝑛(𝑛 -1) ∑ 1≤𝑎&lt;𝑏≤𝑛 𝐷 ( L𝑖 𝑎 ,𝑘,𝜏 , L𝑖 𝑏 ,𝑘,𝜏 ) .<label>(18)</label></formula><p>A pooled-null baseline Ĥ0 𝑘 is computed from pseudo-local empirical laws sampled from the pooled transition samples in the same window. It corrects the finite-sample distance induced by empirical transition laws when local carrier identity carries no information beyond the pooled transition distribution. The null-corrected empirical heterogeneity is</p><formula xml:id="formula_30">Δ𝐻 𝑘 = Ĥ𝑘 -Ĥ0 𝑘 .<label>(19)</label></formula><p>The pooled null is an estimator-level correction and is not part of the population MSPD functional.</p><p>The empirical trace and empirical MSPD score are ĥ 𝑘,𝜏 = 𝜙( Δ𝐻 𝑘 ), MSPD 𝜏 = 𝔐 ℛ ( ĥ 1,𝜏 , … , ĥ 𝐾,𝜏 ).</p><p>Proposition 1 (finite-sample consistency for the windowed target). Fix a realised trajectory 𝜉, a finite collection of windows 𝐼 1 , … , 𝐼 𝐾 , a finite lag 𝜏 , a finite scale grid ℛ, and the operators defining 𝔐 ℛ . Assume the following conditions for every window 𝑘.</p><p>1. The sampled carriers satisfy a law of large numbers for the kernel (𝑖, 𝑗) ↦ 𝐷(𝐿 𝜉 𝑖,𝑘,𝜏 , 𝐿 𝜉 𝑗,𝑘,𝜏 ); equivalently, the pairwise average over sampled carriers converges to the double integral in Eq. ( <ref type="formula" target="#formula_18">11</ref>).</p><p>2. The empirical transition laws are pairwise plug-in consistent:</p><formula xml:id="formula_32">2 𝑛(𝑛 -1) ∑ 𝑎&lt;𝑏 |𝐷( L𝑖 𝑎 ,𝑘,𝜏 , L𝑖 𝑏 ,𝑘,𝜏 ) -𝐷(𝐿 𝜉 𝑖 𝑎 ,𝑘,𝜏 , 𝐿 𝜉 𝑖 𝑏 ,𝑘,𝜏 )| 𝑝 -→ 0.</formula><p>This condition is implied, for example, by uniform convergence of the empirical transition laws and continuity of 𝐷 on the relevant set of limits.</p><p>3. The pooled-null baseline vanishes asymptotically:</p><formula xml:id="formula_33">Ĥ0 𝑘 𝑝 -→ 0.</formula><p>More generally, if a finite-sample target with a nonzero pooled bias is used, the same statement holds with that finite-sample target replacing 𝐻 𝜉 𝑘,𝜏 .</p><p>4. The preprocessing map 𝜙 is continuous at</p><formula xml:id="formula_34">𝐻 𝜉 𝑘,𝜏 . Then MSPD 𝜏 𝑝 -→ MSPD win 𝜉,𝜏 .<label>(21)</label></formula><p>Proposition 2 (windowed target as an approximation to pathwise MSPD). Let ℎ 𝜉 ∈ 𝐿 2 ([0, 𝑇 ]) be the preprocessed pathwise heterogeneity trace. Define the continuous pathwise functional</p><formula xml:id="formula_35">ℳ(ℎ 𝜉 ) = ∫ ‖𝜕 log 𝑟 𝒜 𝑟 ℎ 𝜉 ‖ 2 2,𝑡</formula><p>‖𝒜 𝑟 ℎ 𝜉 ‖ 2 2,𝑡 + 𝜂 2 𝑞(𝑑 log 𝑟). Consider a sequence of window grids whose maximal window diameter tends to zero and finite transition resolutions for which the population windowed traces satisfy max</p><formula xml:id="formula_36">𝑘 |ℎ ⋆ 𝑘,𝜏 - 1 |𝐼 𝑘 | ∫ 𝐼 𝑘 ℎ 𝜉 (𝑢) 𝑑𝑢| ⟶ 0. (<label>22</label></formula><formula xml:id="formula_37">)</formula><p>Assume also that the scale grids and discrete coarse-graining operators defining 𝔐 ℛ converge to the continuous coarse-graining family and logarithmic scale derivative used in ℳ.</p><formula xml:id="formula_38">Then MSPD win 𝜉,𝜏 ⟶ ℳ(ℎ 𝜉 ) = MSPD[ℎ 𝜉 ]. (<label>23</label></formula><formula xml:id="formula_39">)</formula><p>Proposition 1 is a statistical statement: finite empirical transition laws estimate the finite-resolution windowed target. Proposition 2 is a deterministic approximation statement: under local stationarity and grid refinement, the windowed target approaches the pathwise MSPD functional. Together they justify the empirical score as an approximation to the theoretical pathwise MSPD under the stated conditions.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="3.7">Scope</head><p>MSPD measures the temporal multiscale organization of heterogeneity in local transition laws. It is defined after specifying the configuration process, the sampling measure over local degrees of freedom, the distance between transition laws, and the evaluation protocol. These choices determine the dynamical observable whose complexity is measured. The method does not assign a universal complexity to arbitrary processes; it measures one aspect of dynamical complexity for systems in which local transition laws are meaningful objects of analysis.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4">Experiments</head><p>This section evaluates MSPD as an empirical instrument for measuring temporally organized heterogeneity in local transition dynamics. The experiments are designed to separate this target from two simpler alternatives: visual novelty and raw motion magnitude. We first specify the substrates and shared evaluation protocol, then report each claim in a self-contained form, with the tested object, control construction, statistic, result, and interpretation stated locally.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Claim Scientific claim</head><p>Operational test Reported statistic Figure <ref type="figure">N0</ref> MSPD should reproduce the obvious complexity ordering on basic synthetic examples: simulations with minimal organized spatial or temporal structure should receive lower scores than simulations with more structured spatial or temporal dynamics.</p><p>We evaluate MSPD on synthetic families selected to cover three basic regimes: low-complexity negative controls, spatial organization through persistent local roles, and temporal organization where the relevant structure changes over time.</p><p>Family-level MSPD, processed Δ𝐻, event localization, and role-recovery scores against the known synthetic labels.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Figs. 2, 3</head><p>C1 MSPD-optimized parameters produce higher held-out complexity scores than matched random parameters from the same substrate.</p><p>For each substrate, we compare optimized checkpoints with random checkpoints sampled from the same parameterization, using the same post-hoc MSPD evaluation protocol and disjoint selection/evaluation windows.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Δ 𝐶1</head><p>𝑠,𝑟 is the optimized score minus the median matched-random score, 𝑆 𝑠 (𝜃 opt 𝑠,𝑟 ) -median 𝑗 𝑆 𝑠 (𝜃 rand 𝑠,𝑟,𝑗 ).</p><p>Figs.</p><p>4, 5, 6, 7 C2 High-Δ𝐻 states should correspond to states with higher instability to external interventions. Saved branch states are assigned a present-time branch energy 𝐸 𝑏 , resumed under small state perturbations, and scored by the resulting future divergence 𝐵 𝑏 . Pooled correlation between 𝐸 𝑏 and 𝐵 𝑏 , plus within-source-trajectory correlations that test whether the association remains after removing trajectory-level effects. Figs. 8, 9</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>C5</head><p>Higher MSPD corresponds to stronger scale-dependent frustration: high-complexity systems exhibit larger differences between the dynamics expressed at different spatial extents.</p><p>For each checkpoint, we run three matched rollouts: an unconstrained same-seed rollout, an unconstrained different-seed rollout, and a same-seed rollout with an early spatial constraint. After the constraint is released, we compare the post-release states to measure the excess effect of the constrained history relative to ordinary seed-to-seed variation.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Δ 𝐶5</head><p>𝑠,𝑟 is the optimized intervention score minus the median matchedrandom intervention score; 𝐹 𝑠 subtracts ordinary seed-to-seed variability from the intervention effect.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Figs. 10, 11</head><p>Table <ref type="table">1</ref>: Claim-level organization of Section 4. The table separates each scientific claim from the operational test used to evaluate it. C1 and C5 use independent matched optimization groups as statistical units. C2 uses branch states as observations and source trajectories as robustness units for the within-trajectory analysis. Scale separation, biodiversity, and NN-OEE transfer are not claims in this section.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.1">Substrates, optimized objects and local transition laws</head><p>The same MSPD construction is applied to different substrates by changing only the local carrier and the empirical local transition law. Table <ref type="table">2</ref> gives the object optimized or selected in each substrate; the paragraphs below define the observable used by the estimator and the optimization object used in C1. Appendix C gives the exact optimization, random-control and post-hoc evaluation protocols.</p><p>Substrate Optimized or selected object 𝜃 Evaluation object used by MSPD Life-like CA 18-bit totalistic birth/survival rule Categorical law of local before-after neighborhood events Flow-Lenia Rule vector controlling routed kernels, growth/gating and transport in Φ 𝜃 Empirical laws of finite-time displacements of passive mass probes Particle Life++ Neural pair-interaction weights in 𝑓 𝜃 (𝑐 𝑖 , 𝑐 𝑗 ) Empirical laws of finite-time particle displacements</p><p>Table 2: Substrate-specific measurement objects. The optimized parameter is not always the same kind of object: it is a discrete rule for CA, a continuous rule vector for Flow-Lenia, and neural interaction weights for Particle Life++. The reported MSPD score is always computed post-hoc from empirical local transition laws.</p><p>Life-like cellular automata. A Life-like cellular automaton is simulated on a periodic lattice Λ with alphabet 𝐴 = {0, 1} and Moore neighborhood 𝐵 = {-1, 0, 1} 2 :</p><formula xml:id="formula_40">𝑥 𝑡 ∈ 𝐴 Λ , 𝑥 𝑡+1 (𝑖) = 𝑓 𝜃 (𝑥 𝑡 | 𝑖+𝐵 ).</formula><p>The selected object 𝜃 is the 18-bit totalistic rule code. For C1, the optimization protocol is an exhaustive sweep over the same 2 18 Life-like rule space; the reported optimized rule is the top MSPD rule from this sweep, and matched controls are random rules drawn from the same space. Since there is no velocity variable, the local transition event is categorical,</p><formula xml:id="formula_41">𝑎 𝑡 (𝑖) = (𝑥 𝑡 | 𝑖+𝐵 , 𝑥 𝑡+1 (𝑖)) ∈ 𝐴 𝐵 × 𝐴,</formula><p>and the empirical local transition law in window 𝐼 𝑘 is</p><formula xml:id="formula_42">T𝑖 (𝐼 𝑘 )(𝑎) = 1 |𝐼 𝑘 | ∑ 𝑡∈𝐼 𝑘 1[𝑎 𝑡 (𝑖) = 𝑎].</formula><p>Only sites active within the local neighborhood during the window are weighted in sparse boards. This prevents empty background from dominating the transition-law average. In the MSPD notation, this corresponds to choosing the spatial averaging measure 𝜇 𝑤 as the normalized counting measure on the window-active support,</p><formula xml:id="formula_43">𝐴 𝑤 = {𝑥 ∶ the local neighborhood of 𝑥 is active at least once during window 𝑤}, 𝜇 𝑤 (𝑥) = 1𝑥 ∈ 𝐴 𝑤 |𝐴 𝑤 | .</formula><p>Thus the reported MSPD average is not taken with respect to the uniform measure over the full board, but with respect to the empirical active-support measure induced by the current window.</p><p>Flow-Lenia. Flow-Lenia is a mass-conserving continuous cellular automaton: its state is stored as fields on a periodic grid, while pattern motion is produced by reintegrating transported mass through a flow induced by the rule. We represent the state by an activity or mass field and an internal channel field,</p><formula xml:id="formula_44">𝐴 𝑡 ∶ Ω → ℝ 𝐶 ≥0 , 𝑃 𝑡 ∶ Ω → ℝ 𝐾 ,</formula><p>where 𝐴 𝑡 is the transported material and 𝑃 𝑡 stores the internal state carried with that material. For a decoded rule 𝜃, one update is written as the following composition:</p><formula xml:id="formula_45">𝑅 𝑡 = 𝐾 𝜃 *</formula><p>𝐴 𝑡 , 𝑈 𝑡 = Γ 𝜃 (𝑅 𝑡 , 𝐴 𝑡 , 𝑃 𝑡 ), 𝐹 𝑡 = 𝒢 𝜃 (𝑈 𝑡 , 𝐴 𝑡 , 𝑃 𝑡 ), 𝐴 𝑡+1 = ℛ 𝐴 (𝐴 𝑡 ; 𝐹 𝑡 ), 𝑃 𝑡+1 = ℛ 𝑃 (𝑃 𝑡 , 𝑈 𝑡 ; 𝐹 𝑡 , 𝐴 𝑡+1 ). Here 𝐾 𝜃 * 𝐴 𝑡 denotes the routed convolutional responses, Γ 𝜃 is the pointwise growth/gating computation that produces the local update signal 𝑈 𝑡 , 𝒢 𝜃 converts this signal into the transport field 𝐹 𝑡 ∶ Ω → ℝ 2×𝐶 , and ℛ 𝐴 , ℛ 𝑃 are the reintegration operators that move the mass field and the carried internal field through this transport. Equivalently, the composition defines the one-step map (𝐴 𝑡+1 , 𝑃 𝑡+1 , 𝐹 𝑡 ) = Φ 𝜃 (𝐴 𝑡 , 𝑃 𝑡 ). A checkpoint is the flattened rule vector 𝜃. After decoding, 𝜃 specifies the routed convolution kernels, growth parameters, gating parameters, flow construction and reintegration rule used in the update. 𝜃 is optimized by Sep-CMA-ES; candidate rules are scored during search by a lower-budget Lagrangian MSPD estimate, and the reported score is recomputed post hoc from reusable higher-resolution rollouts. Appendix B gives the algorithmic form of this update. MSPD is evaluated on Lagrangian tracer trajectories logged during the Flow-Lenia rollout. Tracer positions 𝑞 𝑎 (𝑡) are initialized from the mass field and advanced after each Flow-Lenia step by the same reintegration-tracking machinery used by the substrate; see Appendix B for the implementation-level update, (𝑞 𝑎 (𝑡 + 1), 𝑐 𝑎 (𝑡 + 1)) = 𝒯 RT (𝑞 𝑎 (𝑡), 𝑐 𝑎 (𝑡); 𝐴 𝑡+1 , 𝐹 𝑡 , 𝜂 𝑎 (𝑡)), where 𝑐 𝑎 (𝑡) is the optional tracer channel and 𝜂 𝑎 (𝑡) denotes the injected RT noise. The saved coordinates define the local empirical law used by MSPD: V𝑎 (𝐼 𝑘 , 𝜏 ) = 1 |𝐼 𝑘,𝜏 | ∑ 𝑡∈𝐼 𝑘,𝜏 𝛿 Δ Ω (𝑞 𝑎 (𝑡),𝑞 𝑎 (𝑡+𝜏))</p><p>.</p><p>Thus Flow-Lenia MSPD measures heterogeneity in finite-lag transported-mass motion.</p><p>Particle Life++. Particle Life++ is a neural pair-interaction particle system on a toroidal substrate with state</p><formula xml:id="formula_46">𝑆 𝑛 = {(𝑥 𝑛 𝑖 , 𝑣 𝑛 𝑖 , 𝑐 𝑛 𝑖 )} 𝑁 𝑖=1 , 𝑥 𝑛 𝑖 ∈ [0, 𝐿] 2 , 𝑣 𝑛 𝑖 ∈ ℝ 2 , 𝑐 𝑛 𝑖 ∈ 𝑆 𝐾-1 .</formula><p>For an ordered pair (𝑖, 𝑗), the network 𝑓 𝜃 maps colors to an interaction strength and a color 𝑐 𝑖 update,</p><formula xml:id="formula_47">(𝛼 𝑖𝑗 , 𝑔 𝑖𝑗 ) = 𝑓 𝜃 (𝑐 𝑖 , 𝑐 𝑗 ).</formula><p>With minimal-image displacement 𝛿 𝑖𝑗 , distance 𝜌 𝑖𝑗 = ‖𝛿 𝑖𝑗 ‖ 2 , direction 𝑒 𝑖𝑗 = 𝛿 𝑖𝑗 /(𝜌 𝑖𝑗 + 𝜖), interaction radius 𝑟 max , and repulsion boundary 𝛽, the pairwise network output is converted into a force contribution and a color-change contribution, 𝐹 𝑖𝑗 = 𝑟 max Φ(𝜌 𝑖𝑗 /𝑟 max ; 𝛼 𝑖𝑗 , 𝛽)𝑒 𝑖𝑗 , Δ𝑐 𝑖𝑗 = 𝑔 𝑖𝑗 max(0, 1 -𝜌 𝑖𝑗 /𝑟 max ).</p><p>Here 𝐹 𝑖𝑗 is the contribution of particle 𝑗 to the mechanical force acting on particle 𝑖, and Δ𝑐 𝑖𝑗 is the corresponding contribution to the color update of particle 𝑖. These pairwise terms are accumulated as</p><formula xml:id="formula_48">𝐹 𝑖 = ∑ 𝑗≠𝑖 𝐹 𝑖𝑗 , ċ𝑖 = ∑ 𝑗≠𝑖 Δ𝑐 𝑖𝑗 .</formula><p>With timestep Δ𝑡, particle mass 𝑚, and damping half-life ℎ, the state update is</p><formula xml:id="formula_49">𝑣 𝑛+1 𝑖 = 2 -Δ𝑡/ℎ 𝑣 𝑛 𝑖 + Δ𝑡 𝑚 𝐹 𝑛 𝑖 , 𝑥 𝑛+1 𝑖 = wrap [0,𝐿] 2 (𝑥 𝑛 𝑖 + Δ𝑡 𝑣 𝑛+1 𝑖 ) , 𝑐 𝑛+1 𝑖 = normalize(𝑐 𝑛 𝑖 + Δ𝑡 ċ𝑛 𝑖 )</formula><p>. Particle identities are the local carriers, and MSPD uses empirical laws of finite-time particle displacements. Appendix B gives the algorithmic substrate specification. The optimized object is the neuralnetwork parameter vector 𝜃 in 𝑓 𝜃 .</p><p>Random neural weights in this substrate often settle into low-motion stationary basins: forces cancel or are damped before sustained relative motion develops. In that regime, particles have narrow and similar displacement laws across windows, suppressing both mean heterogeneity and MSPD. 𝜃 is optimized by Sep-CMA-ES. The optimization-time objective includes a nonzero mean-heterogeneity term to leave this basin before the MSPD term selects temporally structured regimes. The reported score is a post-hoc MSPD score evaluated by the same protocol for optimized checkpoints and random controls.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.2">Shared evaluation choices</head><p>The experiments use matched controls because MSPD scales depend on the substrate, rollout budget and local transition representation. For substrate 𝑠 and independent group 𝑟, the optimized checkpoint is 𝜃 opt 𝑠,𝑟 and the matched random controls are 𝜃 rand 𝑠,𝑟,1 , … , 𝜃 rand 𝑠,𝑟,𝐽 .</p><p>A matched random control is sampled from the same optimization initialization distribution used by the optimizer but is not selected by the optimization objective. The comparison therefore asks whether the optimization procedure found a higher-MSPD region of the same parameter space, rather than whether one substrate has larger raw MSPD than another.</p><p>For Flow-Lenia and Particle Life++, the optimization-time estimator is lower budget than the reported estimator. All C1 claims use a fixed post-hoc protocol:</p><formula xml:id="formula_50">𝑆(𝜃) = MSPD(𝜃).</formula><p>When a lag grid is used, lag selection is performed on even-indexed metric windows and the selected lag is scored on odd-indexed held-out windows:</p><formula xml:id="formula_51">𝜏 ⋆ (𝜃) = arg max 𝜏∈𝒯 𝑆 select (𝜃, 𝜏 ), 𝑆(𝜃) = 𝑆 eval (𝜃, 𝜏 ⋆ (𝜃)).</formula><p>This split is interleaved rather than early/late because ALife rollouts are nonstationary. A prefix/suffix split would often compare transient assembly against late stationary behavior and would make selection and evaluation measure different regimes. Alternating windows keep both splits distributed across the same temporal phases while still preventing the selected lag from being evaluated on the exact windows that selected it.</p><p>C2 and C5 require distances between future rollouts. Direct pixel-space distances are a poor default for this purpose because they compare synchronized arrays rather than simulation regimes. A coherent object translated from one corner of the frame to another can dominate pixel MSE even when the qualitative regime is unchanged; conversely, two independent gaussian noise renderings can have large pixel-wise discrepancy while representing the same visually homogeneous regime. This is the same failure mode that motivates learned perceptual distances in image comparison: deep visual features have been shown to correlate better with human perceptual similarity than shallow pixel-level metrics such as PSNR or SSIM <ref type="bibr" target="#b27">[28]</ref>, and more recent metrics explicitly target holistic human similarity judgments beyond local pixel or patch agreement <ref type="bibr" target="#b4">[5]</ref>.</p><p>We therefore use a fixed image encoder as a pragmatic representation-space readout for future-rollout separation, following the foundation-model evaluation practice of ASAL <ref type="bibr" target="#b9">[10]</ref>. The encoder is not used to define MSPD and is not part of the optimization objective.</p><p>It is used only after rollouts have been generated, to quantify whether two future continuations occupy similar or different rendered outcome regimes. The exact encoder backend and preprocessing are specified in Appendix . For a rendered frame 𝑅 𝑎 (𝑡) from rollout 𝑎, we compute the normalized feature 𝑧 𝑎 (𝑡) = 𝑓(𝑅 𝑎 (𝑡)) ‖𝑓(𝑅 𝑎 (𝑡))‖ 2 , 𝑍 𝑎 = {𝑧 𝑎 (𝑡) ∶ 𝑡 ∈ 𝑈 𝑎 }. With cosine distance 𝑑 cos (𝑢, 𝑣) = 1 -𝑢 ⊤ 𝑣, two rollout futures are compared as feature clouds by the symmetric Chamfer distance 𝑑 Ch (𝑍 𝑎 , 𝑍 𝑏 ) = 1 |𝑍 𝑎 | ∑ 𝑢∈𝑍 𝑎 min 𝑣∈𝑍 𝑏 𝑑 cos (𝑢, 𝑣) + 1 |𝑍 𝑏 | ∑ 𝑣∈𝑍 𝑏 min 𝑢∈𝑍 𝑎 𝑑 cos (𝑢, 𝑣).</p><p>This choice should be read as a measurement proxy, not as a ground-truth notion of dynamical equivalence. Neural image encoders are trained on particular image distributions, and ALife renderingsespecially cellular automata or sparse particle systems-can be out of domain. In such cases the feature distance may be noisier or may emphasize visual attributes that are not dynamically central. We nevertheless use this readout because C2 and C5 require a phase-tolerant distance between future rendered outcomes, and no pixel-space alternative provides a reliable comparison of translated, phase-shifted, or visually noisy simulations at the qualitative level relevant for these tests.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.3">N0: controlled synthetic calibration</head><p>Purpose. N0 checks that the finite estimator responds to transition-law structure whose ground truth is known. The test separates raw motion, stationary role heterogeneity, temporally extended transitions and split events before the estimator is applied to optimized ALife systems.</p><p>Each synthetic rollout contains particles on the torus,</p><formula xml:id="formula_52">𝑞 𝑖 (𝑡) ∈ 𝕋 2 = [0, 1) 2 , 𝑖 = 1, … , 𝑁 ,</formula><p>with shortest-periodic displacement</p><formula xml:id="formula_53">Δ 𝕋 2 (𝑞, 𝑞 ′ ) = ((𝑞 ′ -𝑞 + 1/2) mod 1) -1/2.</formula><p>For a window 𝐼 𝑘 and lag 𝜏 , the empirical transition law is</p><formula xml:id="formula_54">V𝑖,𝑘,𝜏 = 1 |𝐼 𝑘,𝜏 | ∑ 𝑡∈𝐼 𝑘,𝜏 𝛿 Δ 𝕋 2 (𝑞 𝑖 (𝑡),𝑞 𝑖 (𝑡+𝜏)) , 𝐼 𝑘,𝜏 = {𝑡 ∈ 𝐼 𝑘 ∶ 𝑡 + 𝜏 ∈ 𝐼 𝑘 }.</formula><p>MSPD is computed from the resulting windowed heterogeneity trace.</p><p>Rendered examples of the synthetic calibration families are provided in Appendix ; the N0 scores themselves are computed from particle trajectories rather than from rendered frames.</p><p>Family Generator Interpretation target Observed response S0 Static particles zero-motion null MSPD = 0 S1 Homogeneous Brownian or Gaussian motion motion without local role structure low MSPD 3.46 × 10 -5 S3 One coherent moving blob organized but locally homogeneous motion near-zero MSPD 5.45 × 10 -8 S4 Two fixed role velocities stationary heterogeneity without temporal organization high amplitude, low MSPD S5 Global synchronous velocity switch changepoint without role spread low event-localization signal S6 Staggered switch times temporally extended heterogeneity event error 0, high MSPD S7 Multi-scale moving blobs scale calibration selected lag in expected range S8 Blob splitting into moving groups split event plus role emergence event error 0, largest MSPD</p><p>Table 3: Synthetic calibration families. The suite includes null controls, stationary heterogeneity controls and time-localized transition generators, so a high score cannot be attributed merely to motion or to a constant mixture of roles.  Result and interpretation. The synthetic results separate three quantities that can otherwise be confused: visible motion, the average level of local heterogeneity measured by processed Δ𝐻, and MSPD as temporal organization of that heterogeneity trace.</p><p>S0 is the zero-motion null case. All displacement laws collapse to the same point mass, so both processed Δ𝐻 and MSPD are zero up to numerical precision.</p><p>S1 contains motion but no organized difference between particle roles. The stochastic motion creates finite-window fluctuations in processed Δ𝐻, but the heterogeneity trace has no structured temporal organization and therefore gives a low MSPD score.</p><p>S3 is a coherent moving blob. It is visually organized, but the particles move with nearly the same local transition law; both processed Δ𝐻 and MSPD remain near zero. This is the negative control showing that coherent object motion is not by itself complexity for MSPD.</p><p>S4 plants stationary role heterogeneity. Different particles have persistently different transition laws, so the processed Δ𝐻 amplitude is high. The MSPD score is much smaller because the role structure is essentially stationary across windows; this separates mean heterogeneity from temporally organized complexity.</p><p>S5 plants a synchronous global switch. The system changes over time, but the change is shared by nearly all particles at once, so the windowed local transition laws remain nearly homogeneous and the MSPD response is low. This is a resolution-dependent failure case for detecting fast synchronous transitions: MSPD is only sensitive to temporal structure that is resolved by the chosen window and lag grid. Reducing the window length would make the estimator more sensitive to short events, but it would also reduce the number of displacement samples used to estimate each Δ𝐻 𝑘,𝜏 , making the heterogeneity trace and the resulting MSPD score more stochastic. For such fast events, the appropriate remedy is to increase the temporal resolution of the logged trajectory, so that shorter physical windows can be used while retaining enough samples for stable Δ𝐻 estimation.</p><p>S6 uses staggered transition times. The transition is spread across particles and windows, so local transition laws differ in a temporally extended way. This produces both visible Δ𝐻 event structure and a high MSPD score.</p><p>S7 contains multi-scale moving groups. It gives the largest processed Δ𝐻 amplitude because persistent groups have clearly different transition laws, but its MSPD is lower than S8 because much of this organization is stable rather than reorganizing over time.</p><p>S8 combines a split event with role emergence. The system starts from a coherent object and then separates into multiple groups with different motion regimes; this produces the largest MSPD score even though its mean Δ𝐻 amplitude is below S7. The case illustrates the intended distinction: MSPD rewards temporally organized changes in local heterogeneity, not simply the largest average heterogeneity.</p><p>Taken together, N0 shows that the finite estimator behaves as intended on basic cases. MSPD remains low for static dynamics, homogeneous motion, coherent common motion, and mostly global changes. It increases when heterogeneity is organized across time through staggered transitions, split events, or evolving role structure. In this sense, "complexity" in the reported MSPD score means multiscale temporal organization of local transition-law heterogeneity, not raw motion magnitude, visual novelty, or the average Δ𝐻 level alone.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.4">C1: optimization against matched random controls</head><p>Purpose. C1 tests whether optimizing the MSPD objective produces checkpoints with larger held-out MSPD than matched random controls from the same substrate parameterization. The comparison is within substrate and within matched group.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Statistic.</head><p>For substrate 𝑠 and independent group 𝑟, Δ 𝐶1 𝑠,𝑟 = 𝑆 𝑠 (𝜃 opt 𝑠,𝑟 ) -median 𝑗 𝑆 𝑠 (𝜃 rand 𝑠,𝑟,𝑗 ).</p><p>The reported evidence is the number of positive matched groups, the median contrast and an exact one-sided sign test over matched groups. The sign test is used because the number of independent optimization groups is small and no normal approximation is required. Life-like CA. The CA experiment evaluates the selected high-MSPD rules against random rules using the same categorical transition-law MSPD score. The selected rules are separated from random controls, confirming that the estimator can be optimized in a substrate without a velocity variable. This result should be interpreted relative to the evaluation distribution: MSPD is measured over rollouts generated from the specified initialization protocol, not over all possible configurations of a rule. Consequently, even computationally universal systems such as Life need not have high MSPD under a given initialization ensemble; the score reflects the complexity expressed by typical sampled rollouts, rather than the maximal behavior that the rule can realize under carefully constructed initial conditions. Flow-Lenia. The Flow-Lenia contrast is positive in most groups but is not statistically confirmed under the current optimization protocol. This is a statement about the present finite-budget optimization and evaluation protocol, not a negative result about the existence of high-MSPD Flow-Lenia parameters.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Substrate</head><p>The likely limiting factor is noisy rollout-level candidate evaluation during optimization. In a complex stochastic substrate such as Flow-Lenia, MSPD requires a more precise trajectory-level estimate: increasing the number of independent rollouts or tracer-trajectory samples per candidate would reduce evaluation noise and make the optimization signal less dependent on a single rollout realization. Under the present budget, the held-out post-hoc comparison does not give enough matched-group evidence for C1 in Flow-Lenia. Particle Life++. Particle Life++ gives a statistically confirmed optimized-vs-random MSPD increase. This large contrast is also mechanistically interpretable. Many random neural interaction networks enter low-motion stationary regimes after damping, which makes particle displacement laws narrow and similar across windows. Optimized checkpoints leave this basin and maintain moving particle groups with different interaction histories. The measured increase is therefore both a post-hoc MSPD increase and a contrast against a random-weight baseline with a strong stationary attractor. Lag selection audit. Flow-Lenia and Particle Life++ use the same post-hoc lag-selection protocol.</p><p>For every optimized checkpoint and matched random control, candidate lags are scored on selection windows, and the reported MSPD is evaluated on disjoint held-out evaluation windows at the selected lag. The same lag grid, selection windows, evaluation windows, and selection rule are applied to optimized and random checkpoints, so the paired contrasts compare systems under the same right to choose 𝜏 rather than under a lag fixed only for one substrate. </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.5">C2: local heterogeneity and future perturbation sensitivity</head><p>Purpose. C2 tests a state-level interpretation of Δ𝐻. It asks whether a saved state with larger presenttime local transition heterogeneity has futures that separate more strongly after a small substrate-specific state perturbation.</p><p>Design. A branch state 𝑏 = (𝑖, 𝑡) is a saved state from source trajectory 𝑖 at branch time 𝑡. Its present-time score is the branch energy</p><formula xml:id="formula_55">𝐸 𝑏 = 1 |𝒯 adm | ∑ 𝜏∈𝒯 adm 𝜙(Δ𝐻(𝑤 𝑏 , 𝜏 )),</formula><p>where 𝑤 𝑏 is the window containing 𝑏, 𝒯 adm is the admissible lag set, and 𝜙 is the nonnegative preprocessing used by the MSPD pipeline. The same state is copied into 𝑀 continuations and each copy is modified by a small perturbation that is native to the substrate state space: bit flips for cellular automata and Gaussian state/tracer noise for Flow-Lenia. The perturbed copies are then resumed under the same simulator and the same parameter vector 𝜃, 𝑌 𝑏,1 , … , 𝑌 𝑏,𝑀 .</p><p>Future sensitivity is 𝐵 𝑏 = median 𝑝&lt;𝑞 𝑑 out (𝑌 𝑏,𝑝 , 𝑌 𝑏,𝑞 ).</p><p>The branch sampler covers low, middle and high quantiles of 𝐸 𝑏 within each source trajectory. These labels are sampling strata only; the reported statistics use the continuous values of 𝐸 𝑏 and 𝐵 𝑏 .</p><p>Statistic. The pooled readout is Pearson and Spearman correlation over sampled branch states. To test that the signal is not only a between-trajectory effect, we also compute within-trajectory correlations 𝜌 𝑖 = Spearman 𝑡 (𝐸 𝑖,𝑡 , 𝐵 𝑖,𝑡 )</p><p>for each source trajectory 𝑖. The source trajectory, not the individual branch state, is the aggregation unit for this robustness check.</p><p>Cellular automata. For CA, 𝐸 𝑏 is computed from categorical transition-law Δ𝐻. A branch state is the saved binary board 𝑥 𝑡 at the selected branch time. For each continuation 𝑚 = 1, … , 𝑀 , we draw a subset 𝑆 𝑚 ⊂ Λ of lattice sites uniformly without replacement and flip those sites before resuming the same Life-like rule:</p><formula xml:id="formula_56">𝑥 (𝑚) 𝑡 (𝑢) = { 1 -𝑥 𝑡 (𝑢), 𝑢 ∈ 𝑆 𝑚 , 𝑥 𝑡 (𝑢), 𝑢 ∉ 𝑆 𝑚 .</formula><p>The subset size is fixed as a small fraction of the board; the numerical value used in the reported experiment is given in Appendix . Each perturbed board is then evolved forward with the same rule and the same boundary convention. The future distance between two continuations is computed in the same binary-state geometry used for the CA transition-law setting: normalized Hamming distance between the resumed boards, aggregated over the continuation horizon,</p><formula xml:id="formula_57">𝑑 CA (𝑌 𝑝 , 𝑌 𝑞 ) = 1 𝐻 𝐻 ∑ ℎ=1 1 |Λ| ∑ 𝑢∈Λ 1[𝑥 (𝑝) 𝑡+ℎ (𝑢) ≠ 𝑥 (𝑞) 𝑡+ℎ (𝑢)] .</formula><p>The branch sensitivity score is the median pairwise continuation distance, 𝐵 𝑏 = median 𝑝&lt;𝑞 𝑑 CA (𝑌 𝑝 , 𝑌 𝑞 ).</p><p>This gives a discrete-substrate C2 check: branch states with larger categorical transition-law heterogeneity are tested for larger future divergence under small bit-level changes to the current board. Flow-Lenia. Flow-Lenia provides the quantitative C2 test. For a branch state 𝑏 = (𝑖, 𝑡), 𝑠 𝑏 = (𝐴 𝑏 , 𝑃 𝑏 , 𝑞 𝑏 , 𝑐 𝑏 , rng 𝑏 ), each continuation is generated by copying 𝑠 𝑏 , adding independent state-level noise, and resuming the same decoded rule 𝜃: 𝐴 (𝑚) 𝑏 = max{0, 𝐴 𝑏 + 𝜖 (𝑚) 𝐴 }, 𝜖 (𝑚) 𝐴 ∼ 𝒩(0, 𝜎 2 𝐴 ), 𝑃 (𝑚) 𝑏 = 𝑃 𝑏 + 𝜖 (𝑚) 𝑃 , 𝜖 (𝑚) 𝑃 ∼ 𝒩(0, 𝜎 2 𝑃 ), 𝑞 (𝑚) 𝑏 = 𝐵 Ω (𝑞 𝑏 + 𝜖 (𝑚) 𝑞 ), 𝜖 (𝑚) 𝑞</p><p>∼ 𝒩(0, 𝜎 2 𝑞 ). Here 𝐵 Ω is the tracker boundary rule, 𝑞 𝑏 denotes the Lagrangian tracer coordinates, and 𝑚 = 1, … , 𝑀 indexes independent continuations. The tracer channel state 𝑐 𝑏 and the decoded rule 𝜃 are kept fixed; only the current simulator state and branch RNG realization differ across continuations. The outcome distance is the CLIP-Chamfer distance between future rendered-frame feature clouds.</p><p>Branch states are sampled within each source trajectory from three branch-energy strata. The labels low, mid and high refer to low, middle and high quantiles of 𝐸 𝑏 inside the same source trajectory; they are used only to cover the energy range during sampling. All reported C2 statistics use the continuous values of 𝐸 𝑏 and 𝐵 𝑏 , not the stratum labels. Appendix gives the numerical noise scales, quantile thresholds, branch counts and a visualization of the selected branch points.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Interpretation and boundary.</head><p>The CA experiment is a discrete-substrate check of the same C2 logic. It uses categorical transition-law Δ𝐻, bit-level changes to the saved board, and Hamming future divergence. The positive trend in Fig. <ref type="figure" target="#fig_7">8</ref> indicates that branch states with larger categorical transitionlaw heterogeneity tend to produce larger divergence after small changes to the current board. This shows that the C2 readout is not specific to continuous Flow-Lenia fields or to a neural image-distance metric.</p><p>Flow-Lenia provides the main quantitative C2 evidence. The pooled branch-state association is positive, with Pearson 𝑟 = 0.540 and Spearman 𝑟 = 0.618 over 𝑛 = 135 branch states. The within-trajectory analysis gives the stronger state-level check: within-trajectory Spearman correlation is positive in 8/9 source trajectories, with median 𝜌 𝑖 = 0.289 and mean 0.290; within-trajectory Pearson correlation is positive in 9/9, with median 𝑟 𝑖 = 0.266 and mean 0.318.</p><p>Together, these results support the interpretation that Δ𝐻 marks branch-sensitive states within fixed rollouts, not only globally unstable source trajectories. The effect size is moderate and the number of independent Flow-Lenia source trajectories is limited. The claim is therefore a state-level association under the specified substrate-specific branching and future-distance protocols, not a universal causal statement about all state changes or all Flow-Lenia regimes. </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.6">C5: blockwise frustration and history dependence</head><p>Purpose. C5 tests whether optimized systems depend on early spatial co-development. The intervention is designed to disrupt early spatial integration while keeping the checkpoint 𝜃 fixed. Late futures are compared after the intervention has been released, so the measurement is not merely the immediate damage caused by inserting walls or shuffling cells.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Design.</head><p>For each checkpoint 𝜃, three rollout variants are generated: 𝐴 𝜃 = same-seed free rollout, 𝐶 𝜃 = different-seed free rollout, 𝑊 𝜃 = same-seed early-intervention rollout.</p><p>The intervention implementation is substrate-specific: Flow-Lenia uses isolated spatial blocks during the early phase, whereas Particle Life++ uses a cell-shuffle intervention after warmup. Both implementations instantiate the same abstract intervention: disrupt large-scale spatial co-organization without changing 𝜃.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Statistic. The checkpoint-level anchored frustration score is</head><p>𝐹 𝑠 (𝜃) = 𝑑 𝑠 (𝐴 𝜃 , 𝑊 𝜃 ) -𝑑 𝑠 (𝐴 𝜃 , 𝐶 𝜃 ).</p><p>The first term measures the effect of the early intervention; the second term estimates ordinary seed-toseed variability for the same checkpoint. The matched optimization contrast is Δ 𝐶5 𝑠,𝑟 = 𝐹 𝑠 (𝜃 opt 𝑠,𝑟 ) -median 𝑗 𝐹 𝑠 (𝜃 rand 𝑠,𝑟,𝑗 ). A positive value means that optimized checkpoints show larger intervention-minus-seed effects than matched random controls. Flow-Lenia. The Flow-Lenia intervention prevents mass and internal channels from communicating across a 3 × 3 spatial partition during the early phase, then releases the assembled block states into the normal global dynamics. This tests whether the late behavior depends on early cross-region codevelopment. The result is positive in 7/9 matched groups with median contrast 0.00506 and one-sided sign-test value 𝑝 = 0.0898. Particle Life++. Particle Life++ uses a cell-shuffle intervention rather than walls because particles are not arranged on a fixed spatial field. After a free warmup, the plane is divided into cells and the cell arrangement is permuted while preserving within-cell coordinates and velocities. This disrupts largescale spatial organization without injecting a direct velocity kick. The result is positive in 6/7 matched groups with median contrast 0.00477 and one-sided sign-test value 𝑝 = 0.0625. </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Substrate</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="4.7">Section-level conclusion</head><p>The experiments support a narrow but coherent interpretation. The synthetic suite validates that MSPD responds to temporally organized local heterogeneity. C1 shows that the score is optimizable in CA and Particle Life++ under the reported protocols, while the current Flow-Lenia optimization is directionally positive but not statistically confirmed. C2 shows that high-Δ𝐻 Flow-Lenia branch states have more separated perturbed futures, including within source trajectories. C5 shows directionally consistent history-dependence effects in Flow-Lenia and Particle Life++, but the matched-group counts are small and the evidence should be treated as underpowered rather than conclusive.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5">Discussion</head><p>5.1 Scale-dependent frustration as a physical signature. The C5 finding -that MSPD-optimised systems exhibit a larger intervention-based gap between constrained and unconstrained dynamics than matched random controls -gives the frustration / non-ergodicity criterion of Vanchurin et al. <ref type="bibr" target="#b22">[23]</ref> a directly measurable operationalisation in ALife substrates. In the spin-glass framing of Laughlin et al. <ref type="bibr" target="#b10">[11,</ref><ref type="bibr" target="#b11">12]</ref> and Wolf et al. <ref type="bibr" target="#b25">[26]</ref>, frustration manifests as competing local minima whose effective dynamics depend on the spatial extent over which the system is allowed to relax. The constrained-rollout protocol exposes exactly this: under an early spatial constraint, optimised systems explore a noticeably different region of state space than they would unconstrained, while random controls do not. MSPD thus picks up frustration as a downstream consequence of selecting for multiscale dynamic organization, rather than as an explicitly optimised target.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5.2">Implications for OEE objective design.</head><p>A practical consequence of C5 is that MSPD provides a single, explicit fitness function that produces systems satisfying physical life criteria (including frustration) without being asked to. This is the property that distinguishes MSPD from black-box drivers such as ASAL <ref type="bibr" target="#b9">[10]</ref> or Leniabreeder <ref type="bibr" target="#b3">[4]</ref>: the latter expand the space of patterns a simulation produces via learned embeddings, but the connection to physical theories of complexity remains implicit. Multiobjective evolution that combines MSPD with a complementary snapshot-structural metric is a natural next step and may dominate either driver alone, but we leave that comparison to future work.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5.3">ALife substrates and internal degrees of freedom.</head><p>The cross-substrate transfer of C1/C2/C5 (C6) requires only that the substrate exposes meaningful local transition laws -either as categorical rule events (Life-CA) or as displacement distributions (Flow-Lenia, Particle Life++). Substrates whose local transition laws collapse to a single nearly-deterministic atom across all sites, such as Particle Life++ in the zero-motion basin, give MSPD near zero by construction; this is the expected behaviour and gives the metric a built-in null. The decomposition is most informative in substrates with internal degrees of freedom (state, type, memory) that let local transition laws differ meaningfully between carriers.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="5.4">What Δ𝐻 does and does not signal.</head><p>A locally elevated Δ𝐻 -high relative to neighbouring windows of the same rollout -is best read as a detector that the system is passing through a change in its dynamics, not as a criterion that pins down which change is occurring. The detector logic is straightforward: when a rollout crosses a regime boundary, some carriers will typically have already entered the new dynamical regime while others still carry the old one, and the within-window heterogeneity of their local transition laws rises correspondingly. Perturbing such a state then selects between competing late futures and yields the C2 signature.</p><p>The converse, however, does not hold. Many situations can push Δ𝐻 above the local baseline without a global regime change being responsible. One example is rare local events on a small subset of carriers -isolated collisions, brief bursts, transient role switches at finite simulation horizon -which raise the within-window heterogeneity even when the global dynamics are stationary in distribution. Other mechanisms (boundary or finite-size artifacts, heterogeneous initial conditions that have not yet relaxed, substrate-specific intermittent modes) act similarly. We do not attempt a taxonomy here; the point is only that high Δ𝐻 is a necessary condition for the C2 association, not a sufficient one.</p><p>This non-equivalence is what we observe on Particle Life++. The substrate has deep attractors: even strong injected noise relaxes back toward the pre-perturbation regime within a few windows, so the attractor structure short-circuits the future-separation channel that C2 tests. Local Δ𝐻 can still rise -the substrate produces transient mixing events that look like regime changes within a windowbut those rises are not coupled to branch divergence, because the underlying dynamics return to the same basin. We therefore treat C2 transfer to Particle Life++ as outside the present scope ( §6) and as conceptually distinct from C5 on the same substrate, which probes intervention dependence at a much longer timescale than perturbation-recovery.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="6">Limitations</head><p>Within-window stationarity. The consistency of the windowed estimator (Propositions 1-2) rests on approximate stationarity of local transition laws within each window 𝐼 𝑘 . In regimes with abrupt regime shifts -nucleation of a new structure, sudden collapse of a basin -this assumption is violated locally, and the empirical Ĥ𝑘 mixes the pre-and post-event statistics. We mitigate this with short windows relative to the dominant timescale and with the pooled-null correction, but the residual bias is not quantified and may attenuate C1 and C2 on runs that contain such transitions.</p><p>Statistical power. Our matched-random comparisons for C1 and C5 use a modest number of independent optimization runs per substrate (Section 4). For C1 the qualitative separation is detected, but fine quantitative claims -effect sizes, distributional tails of the matched-random null, substratespecific exponents -are not supported at this sample size. For C5 the contrast is directionally positive on both substrates (Flow-Lenia 7/9, 𝑝 = 0.0898; Particle Life++ 6/7, 𝑝 = 0.0625) but neither reaches conventional significance; the C5 result should therefore be read as underpowered evidence of history dependence rather than as a confirmed effect. In both cases the natural strengthening is replication with a larger matched-group ensemble, without methodological change.</p><p>Sensitivity of C5 to the intervention protocol. The scale-dependent frustration signature (C5) is measured under a particular constrained-rollout intervention: constraint geometry, perturbation magnitude, and release time are fixed by the protocol described in Section 4. Preliminary checks suggest the qualitative ordering is preserved across small variations, but a full sensitivity sweep over the intervention family is left for follow-up work.</p><p>Incomplete cross-substrate matrix (C6). The cross-substrate transfer panel set is sparse rather than complete. We report C1 on all three substrates (Flow-Lenia, Life-CA, Particle Life++), C2 on Flow-Lenia and Life-CA, and C5 on Flow-Lenia and Particle Life++. Two cells are missing: C5 on Life-CA -straightforward to add in a follow-up given the discrete-substrate intervention is simple -and C2 on Particle Life++, which is conceptually obstructed by the deep-attractor structure of the substrate ( §5.4) rather than by methodology. C6 should therefore be read as partial transfer: the MSPD construction applies uniformly across the three substrates, and each individual claim transfers to at least one non-primary substrate, but a fully populated 3 × 3 claim-substrate matrix is left to follow-up work.</p><p>Other continuous-Lagrangian substrates (Boids, Particle Lenia, neural cellular automata) carry local transition laws of the same form and are natural targets, but have not been evaluated here. Substrates without meaningful local DOFs (e.g. single-particle simulations) fall outside the scope of the metric by construction.</p><p>No direct head-to-head with NN-OEE drivers. This version of the paper does not compare MSPD-as-driver against neural-network open-endedness objectives (ASAL, Leniabreeder) on a shared task. The cleanest formulation -correlating MSPD loss with an NN-OEE loss across a matched ensemble -is deferred to a follow-up paper; preliminary runs were inconclusive at current sample size.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head n="7">Conclusion</head><p>We set out to bridge a methodological gap in artificial life: open-ended evolution is presently driven by uninterpretable, neural-network complexity metrics that cannot be connected to physical theories of life, while existing physics-grounded metrics (spatial MSSC) were limited to static patterns.</p><p>We introduced MSPD (Multi-Scale Path Divergence, 𝐷 𝑃 ), a temporal extension of MSSC that inherits its renormalization-group architecture intact: the spatial coarse-graining scale is replaced by an observation window, and cross-scale dissimilarity is computed in trajectory-distribution space rather than image space. MSPD is defined at the population level as a functional of the realised trajectory via local transition laws, with a windowed finite-resolution estimator and an explicit consistency statement (Propositions 1-2). As an explicit scalar it plays a dual role: as a gradient-free fitness function, and as a post-hoc analytical lens on any simulation that exposes local transition laws.</p><p>Empirically, MSPD-optimized parameters produce higher held-out complexity scores than matched random parameters from the same substrate (C1), and high-Δ𝐻 states correspond to states with higher instability to external interventions (C2) -the metric responds to the underlying dynamics rather than to noise. Used as a lens, MSPD reveals that optimised systems also exhibit elevated scaledependent frustration under matched constrained-rollout interventions (C5) -linking MSPD post-hoc to the frustration criterion of Vanchurin et al. <ref type="bibr" target="#b22">[23]</ref> and to the spin-glass framing of biological complexity of Wolf et al. <ref type="bibr" target="#b25">[26]</ref>, without the metric being optimised for frustration at any stage. The same protocol transfers to qualitatively different substrates: C1, C2 and C5 also hold on Life-like cellular automata and Particle Life++ (C6).</p><p>A single explicit-formula scalar therefore both directs open-ended evolution and supplies a bridge to the physics of complexity that black-box drivers do not. Three natural extensions, deferred to follow-up work, complete a research programme that this paper opens but does not exhaust: (i) a system-identified scale-separation timescale 𝜏 * , (ii) a quantitative comparison between MSPD loss and neural-network OEE losses on a shared task, and (iii) multi-objective evolution combining MSPD with a complementary snapshot-structural metric, which may dominate either driver alone.</p><p>population transition law of carrier 𝑖, and define 𝐻 𝑘 = ∬ 𝐷(𝐿 𝑖,𝑘 , 𝐿 𝑗,𝑘 ) 𝑚 𝑘 (𝑑𝑖)𝑚 𝑘 (𝑑𝑗).</p><p>Let 𝑖 1 , … , 𝑖 𝑛 be sampled carriers and let L𝑖 𝑎 ,𝑘 be empirical transition laws. Define The number of windows is finite, so the empirical trace vector converges in probability to the population windowed trace vector.</p><p>Let 𝑎 ∈ ℝ 𝐾 . The finite-grid functional has the form</p><formula xml:id="formula_58">𝔐(𝑎) = ∑ 𝐽-1 𝑗=1 𝑤 𝑗 ‖𝐶 𝑗 𝑎-𝑈 𝑗 𝐶 𝑗+1 𝑎‖ 2 2 ‖𝐶 𝑗 𝑎‖ 2 2 +𝜂 2 ∑ 𝐽-1 𝑗=1 𝑤 𝑗 ,</formula><p>where 𝐶 𝑗 and 𝑈 𝑗 are fixed linear maps, 𝑤 𝑗 &gt; 0, and 𝜂 &gt; 0. This map is continuous on ℝ 𝐾 , because every denominator is bounded below by 𝜂 2 . The continuous mapping theorem gives convergence of the empirical MSPD to the windowed population target.</p><p>Proof of Proposition 2. Let ℎ ∈ 𝐿 2 ([0, 𝑇 ]). For a window grid, let 𝑃 𝐾 ℎ denote the piecewise-window approximation whose value on each window is the average of ℎ on that window. For regular window grids with maximal diameter tending to zero,</p><formula xml:id="formula_59">𝑃 𝐾 ℎ → ℎ in 𝐿 2 ([0, 𝑇 ]).</formula><p>This is the standard convergence of local averages to the underlying 𝐿 2 function. The local-stationarity assumption in the proposition states that the population windowed trace differs from these local averages by a quantity tending uniformly to zero. Therefore the windowed trace converges to ℎ in 𝐿 2 .</p><p>The continuous pathwise MSPD is obtained by applying temporal coarse-graining, differentiating with respect to logarithmic scale, taking squared 𝐿 2 norms, adding a positive denominator floor, and integrating over temporal scales. The finite-grid functional applies discrete coarse-graining, a finite-difference approximation to the logarithmic scale derivative, and a finite quadrature over scales. By the assumed convergence of the discrete coarse-graining operators and the scale quadrature to their continuous counterparts, and by the positive denominator floor, the finite-grid MSPD of the windowed trace converges to the continuous pathwise MSPD of ℎ. This proves the deterministic approximation claim.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.5 C1 post-hoc evaluation protocols</head><p>Substrate Rollout source Metric grid and windowing Reported score CA holdout board simulations for selected and random rules categorical transition laws; active-site weighting; same board/evaluation protocol for selected and random rules transition-law MSPD Flow-Lenia reusable 500,000-step Arollouts on grid 384 with lagrangian APF chunks metric range 50,000-300,000; window 20,000; step 5,000; lag grid {500, 600, … , 15000}; 48 samples; 16 projections; six null repetitions; 64 probes choose 𝜏 ⋆ on even-indexed windows, report MSPD on odd-indexed windows Particle Life++ reusable single-trajectory lagrangian rollouts with total horizon 24,000 evaluate steps 4000-24,000; fixed 𝜏 = 25; window 100; step 50; 48 samples; 16 projections; six null repetitions; 64 particles held-out fixed-lag MSPD on oddindexed metric windows</p><p>Table 9: C1 post-hoc evaluation. The same post-hoc score is applied to optimized checkpoints and matched random controls within a substrate. The interleaved select/eval split is used whenever lag selection is nondegenerate. It is chosen because these systems are temporally nonstationary: early and late windows can represent different dynamical regimes. Interleaving prevents the selected lag from being scored on the same windows while keeping selection and evaluation distributed across comparable rollout phases.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.6 C2 branch-continuation protocols</head><p>For every branch state 𝑏, the C2 pipeline computes branch energy 𝐸 𝑏 , simulates perturbed futures, computes future divergence 𝐵 𝑏 , and then measures the association between 𝐸 𝑏 and 𝐵 𝑏 . Table <ref type="table" target="#tab_15">10</ref> gives the numerical settings. Substrate Branch sampling Perturbation and continuation Outcome distance CA 24 branch windows sampled across the saved Δ𝐻 distribution four continuations per branch; independently flip fraction 0.01 of lattice sites; resume same CA rule for 64 steps median pairwise future Hamming divergence Flow-Lenia up to nine source trajectories; candidate steps at least 50,000 with full 20,000-step future horizon; five windows from each within-trajectory energy stratum: 𝐸 ≤ 𝑄 0.2 , 𝑄 0.4 ≤ 𝐸 ≤ 𝑄 0.6 , 𝐸 ≥ 𝑄 0.8 three continuations per branch; perturb 𝐴, 𝑃 and probe positions before resuming; branch seed also seeds the perturbation RNG median pairwise CLIP-Chamfer distance between future videos One Flow-Lenia step is</p><formula xml:id="formula_60">𝑈 ℓ (𝑥) = (𝐾 ℓ * 𝐴 𝑡,𝑐 0 (ℓ) )(𝑥), 𝐺 ℓ (𝑥) = [2 exp(- (𝑈 ℓ (𝑥) -𝑚 ℓ ) 2 2𝑠 2 ℓ ) -1] 𝑃 𝑡 (𝑥, ℓ), 𝐵 𝑐 (𝑥) = ∑ ℓ∈𝒦 𝑐 𝐺 ℓ (𝑥).</formula><p>Here 𝐵 𝑐 is the routed growth response for mass channel 𝑐. The transport field is constructed from Sobel gradients of the routed response and of the total mass: Here 𝑚 step = 𝑑 𝑑 -𝜎 RT , and the last clipping is componentwise in the two spatial coordinates.</p><formula xml:id="formula_61">F𝑐 (𝑥) = ∇ 𝑆 𝐵 𝑐 (𝑥), 𝐶 𝐴 (𝑥) = ∇ 𝑆 𝐶 ∑ 𝑑=1 𝐴 𝑡 (𝑥, 𝑑), 𝛼 𝑐 (𝑥) = clip(( 𝐴 𝑡 (𝑥, 𝑐<label>) 2 ) 2 , 0, 1)</label></formula><p>The fields are then reintegrated by the RT transport operator. For each source cell 𝑥 and channel 𝑐, define the proposed target center 𝜇 𝑡 (𝑥, 𝑐) = 𝑥 + 1 2 + clip(𝑑𝑡 𝐹 𝑡 (𝑥, 𝑐), -𝑚 step , 𝑚 step ) .</p><p>The RT footprint assigns a fraction of the source mass to target cell 𝑦 by</p><formula xml:id="formula_62">𝑊 𝑥→𝑦,𝑐 = 1 4𝜎 2 RT 2 ∏ 𝑟=1 clip( 1 2 -𝑑 Ω (𝑦 𝑟 + 1 2 , 𝜇 𝑡,𝑟 (𝑥, 𝑐)) + 𝜎 RT , 0, min(1, 2𝜎 RT )) ,</formula><p>where 𝑑 Ω is the coordinate distance under the configured boundary rule. The next mass field is</p><formula xml:id="formula_63">𝐴 𝑡+1 (𝑦, 𝑐) = ∑ 𝑥∈Ω 𝐴 𝑡 (𝑥, 𝑐)𝑊 𝑥→𝑦,𝑐 .</formula><p>The internal field 𝑃 𝑡 is transported over the same RT footprints. When multiple source cells contribute to the same target cell, the configured RT mixing rule selects or averages the incoming internal states.</p><p>In the stochastic mixing mode used by the substrate, an incoming source is selected with probability proportional to its incoming mass, and its internal state is assigned to the target location. This gives 𝑃 𝑡+1 and completes the state update (𝐴 𝑡+1 , 𝑃 𝑡+1 , 𝐹 𝑡 ) = Φ 𝜃 (𝐴 𝑡 , 𝑃 𝑡 ).</p><p>The Lagrangian observation layer uses passive RT tracers. In the reported Flow-Lenia MSPD runs, tracer positions are initialized from the current mass distribution: a cell is sampled with probability proportional to ∑ 𝑐 𝐴 0 (𝑥, 𝑐), and the tracer is placed uniformly inside that cell. If channel tracking is enabled, the tracer channel is sampled from the local mass proportions. After each substrate step, tracers are updated using the logged field 𝐹 𝑡 and the updated mass field 𝐴 𝑡+1</p><p>. With resampled channels, Pr{𝑐 𝑎 (𝑡 + 1) = 𝑐 | 𝑞 𝑎 (𝑡)} = ℐ[𝐴 𝑡+1,𝑐 ](𝑞 𝑎 (𝑡)) ∑ 𝑑 ℐ[𝐴 𝑡+1,𝑑 ](𝑞 𝑎 (𝑡)) + 10 -8 , where ℐ is bilinear sampling at the tracer position. The tracer velocity is the bilinearly sampled channel flow, 𝑣 𝑎 (𝑡) = ℐ[𝐹 𝑡 (⋅, 𝑐 𝑎 (𝑡 + 1))](𝑞 𝑎 (𝑡)), or, in reduced-channel mode, the configured reduction of the sampled channel flows. The RT tracer update is 𝛿 𝑎 (𝑡) = clip(𝑑𝑡 𝑣 𝑎 (𝑡), -𝑚 step , 𝑚 step ) , 𝑞 𝑎 (𝑡 + 1) = Π Ω (𝑞 𝑎 (𝑡) + 𝛿 𝑎 (𝑡) + 𝜆𝜀 𝑎 (𝑡)) , 𝜀 𝑎 (𝑡) ∼ Unif([-𝜎 RT , 𝜎 RT ] 2 ), for the RT box-noise model. Here 𝜆 is the diffusion scale and Π Ω applies the same boundary rule as the substrate. The experiment logs the resulting coordinates as lagrangian_xy and, when enabled, the tracer channels as lagrangian_c. MSPD is computed post-hoc from finite-lag displacement laws of these saved coordinates. The numerical tables distributed with the source package include the cross-substrate summary, synthetic calibration tables, the Flow-Lenia C2 branch-state table and the Flow-Lenia C2 within-trajectory correlation table. B.9 Particle Life++ substrate algorithm This appendix gives the algorithmic form of Particle Life++ used in Section 4. The substrate is a deterministic particle system after initialization when the network weights, initial state and boundary rule are fixed. State and initialization. At step 𝑛, the state is 𝑆 𝑛 = {(𝑥 𝑛 𝑖 , 𝑣 𝑛 𝑖 , 𝑐 𝑛 𝑖 )} 𝑁 𝑖=1 , 𝑥 𝑛 𝑖 ∈ [0, 𝐿] 2 , 𝑣 𝑛 𝑖 ∈ ℝ 2 , 𝑐 𝑛 𝑖 ∈ 𝕊 𝐾-1 . The implementation initializes positions uniformly in the square, velocities at zero, and colors by normalizing independent Gaussian vectors, 𝑥 0 𝑖 ∼ Unif([0, 𝐿] 2 ), 𝑣 0 𝑖 = 0, 𝑐 0 𝑖 = 𝜉 𝑖 /‖𝜉 𝑖 ‖ 2 , 𝜉 𝑖 ∼ 𝒩(0, 𝐼 𝐾 ). ).</p><p>The scalar 𝛼 𝑖𝑗 controls the mechanical interaction amplitude and 𝑔 𝑖𝑗 controls the color drift of particle 𝑖 under particle 𝑗.</p><p>Pair geometry and force law. Let 𝛿 𝑖𝑗 be the displacement from 𝑖 to 𝑗. Under the toroidal boundary used in the reported PLife++ experiments, 𝛿 𝑖𝑗 is the minimal-image displacement; under wall boundaries it is the ordinary displacement. Define 𝜌 𝑖𝑗 = ‖𝛿 𝑖𝑗 ‖ 2 , 𝑒 𝑖𝑗 = 𝛿 𝑖𝑗 𝜌 𝑖𝑗 + 10 -8 , 𝑞 𝑖𝑗 = 𝜌 𝑖𝑗 /𝑟 max . The dimensionless force graph is Φ(𝑞; 𝛼, 𝛽) = ⎧ { { ⎨ { { ⎩ 𝑞/𝛽 -1, 𝑞 &lt; 𝛽, 𝛼 (1 -|2𝑞 -1 -𝛽| 1 -𝛽 ) , 𝛽 &lt; 𝑞 &lt; 1, 0, otherwise. The pairwise force and color increment are 𝐹 𝑖𝑗 = 𝑟 max Φ(𝑞 𝑖𝑗 ; 𝛼 𝑖𝑗 , 𝛽)𝑒 𝑖𝑗 , Δ𝑐 𝑖𝑗 = 𝑔 𝑖𝑗 max(0, 1 -𝜌 𝑖𝑗 /𝑟 max ).</p><p>The dense implementation evaluates all ordered pairs. The self-pair gives zero mechanical force because 𝛿 𝑖𝑖 = 0, but it can contribute to color drift through 𝑔 𝜃 (𝑐 𝑖 , 𝑐 𝑖 ).</p><p>Integration step. The acceleration and color drift are </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.10 branch perturbation protocols</head><p>C2 uses substrate-native perturbations of saved branch states. The parameter vector 𝜃 is never changed; only the current simulator state is modified before continuation. The values below are the explicit parameters used for the reported C2 experiments. Cellular automata. A CA branch state is a binary board sampled from the selected rule trajectory. For each selected branch window, the branch time is the center of the window. Each continuation is initialized by independently choosing a random subset of board sites and flipping their binary states:  where 𝐵 Ω applies the tracker boundary rule in the stored tracer-coordinate system. The tracer channel labels are copied unchanged. The branch seed is folded into the resumed RNG, so different continuations receive independent simulator and RT-noise realizations after the branch.</p><p>The reported Flow-Lenia C2 selection protocol uses nine source trajectories. For each source trajectory, branch states are sampled from three strata of the branch-energy distribution:</p><p>𝑛 high = 5, 𝑛 mid = 5, 𝑛 low = 5.</p><p>The high pool is the top 20% of 𝐸 𝑏 values, the low pool is the bottom 20%, and the mid pool is the central quantile band 40%-60%. The selection seed is 12345, the minimum branch step is 50,000, the refractory separation is 5,000 simulation steps, and each requested branch step is snapped to the nearest saved APF snapshot. Each branch state has 𝑀 = 3, future horizon = 20,000 simulation steps.</p><p>The reported future divergence uses CLIP-Chamfer distance between future rendered-frame feature clouds; the feature extraction uses at most four APF chunks and at most eight snapshots per chunk.</p><p>Figure <ref type="figure" target="#fig_16">12</ref> shows the branch-selection strata on representative Flow-Lenia Δ𝐻 heatmaps. Vertical markers indicate selected branch times; the colors correspond to the low, mid and high branch-energy strata used only for sampling coverage.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Appendix C. Optimization and post-hoc evaluation protocols</head><p>This appendix records the optimization protocols used for the three substrates in Section 4. In all cases, the optimizer or selector produces a parameter object 𝜃, while the reported C1 numbers are computed by a post-hoc MSPD protocol applied equally to optimized and matched random controls.</p><p>Life-like cellular automata. The optimized object is the 18-bit totalistic Life-like rule code. The search evaluates all 2 18 birth/survival rules on a periodic 64 × 64 binary board. The sweep uses rollout length 𝑇 = 2048, burn-in 512, window size 64, window step 16, active-cell sample cap 256, Jensen-Shannon transition-law distance, pair sample 512, one null repetition, initial density sampled from [0.05, 0.4], eight random initial boards per rule, random seed 0, JAX metric batch size 8 and evaluation batch size 512.</p><p>For C1, the optimized candidate is the top rule from the completed sweep. It is re-evaluated against 32 random Life-like rules on 32 fresh Bernoulli holdout boards drawn from the same initialization-density law. The CA transition symbol is the categorical before-after neighborhood event 𝑎 𝑡 (𝑖) = code(𝑥 𝑡 | 𝑖+𝐵 , 𝑥 𝑡+1 (𝑖)),</p><p>with active-support weighting as described in Section 4.1.</p><p>Flow-Lenia. Flow-Lenia optimization uses Sep-CMA-ES on the flattened rule vector 𝜃. The optimization substrate uses grid size 128, 𝐶 = 3 activity channels, kernel size parameter 𝑘 = 9, three kernel components, routing matrix (2, 1, 0; 0, 2, 1; 1, 0, 2), 𝑑𝑑 = 5, 𝑑𝑡 = 0.2, 𝜎 = 0.65, wall boundary, stochastic mixing, random-patch initialization with patch size 20 and four seed patches, 𝑃 -color rendering, mutations enabled with size 40, probability 0.05 and scale 1.0, and no food or volcano fields. The optimization rollout length is 300,000 simulator steps and states are sampled every 50 steps. </p></div><figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_0"><head>Figure 1 :</head><label>1</label><figDesc>Figure 1: Pipeline: Lagrangian tracking → 𝐻 Δ𝑡 heatmap → MSPD aggregation → evolutionary loop → complex simulation output.</figDesc><graphic coords="3,61.20,61.20,489.60,367.20" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_1"><head>Figure 2 :</head><label>2</label><figDesc>Figure 2: Synthetic calibration summary. Panel A reports selected MSPD scores by family; Panel B reports processed Δ𝐻 amplitude. The high-MSPD cases are the temporally extended switch and split-transition generators.</figDesc><graphic coords="17,80.79,61.19,450.43,337.82" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_2"><head>Figure 3 :</head><label>3</label><figDesc>Figure 3: Synthetic Δ𝐻 maps. Horizontal position is window index, vertical position is lag 𝜏 , and color is local transition heterogeneity. Temporally extended transition systems concentrate high Δ𝐻 around designed transition intervals, while null and homogeneous controls remain low.</figDesc><graphic coords="18,80.79,61.19,450.43,337.82" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_3"><head>Figure 4 :</head><label>4</label><figDesc>Figure 4: Cellular-automata C1 result. Left: post-hoc MSPD for matched random rules and the optimized/selected rule. Right: MSPD scores of the top Life-like rule candidates from the exhaustive rule sweep.</figDesc><graphic coords="20,61.20,155.09,489.60,367.20" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_4"><head>Figure 5 :</head><label>5</label><figDesc>Figure 5: C1 for Flow-Lenia. Blue points are optimized checkpoints, gray points are matched random controls, and black marks denote random-control medians. The matched contrast is positive in 6/9 groups but not statistically confirmed.</figDesc><graphic coords="21,129.74,61.20,352.51,264.38" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_5"><head>Figure 6 :</head><label>6</label><figDesc>Figure 6: C1 for Particle Life++. Blue points are optimized checkpoints, gray points are matched random controls, and black marks denote random-control medians. All matched groups are positive.</figDesc><graphic coords="22,129.74,61.20,352.51,264.38" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_6"><head>Figure 7 :</head><label>7</label><figDesc>Figure 7: Per-lag C1 MSPD profiles for Flow-Lenia. The left panel is the selection split used to choose 𝜏 ⋆ ; the right panel is the held-out split used for the reported score.</figDesc><graphic coords="23,115.06,61.20,381.89,286.42" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_7"><head>Figure 8 :</head><label>8</label><figDesc>Figure 8: C2 for cellular automata. Each point is a sampled branch state. The horizontal axis is transition-law Δ𝐻 at the branch window, and the vertical axis is median pairwise Hamming divergence between perturbed continuations.</figDesc><graphic coords="24,154.23,457.31,303.55,227.66" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_8"><head>Figure 9 :</head><label>9</label><figDesc>Figure 9: C2 for Flow-Lenia. Panel A shows the pooled branch-state association between branch energy 𝐸 𝑏 and future divergence 𝐵 𝑏 ; colors and markers denote low, middle and high within-trajectory energy strata used for sampling. Panel B shows within-trajectory Spearman correlations sorted across the nine source trajectories. The positive within-trajectory pattern shows that the pooled association is not solely a between-trajectory artifact.</figDesc><graphic coords="26,70.99,61.20,470.02,352.51" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_9"><head>Figure 10 :</head><label>10</label><figDesc>Figure 10: C5 for Flow-Lenia. Each bar is the optimized-minus-random matched contrast of the anchored frustration score 𝐹 𝑠 (𝜃) = 𝑑(𝐴, 𝑊 ) -𝑑(𝐴, 𝐶). Positive values mean that the optimized checkpoint is more affected by early blockwise disruption than matched random controls after seed variability is subtracted.</figDesc><graphic coords="27,115.06,353.94,381.89,286.42" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_10"><head>Figure 11 :</head><label>11</label><figDesc>Figure 11: C5 for Particle Life++. Each bar is the optimized-minus-random matched contrast of the anchored frustration score 𝐹 𝑠 (𝜃) = 𝑑(𝐴, 𝑊 ) -𝑑(𝐴, 𝐶). The sign pattern is directionally consistent with stronger history dependence in optimized checkpoints under the current protocol.</figDesc><graphic coords="28,115.06,113.84,381.89,286.42" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_11"><figDesc>𝑎 ,𝑘 L𝑖 𝑏 ,𝑘 ).By the pairwise plug-in consistency assumption, 𝑖 𝑎 ,𝑘 , 𝐿 𝑖 𝑏 ,𝑘 ) 𝑝 -→ 𝐻 𝑘 . Thus Ĥ𝑘 𝑝 -→ 𝐻 𝑘 . The pooled-null assumption gives Ĥ0 𝑘 𝑝 -→ 0, hence Δ𝐻 𝑘 = Ĥ𝑘 -Ĥ0 𝑘 𝑝 -→ 𝐻 𝑘 . Since 𝜙 is continuous at 𝐻 𝑘 , 𝜙( Δ𝐻 𝑘 ) 𝑝 -→ 𝜙(𝐻 𝑘 ).</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_12"><figDesc>,𝐻 𝑐 (𝑥) = (1 -𝛼 𝑐 (𝑥)) F𝑐 (𝑥) -𝛼 𝑐 (𝑥)𝐶 𝐴 (𝑥), 𝐹 𝑡 (𝑥, 𝑐) = clip(𝐻 𝑐 (𝑥), -𝑚 step , 𝑚 step ) .</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_13"><head>Neural pair rule.</head><figDesc>For each ordered pair (𝑖, 𝑗), the network receives the concatenated colors [𝑐 𝑖 , 𝑐 𝑗 ] ∈ ℝ 2𝐾 . The architecture is 𝛼 𝑖𝑗 = 1.5 tanh(𝑦 (0) 𝑖𝑗 ), 𝑔 𝑖𝑗 = tanh(𝑦 (1∶𝐾) 𝑖𝑗</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_14"><head>2 .</head><label>2</label><figDesc>With damping factor 𝜇 = 0.5 Δ𝑡/ℎ , the semi-implicit update is mod 𝐿 and velocity is unchanged. If color updates are enabled, Particle identities 𝑖 = 1, … , 𝑁 are the local carriers for MSPD, and the empirical local laws are built from finite-lag displacements of the stored positions 𝑥 𝑛 𝑖 . The PLife++ experiments use 𝑁 = 600, 𝐾 = 6, 𝑑 = 2, 𝛽 = 0.3, 𝑚 = 0.1, Δ𝑡 = 0.02, ℎ = 0.04, 𝑟 max = 0.1, 𝐿 = 1.0, toroidal boundary, dense neighbor mode, color updates enabled, render radius 0.04, sharpness 30.0 and black background.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_15"><figDesc>𝑥 ′ (𝑢) = { 1 -𝑥(𝑢), 𝑢 ∈ 𝑆 flip , 𝑥(𝑢), 𝑢 ∉ 𝑆 flip , |𝑆 flip | = max{1, round(0.01|Λ|)}. The same Life-like rule is then resumed from 𝑥 ′ . The reported CA C2 parameters are 𝑛 windows = 24, 𝑀 = 4, flip fraction = 0.01, future horizon = 64 steps.The outcome distance is normalized Hamming divergence between future board states, averaged over the resumed horizon.</figDesc></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_16"><head>Figure 12 :</head><label>12</label><figDesc>Figure 12: Flow-Lenia C2 branch-selection preview. Each panel is one source trajectory, with branch-energy values derived from the processed Δ𝐻 heatmap. The selected branch times cover low, middle and high withintrajectory energy strata; the continuous branch energy 𝐸 𝑏 is used in the reported correlations.</figDesc><graphic coords="41,61.20,232.62,489.60,367.20" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" xml:id="fig_17"><head>Figure 13 :</head><label>13</label><figDesc>Figure 13: Rendered examples from the synthetic calibration suite. Rows correspond to synthetic families S0-S8 and columns show selected rollout times. These renderings illustrate the qualitative regimes used in N0; the metric itself is evaluated on trajectory-derived transition laws.</figDesc><graphic coords="45,61.20,189.49,489.60,367.20" type="bitmap" /></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_9"><head>Table 4 :</head><label>4</label><figDesc>C1</figDesc><table><row><cell></cell><cell>Positive groups</cell><cell>Median contrast</cell><cell>Sign-test 𝑝</cell><cell>Status</cell></row><row><cell>Life-like CA</cell><cell>separated optimized set</cell><cell>large positive shift</cell><cell>not applicable</cell><cell>confirmed by sweep</cell></row><row><cell>Flow-Lenia</cell><cell>6/9</cell><cell>5.24 × 10 -5</cell><cell>0.254</cell><cell>not confirmed</cell></row><row><cell>Particle Life++</cell><cell>7/7</cell><cell>0.00267</cell><cell>0.0078</cell><cell>confirmed</cell></row></table><note><p>results. The CA result is a discrete rule-search result; Flow-Lenia and Particle Life++ are matched continuous-parameter optimization results.</p></note></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_11"><head>Table 5 :</head><label>5</label><figDesc>C5 results. Both substrates show positive matched contrasts in most independent groups, but the current group counts support a directional history-dependence result rather than a high-confidence significance claim.</figDesc><table><row><cell></cell><cell>Intervention</cell><cell>Positive groups</cell><cell>Median contrast</cell><cell>Sign-test 𝑝</cell></row><row><cell>Flow-Lenia</cell><cell>early isolated blocks, then release</cell><cell>7/9</cell><cell>0.00506</cell><cell>0.0898</cell></row><row><cell>Particle Life++</cell><cell>warmup, 2 × 2 cell shuffle, then re-</cell><cell>6/7</cell><cell>0.00477</cell><cell>0.0625</cell></row><row><cell></cell><cell>lease</cell><cell></cell><cell></cell><cell></cell></row></table></figure>
+<figure xmlns="http://www.tei-c.org/ns/1.0" type="table" xml:id="tab_15"><head>Table 10 :</head><label>10</label><figDesc>C2 branch-continuation protocol. Branch strata are used to cover the within-trajectory energy range; the reported correlations use continuous branch energies.ℎ indexes the kernel components. These parameters define a routed kernel bank. If 𝑐 0 (ℓ) is the input channel read by kernel ℓ and 𝒦 𝑐 is the set of kernels routed into output channel 𝑐, the normalized radial kernel has the form</figDesc><table><row><cell cols="2">For Flow-Lenia, the perturbation applied before continuation is</cell></row><row><cell>𝐴 ← max(𝐴 + 𝜂 𝐴 , 0),</cell><cell>𝜂 𝐴 ∼ 𝒩(0, 0.02 2 ),</cell></row><row><cell>𝑃 ← 𝑃 + 𝜂 𝑃 ,</cell><cell>𝜂 𝑃 ∼ 𝒩(0, 0.02 2 ),</cell></row></table><note><p>𝑞 ← clip [𝜎,𝐿-𝜎] (𝑞 + 𝜂 𝑞 ),</p><p>𝜂 𝑞 ∼ 𝒩(0, 1.0 2 ),</p><p>where 𝐴 is the activity field, 𝑃 is the internal channel field, 𝑞 denotes lagrangian probe positions and 𝐿 is the grid side length. The Flow-Lenia CLIP-Chamfer analysis contains 135 branch states. The within-trajectory table contains nine source trajectories with fifteen branch states each.</p><p>where</p></note></figure>
+		</body>
+		<back>
+			<div type="annex">
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Appendix A. Proofs of the consistency statements</head><p>Proof of Proposition 1. All objects used in the proof are restated here. Fix a finite set of windows 𝑘 = 1, … , 𝐾. For each window, let 𝑚 𝑘 be a probability measure on local carriers, let 𝐿 𝑖,𝑘 be the</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Appendix B. Experimental protocols and reproducibility details</head><p>This appendix gives the complete execution protocol for the empirical claims in Section 4. The main text gives the claim logic and the reported interpretation; this appendix gives the parameterization, sampling rules, rollout horizons, evaluation windows and statistical units needed to reproduce the measurements. </p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.1 Claim-level pipeline</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.2 Synthetic calibration protocol</head><p>The synthetic calibration uses particles on the unit torus with shortest-periodic displacement. The local empirical law is the distribution of particle displacements inside a metric window and lag.   Particle Life++ optimization uses 𝑑𝑡 = 0.02, half-life 0.04, interaction radius 𝑟 max = 0.1, repulsion boundary 𝛽 = 0.3, particle mass 0.1, render radius 0.04, sharpness 30.0, toroidal boundary conditions and dense neighbor interactions. Color updates are enabled.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.7 C5 blockwise-frustration protocols</head><p>C5 uses the same abstract intervention for both continuous substrates: interrupt early spatial coorganization while holding the checkpoint 𝜃 fixed, release the system, and compare late futures after subtracting ordinary seed-to-seed variability.  For every checkpoint, the anchored score is 𝐹 𝑠 (𝜃) = 𝑑 𝑠 (𝐴 𝜃 , 𝑊 𝜃 ) -𝑑 𝑠 (𝐴 𝜃 , 𝐶 𝜃 ).</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Substrate</head><p>The first term measures the effect of the intervention relative to the same-seed reference. The second term estimates ordinary seed-to-seed variability for the same checkpoint. The matched contrast reported in Section 4 is Δ 𝐶5 𝑠,𝑟 = 𝐹 𝑠 (𝜃 opt 𝑠,𝑟 ) -median 𝑗 𝐹 𝑠 (𝜃 rand 𝑠,𝑟,𝑗 ).</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.8 Reported statistics</head><p>C1 and C5 use matched-group sign tests because the independent unit is the optimization group and the group counts are small. For 𝑛 matched groups and 𝑛 + positive contrasts, the one-sided sign-test value is</p><p>C2 reports pooled Pearson/Spearman correlations across branch states and within-trajectory correlations across branch states inside each source trajectory. The within-trajectory readout is included to separate state-level association from a purely between-trajectory association.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>B.9 Flow-Lenia update and RT tracer logging</head><p>This appendix gives the substrate-level update used for the Flow-Lenia experiments. The description is algorithmic rather than code-specific: implementation details such as FFT normalization, batch layout and JAX compilation do not change the mathematical update below.</p><p>Let Ω = {0, … , 𝐿 -1} 2 be the simulation grid, with the configured boundary rule applied whenever coordinates leave the domain. The Flow-Lenia state consists of mass channels 𝐴 𝑡 (𝑥, 𝑐) ≥ 0 and internal channels 𝑃 𝑡 (𝑥, ℓ), with 𝑥 ∈ Ω, 𝑐 = 1, … , 𝐶 and ℓ = 1, … , 𝐾. The optimized checkpoint is a flat vector of offsets around a fixed base rule. These offsets are clipped, added in raw-logit coordinates, passed through a sigmoid, and mapped to parameter ranges for 𝑅, 𝑟 ℓ , 𝑚 ℓ , 𝑠 ℓ , 𝑎 ℓℎ , 𝑏 ℓℎ , 𝑤 ℓℎ , ℓ = 1, … , 𝐾,</p><p>The optimizer uses batch size 1, population batch 8, population size 8, 100 iterations and initial standard deviation 0.2. The optimization-time MSPD estimator uses 8192 Lagrangian tracers initialized from mass, mass-weighted flow reduction, resampled tracer channels, RT box noise with diffusion scale 1.0, window size 20,000, window step 5,000, metric range 50,000-300,000, trainable lag grid {1000, 2000, … , 10000}, 48 displacement samples, minimum 4 samples, 16 projections, six null repetitions, 64 sampled tracers, preprocessing mode clip, 𝛼 = 0, 𝛽 = 1 and 𝜖 = 10 -12 .</p><p>The reported Flow-Lenia C1 score is not the noisy optimization-time value. It is recomputed from reusable A-run rollouts at grid size 384 and horizon 50,000 -300,000, with one trajectory per checkpoint and Lagrangian/APF chunks saved during rollout. The post-hoc lag grid is 𝜏 ∈ {500, 600, … , 15000} with window size 20,000, window step 5,000, 48 samples, 16 projections, six null repetitions and 64 sampled tracers. Even-indexed metric windows select 𝜏 ⋆ and odd-indexed windows report the held-out score. Thus all frame embeddings used in the Chamfer computation lie on the unit sphere, and pairwise frame distance is the cosine distance 𝑑 cos (𝑢, 𝑣) = 1 -𝑢 ⊤ 𝑣. This encoder is used only to measure future-rollout outcome divergence in C2 and C5; it is not part of the MSPD definition or the MSPD optimization objective.</p></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Particle</head></div>
+<div xmlns="http://www.tei-c.org/ns/1.0"><head>Appendix D. Rendered synthetic calibration examples</head><p>Figure <ref type="figure">13</ref> shows rendered examples from the synthetic calibration suite. The figure is included only as a visual reference for the controlled cases; the N0 MSPD scores are computed from particle trajectories and finite-lag displacement laws, not from rendered frames.</p></div>			</div>
+			<div type="references">
+
+				<listBibl>
+
+<biblStruct xml:id="b0">
+	<analytic>
+		<title level="a" type="main">Multiscale structural complexity of natural patterns</title>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">A</forename><surname>Bagrov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">I</forename><forename type="middle">A</forename><surname>Iakovlev</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">A</forename><surname>Iliasov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">I</forename><surname>Katsnelson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">V</forename><forename type="middle">V</forename><surname>Mazurenko</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Proceedings of the National Academy of Sciences</title>
+		<imprint>
+			<biblScope unit="volume">117</biblScope>
+			<biblScope unit="issue">48</biblScope>
+			<biblScope unit="page" from="30241" to="30251" />
+			<date type="published" when="2020">2020</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">A. A. Bagrov, I. A. Iakovlev, A. A. Iliasov, M. I. Katsnelson, and V. V. Mazurenko. Multi- scale structural complexity of natural patterns. Proceedings of the National Academy of Sciences, 117(48):30241-30251, 2020.</note>
+</biblStruct>
+
+<biblStruct xml:id="b1">
+	<analytic>
+		<title level="a" type="main">Scale-free networks are rare</title>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">D</forename><surname>Broido</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Clauset</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Nature Communications</title>
+		<imprint>
+			<biblScope unit="volume">10</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<date type="published" when="2019-03">Mar. 2019</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">A. D. Broido and A. Clauset. Scale-free networks are rare. Nature Communications, 10(1), Mar. 2019.</note>
+</biblStruct>
+
+<biblStruct xml:id="b2">
+	<analytic>
+		<title level="a" type="main">Lenia: Biology of artificial life</title>
+		<author>
+			<persName><forename type="first">B</forename><forename type="middle">W</forename></persName>
+		</author>
+		<author>
+			<persName><forename type="first">-C</forename><surname>Chan</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Complex Systems</title>
+		<imprint>
+			<biblScope unit="volume">28</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="251" to="286" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">B. W.-C. Chan. Lenia: Biology of artificial life. Complex Systems, 28(3):251-286, 2019.</note>
+</biblStruct>
+
+<biblStruct xml:id="b3">
+	<analytic>
+		<title level="a" type="main">Toward artificial open-ended evolution within Lenia using quality-diversity</title>
+		<author>
+			<persName><forename type="first">M</forename><surname>Faldor</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><surname>Cully</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the Artificial Life Conference</title>
+		<meeting>the Artificial Life Conference<address><addrLine>ALIFE</addrLine></address></meeting>
+		<imprint>
+			<date type="published" when="2024">2024</date>
+			<biblScope unit="page">2024</biblScope>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">M. Faldor and A. Cully. Toward artificial open-ended evolution within Lenia using quality-diversity. In Proceedings of the Artificial Life Conference (ALIFE 2024), 2024.</note>
+</biblStruct>
+
+<biblStruct xml:id="b4">
+	<analytic>
+		<title level="a" type="main">Dreamsim: Learning new dimensions of human visual similarity using synthetic data</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Fu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">N</forename><surname>Tamir</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">S</forename><surname>Sundaram</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Chai</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">R</forename><surname>Zhang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">T</forename><surname>Dekel</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Isola</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Advances in Neural Information Processing Systems</title>
+		<imprint>
+			<date type="published" when="2023">2023</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">S. Fu, N. Tamir, S. Sundaram, L. Chai, R. Zhang, T. Dekel, and P. Isola. Dreamsim: Learning new dimensions of human visual similarity using synthetic data. In Advances in Neural Information Processing Systems, 2023.</note>
+</biblStruct>
+
+<biblStruct xml:id="b5">
+	<monogr>
+		<title level="m" type="main">Fitness Landscapes and the Origin of Species</title>
+		<author>
+			<persName><forename type="first">S</forename><surname>Gavrilets</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2004">2004</date>
+			<publisher>Princeton Un iversity Press</publisher>
+			<pubPlace>Princeton</pubPlace>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">S. Gavrilets. Fitness Landscapes and the Origin of Species. Princeton Un iversity Press, Princeton, 2004.</note>
+</biblStruct>
+
+<biblStruct xml:id="b6">
+	<analytic>
+		<title level="a" type="main">Life is physics: Evolution as a collective phenomenon far from equilibrium</title>
+		<author>
+			<persName><forename type="first">N</forename><surname>Goldenfeld</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Woese</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Annual Review Condensed Matter Physics</title>
+		<imprint>
+			<biblScope unit="volume">2</biblScope>
+			<biblScope unit="page" from="375" to="399" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">N. Goldenfeld and C. Woese. Life is physics: Evolution as a collective phenomenon far from equilibrium. Annual Review Condensed Matter Physics, 2(-):375-399, 2011.</note>
+</biblStruct>
+
+<biblStruct xml:id="b7">
+	<analytic>
+		<title level="a" type="main">Towards physical principles of biological evolution</title>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">I</forename><surname>Katsnelson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><forename type="middle">I</forename><surname>Wolf</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">V</forename><surname>Koonin</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Physica Scripta</title>
+		<imprint>
+			<biblScope unit="volume">93</biblScope>
+			<biblScope unit="issue">4</biblScope>
+			<biblScope unit="page">43001</biblScope>
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">M. I. Katsnelson, Y. I. Wolf, and E. V. Koonin. Towards physical principles of biological evolution. Physica Scripta, 93(4):043001, 2018.</note>
+</biblStruct>
+
+<biblStruct xml:id="b8">
+	<analytic>
+		<title level="a" type="main">Multiscale structural complexity as a quantitative measure of visual complexity</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Kravchenko</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">A</forename><surname>Bagrov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">I</forename><surname>Katsnelson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">V</forename><surname>Dudarev</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Perception</title>
+		<imprint>
+			<biblScope unit="volume">55</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="139" to="158" />
+			<date type="published" when="2026">2026</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">A. Kravchenko, A. A. Bagrov, M. I. Katsnelson, and V. Dudarev. Multiscale structural complexity as a quantitative measure of visual complexity. Perception, 55(2):139--158, 2026.</note>
+</biblStruct>
+
+<biblStruct xml:id="b9">
+	<monogr>
+		<title level="m" type="main">Automating the search for artificial life with foundation models</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Kumar</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Lu</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><surname>Kirsch</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><surname>Tang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">O</forename><surname>Stanley</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Isola</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Ha</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2024">2024</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">A. Kumar, C. Lu, L. Kirsch, Y. Tang, K. O. Stanley, P. Isola, and D. Ha. Automating the search for artificial life with foundation models, 2024.</note>
+</biblStruct>
+
+<biblStruct xml:id="b10">
+	<analytic>
+		<title level="a" type="main">The theory of everything</title>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">B</forename><surname>Laughlin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Pines</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Proceedings of the National Academy of Sciences</title>
+		<imprint>
+			<biblScope unit="volume">97</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="28" to="31" />
+			<date type="published" when="2000">2000</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">R. B. Laughlin and D. Pines. The theory of everything. Proceedings of the National Academy of Sciences, 97(1):28-31, 2000.</note>
+</biblStruct>
+
+<biblStruct xml:id="b11">
+	<analytic>
+		<title level="a" type="main">The middle way</title>
+		<author>
+			<persName><forename type="first">R</forename><forename type="middle">B</forename><surname>Laughlin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">D</forename><surname>Pines</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Schmalian</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><forename type="middle">P</forename><surname>Stojkovich</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Wolynes</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Proceedings of the National Academy of Sciences</title>
+		<imprint>
+			<biblScope unit="volume">97</biblScope>
+			<biblScope unit="issue">1</biblScope>
+			<biblScope unit="page" from="32" to="37" />
+			<date type="published" when="2000">2000</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">R. B. Laughlin, D. Pines, J. Schmalian, B. P. Stojkovich, and P. Wolynes. The middle way. Proceedings of the National Academy of Sciences, 97(1):32-37, 2000.</note>
+</biblStruct>
+
+<biblStruct xml:id="b12">
+	<analytic>
+		<title level="a" type="main">Abandoning objectives: Evolution through the search for novelty alone</title>
+		<author>
+			<persName><forename type="first">J</forename><surname>Lehman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">O</forename><surname>Stanley</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Evolutionary Computation</title>
+		<imprint>
+			<biblScope unit="volume">19</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="189" to="223" />
+			<date type="published" when="2011">2011</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">J. Lehman and K. O. Stanley. Abandoning objectives: Evolution through the search for novelty alone. Evolutionary Computation, 19(2):189-223, 2011.</note>
+</biblStruct>
+
+<biblStruct xml:id="b13">
+	<monogr>
+		<title level="m" type="main">Scale-space</title>
+		<author>
+			<persName><forename type="first">T</forename><surname>Lindeberg</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2008">2008</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">T. Lindeberg. Scale-space, 2008.</note>
+</biblStruct>
+
+<biblStruct xml:id="b14">
+	<monogr>
+		<title level="m" type="main">Modern Theory Of Critical Phenomena</title>
+		<author>
+			<persName><forename type="first">S.-K</forename><surname>Ma</surname></persName>
+		</author>
+		<editor>W. A. Benjamin, Mass.</editor>
+		<imprint>
+			<date type="published" when="1976">1976</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">S.-K. Ma. Modern Theory Of Critical Phenomena. W. A. Benjamin, Mass., 1976.</note>
+</biblStruct>
+
+<biblStruct xml:id="b15">
+	<monogr>
+		<title level="m" type="main">Particle Lenia and the energy-based formulation</title>
+		<author>
+			<persName><forename type="first">A</forename><surname>Mordvintsev</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Niklasson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Randazzo</surname></persName>
+		</author>
+		<imprint>
+			<date type="published" when="2022">2022</date>
+		</imprint>
+		<respStmt>
+			<orgName>Google Research, Self-Organising Systems</orgName>
+		</respStmt>
+	</monogr>
+	<note type="raw_reference">A. Mordvintsev, E. Niklasson, and E. Randazzo. Particle Lenia and the energy-based formulation. Google Research, Self-Organising Systems, 2022.</note>
+</biblStruct>
+
+<biblStruct xml:id="b16">
+	<analytic>
+		<title level="a" type="main">Flow-Lenia: Towards open-ended evolution in cellular automata through mass conservation and parameter localization</title>
+		<author>
+			<persName><forename type="first">E</forename><surname>Plantec</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">G</forename><surname>Hamon</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><surname>Etcheverry</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P.-Y</forename><surname>Oudeyer</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">C</forename><surname>Moulin-Frier</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">B</forename><forename type="middle">W</forename></persName>
+		</author>
+		<author>
+			<persName><forename type="first">-C</forename><surname>Chan</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the Artificial Life Conference (ALIFE 2023)</title>
+		<meeting>the Artificial Life Conference (ALIFE 2023)</meeting>
+		<imprint>
+			<publisher>MIT Press</publisher>
+			<date type="published" when="2023">2023</date>
+			<biblScope unit="page" from="131" to="144" />
+		</imprint>
+	</monogr>
+	<note type="raw_reference">E. Plantec, G. Hamon, M. Etcheverry, P.-Y. Oudeyer, C. Moulin-Frier, and B. W.-C. Chan. Flow- Lenia: Towards open-ended evolution in cellular automata through mass conservation and param- eter localization. In Proceedings of the Artificial Life Conference (ALIFE 2023), pages 131-144. MIT Press, 2023.</note>
+</biblStruct>
+
+<biblStruct xml:id="b17">
+	<analytic>
+		<title level="a" type="main">Quality diversity: A new frontier for evolutionary computation</title>
+		<author>
+			<persName><forename type="first">J</forename><forename type="middle">K</forename><surname>Pugh</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">L</forename><forename type="middle">B</forename><surname>Soros</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">O</forename><surname>Stanley</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Frontiers in Robotics and AI</title>
+		<imprint>
+			<biblScope unit="volume">3</biblScope>
+			<biblScope unit="page">40</biblScope>
+			<date type="published" when="2016">2016</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">J. K. Pugh, L. B. Soros, and K. O. Stanley. Quality diversity: A new frontier for evolutionary computation. Frontiers in Robotics and AI, 3:40, 2016.</note>
+</biblStruct>
+
+<biblStruct xml:id="b18">
+	<analytic>
+		<title level="a" type="main">Thermodynamics of natural selection i: Energy flow and the limits on organization</title>
+		<author>
+			<persName><forename type="first">E</forename><surname>Smith</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Journal of Theoretical Biology</title>
+		<imprint>
+			<biblScope unit="volume">252</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="185" to="197" />
+			<date type="published" when="2008">2008</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">E. Smith. Thermodynamics of natural selection i: Energy flow and the limits on organization. Journal of Theoretical Biology, 252(2):185--197, 2008.</note>
+</biblStruct>
+
+<biblStruct xml:id="b19">
+	<analytic>
+		<title level="a" type="main">Identifying necessary conditions for the emergence of open-ended evolution through the artificial life world of Chromaria</title>
+		<author>
+			<persName><forename type="first">L</forename><forename type="middle">B</forename><surname>Soros</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">O</forename><surname>Stanley</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the Fourteenth International Conference on the Synthesis and Simulation of Living Systems (ALIFE 14)</title>
+		<meeting>the Fourteenth International Conference on the Synthesis and Simulation of Living Systems (ALIFE 14)</meeting>
+		<imprint>
+			<publisher>MIT Press</publisher>
+			<date type="published" when="2014">2014</date>
+			<biblScope unit="page" from="306" to="313" />
+		</imprint>
+	</monogr>
+	<note type="raw_reference">L. B. Soros and K. O. Stanley. Identifying necessary conditions for the emergence of open-ended evolution through the artificial life world of Chromaria. In Proceedings of the Fourteenth Interna- tional Conference on the Synthesis and Simulation of Living Systems (ALIFE 14), pages 306-313. MIT Press, 2014.</note>
+</biblStruct>
+
+<biblStruct xml:id="b20">
+	<analytic>
+		<title level="a" type="main">Certification of quantum states with hidden structure of their bitstrings</title>
+		<author>
+			<persName><forename type="first">O</forename><forename type="middle">M</forename><surname>Sotnikov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">I</forename><forename type="middle">A</forename><surname>Iakovlev</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">A</forename><surname>Iliasov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">I</forename><surname>Katsnelson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">A</forename><surname>Bagrov</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">V</forename><forename type="middle">V</forename><surname>Mazurenko</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="s">npj Quantum Information</title>
+		<imprint>
+			<biblScope unit="volume">8</biblScope>
+			<biblScope unit="page">41</biblScope>
+			<date type="published" when="2022">2022</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">O. M. Sotnikov, I. A. Iakovlev, A. A. Iliasov, M. I. Katsnelson, A. A. Bagrov, and V. V. Mazurenko. Certification of quantum states with hidden structure of their bitstrings. npj Quantum Information, 8:41, 2022.</note>
+</biblStruct>
+
+<biblStruct xml:id="b21">
+	<analytic>
+		<title level="a" type="main">Why open-endedness matters</title>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">O</forename><surname>Stanley</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Artificial Life</title>
+		<imprint>
+			<biblScope unit="volume">25</biblScope>
+			<biblScope unit="issue">3</biblScope>
+			<biblScope unit="page" from="232" to="235" />
+			<date type="published" when="2019">2019</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">K. O. Stanley. Why open-endedness matters. Artificial Life, 25(3):232-235, 2019.</note>
+</biblStruct>
+
+<biblStruct xml:id="b22">
+	<analytic>
+		<title level="a" type="main">Toward a theory of evolution as multilevel learning</title>
+		<author>
+			<persName><forename type="first">V</forename><surname>Vanchurin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><forename type="middle">I</forename><surname>Wolf</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">I</forename><surname>Katsnelson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">V</forename><surname>Koonin</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Proceedings of the National Academy of Sciences</title>
+		<imprint>
+			<biblScope unit="volume">119</biblScope>
+			<biblScope unit="issue">6</biblScope>
+			<biblScope unit="page">2120037119</biblScope>
+			<date type="published" when="2022">2022</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">V. Vanchurin, Y. I. Wolf, M. I. Katsnelson, and E. V. Koonin. Toward a theory of evolution as multilevel learning. Proceedings of the National Academy of Sciences, 119(6):e2120037119, 2022.</note>
+</biblStruct>
+
+<biblStruct xml:id="b23">
+	<analytic>
+		<title level="a" type="main">Thermodynamics of evolution and the origin of life</title>
+		<author>
+			<persName><forename type="first">V</forename><surname>Vanchurin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">Y</forename><forename type="middle">I</forename><surname>Wolf</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">V</forename><surname>Koonin</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">I</forename><surname>Katsnelson</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Proceedings of the National Academy of Sciences</title>
+		<imprint>
+			<biblScope unit="volume">119</biblScope>
+			<biblScope unit="issue">6</biblScope>
+			<biblScope unit="page">2120042119</biblScope>
+			<date type="published" when="2022">2022</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">V. Vanchurin, Y. I. Wolf, E. V. Koonin, and M. I. Katsnelson. Thermodynamics of evolution and the origin of life. Proceedings of the National Academy of Sciences, 119(6):e2120042119, 2022.</note>
+</biblStruct>
+
+<biblStruct xml:id="b24">
+	<analytic>
+		<title level="a" type="main">The renormalization group and the 𝜖 expansion</title>
+		<author>
+			<persName><forename type="first">K</forename><forename type="middle">G</forename><surname>Wilson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">J</forename><surname>Kogut</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Physics reports</title>
+		<imprint>
+			<biblScope unit="volume">12</biblScope>
+			<biblScope unit="issue">2</biblScope>
+			<biblScope unit="page" from="75" to="199" />
+			<date type="published" when="1974">1974</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">K. G. Wilson and J. Kogut. The renormalization group and the 𝜖 expansion. Physics reports, 12(2):75-199, 1974.</note>
+</biblStruct>
+
+<biblStruct xml:id="b25">
+	<analytic>
+		<title level="a" type="main">Physical foundations of biological complexity</title>
+		<author>
+			<persName><forename type="first">Y</forename><forename type="middle">I</forename><surname>Wolf</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">M</forename><forename type="middle">I</forename><surname>Katsnelson</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><forename type="middle">V</forename><surname>Koonin</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Proceedings of the National Academy of Sciences</title>
+		<imprint>
+			<biblScope unit="volume">115</biblScope>
+			<date type="published" when="2018">2018</date>
+		</imprint>
+	</monogr>
+	<note>37):E8678-E8687</note>
+	<note type="raw_reference">Y. I. Wolf, M. I. Katsnelson, and E. V. Koonin. Physical foundations of biological complexity. Proceedings of the National Academy of Sciences, 115(37):E8678-E8687, 2018.</note>
+</biblStruct>
+
+<biblStruct xml:id="b26">
+	<analytic>
+		<title level="a" type="main">Using self-dissimilarity to quantify complexity</title>
+		<author>
+			<persName><forename type="first">D</forename><forename type="middle">H</forename><surname>Wolpert</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">W</forename><forename type="middle">G</forename><surname>Macready</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="j">Complexity</title>
+		<imprint>
+			<biblScope unit="volume">12</biblScope>
+			<biblScope unit="page" from="77" to="85" />
+			<date type="published" when="2007">2007</date>
+		</imprint>
+	</monogr>
+	<note type="raw_reference">D. H. Wolpert and W. G. Macready. Using self-dissimilarity to quantify complexity. Complexity, 12:77-85, 2007.</note>
+</biblStruct>
+
+<biblStruct xml:id="b27">
+	<analytic>
+		<title level="a" type="main">The unreasonable effectiveness of deep features as a perceptual metric</title>
+		<author>
+			<persName><forename type="first">R</forename><surname>Zhang</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">P</forename><surname>Isola</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">A</forename><forename type="middle">A</forename><surname>Efros</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">E</forename><surname>Shechtman</surname></persName>
+		</author>
+		<author>
+			<persName><forename type="first">O</forename><surname>Wang</surname></persName>
+		</author>
+	</analytic>
+	<monogr>
+		<title level="m">Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition</title>
+		<meeting>the IEEE Conference on Computer Vision and Pattern Recognition</meeting>
+		<imprint>
+			<date type="published" when="2018">2018</date>
+			<biblScope unit="page" from="586" to="595" />
+		</imprint>
+	</monogr>
+	<note type="raw_reference">R. Zhang, P. Isola, A. A. Efros, E. Shechtman, and O. Wang. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pages 586-595, 2018.</note>
+</biblStruct>
+
+				</listBibl>
+			</div>
+		</back>
+	</text>
+</TEI>

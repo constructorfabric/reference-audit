@@ -294,7 +294,9 @@ class CitationContext(BaseModel):
     key: str
     text: str                          # the citing sentence(s) — the claim attached to the citation
     ordinal: int = 0
-    command: str = "cite"              # the cite-family command used (cite / citep / citet / nocite)
+    # The cite-family command used (cite / citep / citet / nocite). `bibr` marks a context recovered
+    # from a PDF, where the TEI marker `<ref type="bibr">` is all the provenance there is.
+    command: str = "cite"
 
 
 class AlignmentFinding(BaseModel):
@@ -361,3 +363,15 @@ class AuditReport(BaseModel):
     commented_twins: list[str] = Field(default_factory=list)    # informational (T1 context)
     missing_includes: list[str] = Field(default_factory=list)   # \input targets not found on disk
     summary: dict = Field(default_factory=dict)
+
+    # --- provenance of the input itself ---
+    # `pdf`: the entries and contexts were EXTRACTED by GROBID rather than read from authored source
+    # files, so several fields above change meaning. `commented_twins` and `missing_includes` are
+    # structurally inapplicable (a PDF has neither), and `uncited` depends on GROBID having linked
+    # in-text markers to bibliography items — hence `citation_linking`, which is `unavailable` when
+    # it linked none (bookkeeping is then unknown, not "everything is cited"). `notes` carries the
+    # document-level caveats the renderer must show so no reader mistakes an extraction artifact for
+    # an error in the manuscript. Defaults reproduce the .bib/.tex behavior exactly.
+    input_kind: Literal["tex_bib", "pdf"] = "tex_bib"
+    citation_linking: Literal["available", "unavailable", "not_applicable"] = "available"
+    notes: list[str] = Field(default_factory=list)

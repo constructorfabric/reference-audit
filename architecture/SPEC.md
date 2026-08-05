@@ -19,6 +19,11 @@ checks are intended to be used:
 
 ## Audit Steps
 
+The audited input is either a `.bib` bibliography with the `.tex` that cites it, or the paper's PDF on
+its own — for mass automated processing the PDF is usually all that exists. A PDF is converted to the
+same reference and citation records the authored sources produce, so every step below is identical
+regardless of which arrived.
+
 ### 1. Which exact artifact does the reference point to?
 
 - For papers we want to find a **DOI** — but also keep a list of reputable venues which don't
@@ -83,6 +88,10 @@ verdict of step 1.
 4. The LLM model is configurable; by default use `gpt-5.4-mini`.
 5. Use `uv` to manage Python dependencies.
 6. Python code is a module in `src/`, without relative imports and `sys.path.append`.
+7. PDF input is extracted by a locally-run GROBID, which the auditor talks to but does not manage. The
+   HTTP call and the TEI→model mapping are separate modules, so the mapping — where extraction
+   correctness actually lives — is verifiable offline from recorded TEI. Extraction quality is measured
+   against test documents compiled from their own `.bib`, which makes that `.bib` ground truth.
 
 ## Traceability
 

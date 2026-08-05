@@ -17,7 +17,11 @@ def test_summary_counts(pilot_tex, pilot_bib):
     s = report.summary
     assert s["total_entries"] == 28
     assert s["commented_twins"] == 1
-    assert s["missing_includes"] == 6
+    # The pilot's \input targets are all checked in (they are needed to compile it to PDF for the
+    # extraction oracle), so citation coverage is complete: every entry is reached, nothing dangles.
+    assert s["missing_includes"] == 0
+    assert s["cited"] == 28
+    assert s["uncited"] == 0
     assert report.cited_but_missing == []          # no dangling citations in the pilot
     assert "bagrov2024visual" in report.commented_twins
 

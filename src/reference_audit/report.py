@@ -87,13 +87,27 @@ def _has_issues(a: EntryAudit, *, network: bool) -> bool:
     return False
 
 
-def _entry_block(a: EntryAudit) -> list[str]:
-    """The full report block for one entry: header, ids, issues, formatting nits, verdict."""
+def _entry_block(a: EntryAudit, *, pdf: bool = False, citedness_known: bool = True) -> list[str]:
+    """The full report block for one entry: header, ids, issues, formatting nits, verdict.
+
+    For a PDF-derived entry the key (`b12`) is a GROBID-assigned id and means nothing to a reader, so
+    the printed reference number is shown alongside it, and a reference GROBID could not title is
+    identified by the raw text it read — otherwise the entry would be unlocatable in the source PDF.
+    """
     e = a.entry
-    flag = "cited" if e.cited else "UNCITED"
+    if not citedness_known:
+        flag = "citedness unknown"
+    else:
+        flag = "cited" if e.cited else "UNCITED"
+    ref_no = e.raw_fields.get("grobid_ref_index") if pdf else None
+    where = f"ref #{ref_no}, {flag}" if ref_no else flag
+    title = e.title
+    if not title:
+        raw = (e.raw_fields.get("grobid_raw") or "").strip()
+        title = f'(no title — GROBID read: "{raw[:160]}")' if raw else "(no title)"
     block = [
-        f"[{e.entry_type.value}] {e.key}  ({flag})",
-        f"    {e.title or '(no title)'}",
+        f"[{e.entry_type.value}] {e.key}  ({where})",
+        f"    {title}",
         f"    ids: {_ids_str(a)}",
     ]
     for issue in a.issues:
@@ -108,14 +122,21 @@ def _entry_block(a: EntryAudit) -> list[str]:
     return block
 
 
-def _category_section(bucket: list[EntryAudit], heading: str, empty_message: str) -> list[str]:
+def _category_section(
+    bucket: list[EntryAudit],
+    heading: str,
+    empty_message: str,
+    *,
+    pdf: bool = False,
+    citedness_known: bool = True,
+) -> list[str]:
     """A named report category: the full entry block for each member, or — when none qualify — a
     single explicit line saying so (a clean run states it plainly rather than going silent)."""
     if not bucket:
         return [empty_message, ""]
     out = [heading.format(n=len(bucket)), ""]
     for a in bucket:
-        out.extend(_entry_block(a))
+        out.extend(_entry_block(a, pdf=pdf, citedness_known=citedness_known))
         out.append("")
     return out
 
@@ -123,16 +144,27 @@ def _category_section(bucket: list[EntryAudit], heading: str, empty_message: str
 def render_text(report: AuditReport) -> str:
     s = report.summary
     verdicts = s.get("verdicts")
+    pdf = report.input_kind == "pdf"
+    # For a PDF, cited/uncited depends on GROBID having linked in-text markers to bibliography items.
+    # When it linked none, saying "0 uncited" would assert something we do not know.
+    citedness_known = report.citation_linking == "available"
     lines: list[str] = []
-    header = "Reference audit" if verdicts else "Reference audit — parse summary (no network)"
+    if verdicts:
+        header = "Reference audit — references extracted from PDF" if pdf else "Reference audit"
+    else:
+        header = "Reference audit — parse summary (no network)"
     lines.append(header)
-    lines.append(
-        f"  {s.get('total_entries', 0)} entries"
-        f"  ·  {s.get('cited', 0)} cited"
-        f"  ·  {s.get('uncited', 0)} uncited"
-        f"  ·  {s.get('entries_with_issues', 0)} with issues"
-        f"  ·  {s.get('commented_twins', 0)} commented twins"
-    )
+    counts = [f"  {s.get('total_entries', 0)} entries"]
+    if citedness_known:
+        counts.append(f"{s.get('cited', 0)} cited")
+        counts.append(f"{s.get('uncited', 0)} uncited")
+    else:
+        counts.append("citedness unknown")
+    counts.append(f"{s.get('entries_with_issues', 0)} with issues")
+    if not pdf:
+        # A PDF has no commented-out entries, so the count is not zero — it is meaningless.
+        counts.append(f"{s.get('commented_twins', 0)} commented twins")
+    lines.append("  ·  ".join(counts))
     if verdicts:
         lines.append(
             f"  verdicts: {verdicts.get('exactly_one', 0)} matched"
@@ -156,6 +188,14 @@ def render_text(report: AuditReport) -> str:
     if by_type:
         lines.append("  types: " + ", ".join(f"{k}={v}" for k, v in sorted(by_type.items())))
     lines.append("")
+
+    # Caveats about the input itself, before any finding — so nothing below is read as an authoring
+    # error when it may be an extraction artifact.
+    if report.notes:
+        lines.append("INPUT NOTES:")
+        for note in report.notes:
+            lines.append(f"    · {note}")
+        lines.append("")
 
     # Group entries so the reader sees the gravest first. The two headline categories lead, each its
     # own section: CAPITAL OFFENCES (conclusive hallucinations — verdict `none`, no real document
@@ -188,6 +228,8 @@ def render_text(report: AuditReport) -> str:
             capital_offences,
             "CAPITAL OFFENCES ({n}) — hallucinated citations (no real document corresponds):",
             "CAPITAL OFFENCES — No hallucinated citations",
+            pdf=pdf,
+            citedness_known=citedness_known,
         ))
         lines.extend(_category_section(
             unable_to_verify,
@@ -195,6 +237,8 @@ def render_text(report: AuditReport) -> str:
             "(network/LLM error, unfamiliar entry type, dead link, …):",
             "UNABLE TO VERIFY — For all other references at least one matching artifact "
             "was positively identified",
+            pdf=pdf,
+            citedness_known=citedness_known,
         ))
 
     groups = [
@@ -208,13 +252,23 @@ def render_text(report: AuditReport) -> str:
         lines.append(heading.format(n=len(bucket)))
         lines.append("")
         for a in bucket:
-            lines.extend(_entry_block(a))
+            lines.extend(_entry_block(a, pdf=pdf, citedness_known=citedness_known))
             lines.append("")
 
     if report.cited_but_missing:
-        lines.append("CITED BUT MISSING FROM .bib (error — dangling citation):")
-        for k in report.cited_but_missing:
-            lines.append(f"    \\cite{{{k}}}  → no bib entry")
+        if pdf:
+            # A TEI marker points into this same document's own bibliography, so a target with no
+            # entry means the extracted TEI is internally inconsistent — a GROBID fault, not the
+            # author's dangling citation.
+            lines.append(
+                "CITATION MARKERS POINTING AT NO REFERENCE (GROBID produced inconsistent TEI):"
+            )
+            for k in report.cited_but_missing:
+                lines.append(f"    marker → {k}  → no such bibliography entry")
+        else:
+            lines.append("CITED BUT MISSING FROM .bib (error — dangling citation):")
+            for k in report.cited_but_missing:
+                lines.append(f"    \\cite{{{k}}}  → no bib entry")
         lines.append("")
 
     if report.missing_includes:
@@ -227,8 +281,17 @@ def render_text(report: AuditReport) -> str:
         lines.append("")
 
     if report.uncited:
-        caveat = " — may be cited in missing includes" if report.missing_includes else ""
-        lines.append(f"UNCITED (in .bib, never \\cite/\\nocite — info{caveat}):")
+        if pdf:
+            # GROBID's marker→bibliography linking is imperfect, so an "uncited" reference here may
+            # simply be one whose in-text markers it failed to attach. Say so rather than reporting a
+            # linking failure as an authoring error.
+            lines.append(
+                "UNCITED (no in-text citation marker was linked to it by GROBID — this may be a "
+                "linking failure rather than a genuinely uncited reference):"
+            )
+        else:
+            caveat = " — may be cited in missing includes" if report.missing_includes else ""
+            lines.append(f"UNCITED (in .bib, never \\cite/\\nocite — info{caveat}):")
         lines.append("    " + ", ".join(report.uncited))
         lines.append("")
 
