@@ -521,18 +521,20 @@ on the `doi` field (see [How it works](#how-it-works)). `strict` therefore count
 
 #### Result: `dev_public`, pipeline 0.21
 
-This run was on 2026-10-09 with the ClickHouse backend and `gpt-6-luna`, at HALLMARK `f774fa4` and
-reference-audit `b004463`. All 1,119 entries were run:
+This run was on 2026-10-09 with the ClickHouse backend and `gpt-6-luna`, at HALLMARK `f774fa4`. It
+started at reference-audit `b004463`, and later retries ran at `b8420eb`; nothing in between affects a
+verdict. All 1,119 entries were run:
 - 1,112 were audited; 7 failed the `.bib` round-trip and are not evaluated.
-- 41 HALLUCINATED entries stayed unresolved: 33 on arXiv 429s, while this IP was throttled; 8 at the
-  per-entry LLM candidate cap.
+- 8 HALLUCINATED entries stayed unresolved at the per-entry LLM candidate cap.
+- 33 more were first refused by arXiv (429, while this IP was throttled) and were resolved on a later
+  retry.
 
 | mapping | mode | DR | FPR | F1 | MCC | Tier-3 F1 | coverage |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `identity` | conservative | 0.391 | 0.002 | 0.561 | 0.481 | 0.648 | 0.954 |
-| `identity` | aggressive | 0.435 | 0.002 | 0.606 | 0.508 | 0.672 | 0.954 |
-| `strict` | conservative | 0.949 | 0.094 | 0.943 | 0.859 | 0.885 | 0.747 |
-| `strict` | aggressive | 0.958 | 0.392 | 0.837 | 0.615 | 0.619 | 0.747 |
+| `identity` | conservative | 0.421 | 0.002 | 0.592 | 0.499 | 0.664 | 0.984 |
+| `identity` | aggressive | 0.432 | 0.002 | 0.603 | 0.505 | 0.667 | 0.984 |
+| `strict` | conservative | 0.951 | 0.094 | 0.945 | 0.860 | 0.887 | 0.777 |
+| `strict` | aggressive | 0.957 | 0.392 | 0.836 | 0.613 | 0.616 | 0.777 |
 
 `identity` almost never flags a real paper: 1 of 513 VALID entries. It finds only hallucinations with
 no real counterpart, since its verdict is about existence, not metadata.

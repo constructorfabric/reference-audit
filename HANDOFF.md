@@ -21,16 +21,16 @@ Result". In brief:
 
 | mapping | mode | DR | FPR | F1 | MCC | coverage |
 | --- | --- | --- | --- | --- | --- | --- |
-| identity | conservative | 0.391 | 0.002 | 0.561 | 0.481 | 0.954 |
-| strict | conservative | 0.949 | 0.094 | 0.943 | 0.859 | 0.747 |
-| strict | aggressive | 0.958 | 0.392 | 0.837 | 0.615 | 0.747 |
+| identity | conservative | 0.421 | 0.002 | 0.592 | 0.499 | 0.984 |
+| strict | conservative | 0.951 | 0.094 | 0.945 | 0.860 | 0.777 |
+| strict | aggressive | 0.957 | 0.392 | 0.836 | 0.613 | 0.777 |
 
 - 7 entries are not evaluated (`.bib` round-trip).
-- 41 HALLUCINATED entries are unresolved:
-  - 33 on arXiv 429s; **this IP was throttled by arXiv**, which answered 429 even to a single request;
-  - 8 at `llm_max_candidates=8`.
-- The audit wall time was about 36 min (31 for the run, 5 for a second retry). `run.json` says 5 min,
-  because of a harness bug that is now fixed.
+- 8 HALLUCINATED entries are unresolved at `llm_max_candidates=8`.
+- 33 more hit arXiv 429s while this IP was throttled (arXiv refused even single requests). A third
+  retry (`--retry-unresolved 3`) resolved them once arXiv answered again.
+- The audit wall time was about 38 min: 31 for the run, then 5 and 2 for retries. `run.json` says
+  7 min, because the harness bug that lost the first 31 was fixed only after them.
 
 This session's commits:
 - `361f533` `score`: relabelled rows without type keys crashed it; the summary now shows coverage and
@@ -49,6 +49,8 @@ None of these is verdict-affecting: `pipeline_version` stays 0.21.
 
 Counts are from the 0.21 run. A `strict` FP is a VALID entry the `strict` mapping calls
 HALLUCINATED: 32 in all, of which 24 are tool errors, 7 are likely label errors and 1 is a typo.
+`strict` misses 26 hallucinations: 11 `partial_author_list`, 8 `near_miss_title`, 3
+`chimeric_title`, 2 `swapped_authors`, 1 `merged_citation`, 1 `wrong_venue`.
 
 1. **The pooled record's venue, year and title come from the preprint copy.**
    - Cause: `matching/pool.py` `_representative`. `_FIELD_SOURCE_PRIORITY` has no `dblp`; OpenAlex's
@@ -63,7 +65,7 @@ HALLUCINATED: 32 in all, of which 24 are tool errors, 7 are likely label errors 
    - Cause: `llm/prompts.py:108` `field_check_user` puts `entry.title` under
      "CONTEXT — the same work, confirmed by identifier".
    - Effect: the LLM rules "Resilient" vs "Robust", and two entirely different titles, as formatting
-     or uncertain. That is 8 strict misses (5 `near_miss_title`, 3 `chimeric_title`).
+     or uncertain. That is up to 9 strict misses (6 `near_miss_title`, 3 `chimeric_title`).
    - Fix: take the context from the matched record. Fix item 1 first, or published-vs-preprint title
      variants will become FPs.
 3. **The author check (`matching/names.py` `mismatched_authors`).**
@@ -111,11 +113,9 @@ were relabelled HALLUCINATED → VALID by HALLMARK:
 
 ## Next steps (user decides)
 
-1. When arXiv lifts its throttle (check: `curl -sL "https://export.arxiv.org/api/query?id_list=2203.05104"`
-   returns 200), rerun `audit --split dev_public --retry-unresolved 3`, then `score`.
-2. Fix work-list items 1–5 under one `pipeline_version` bump (0.22). Re-run dev_public in a fresh
+1. Fix work-list items 1–5 under one `pipeline_version` bump (0.22). Re-run dev_public in a fresh
    `--out` (about 35 min), compare with 0.21, then update the README result.
-3. Optional: `test_public` (831), an API-backend run, and push / open a PR.
+2. Optional: `test_public` (831), an API-backend run, and push / open a PR.
 
 ## Machine state outside git (this machine only)
 
