@@ -472,11 +472,14 @@ become a not-evaluated prediction with the parser's reason, never a guessed labe
 **`score`** writes `predictions.identity.jsonl` and `predictions.strict.jsonl`. It runs
 `hallmark evaluate --eval-mode both --strict` on each, restricted to the audited entries, and writes
 `summary.md` with:
-- the metrics;
+- the metrics, with HALLMARK's coverage next to them;
 - per-type label counts;
 - every false positive;
 - the unresolved entries, with why;
 - the misses by type.
+
+A false positive or miss that HALLMARK itself relabelled (its `relabeled_from` / `relabel_reason`
+fields) carries that history, since a disagreement on a relabelled entry is a candidate label error.
 
 The two mappings exist because the two tools ask different questions. reference-audit's verdict asks
 whether *any real document* corresponds to the entry. HALLMARK's `HALLUCINATED` also covers real papers

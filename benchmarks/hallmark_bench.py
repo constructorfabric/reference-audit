@@ -547,6 +547,7 @@ _METRICS = [
     ("ece", "ECE"),
     ("num_uncertain", "UNCERTAIN"),
     ("num_evaluated", "evaluated"),
+    ("coverage", "coverage"),
 ]
 
 
@@ -561,6 +562,16 @@ def _fmt(value: object) -> str:
 def _short(text: str, n: int = 240) -> str:
     text = " ".join(text.split())
     return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def _relabel_note(e: dict) -> str:
+    """HALLMARK's own label history, which marks a contested label next to a disagreement."""
+    if "relabeled_from" not in e:
+        return ""
+    return (
+        f" [HALLMARK relabelled {e['relabeled_from']} → {e['label']}: "
+        f"{_short(e.get('relabel_reason') or '', 160)}]"
+    )
 
 
 def build_summary(
@@ -595,9 +606,11 @@ def build_summary(
             row = " | ".join(_fmt(r.get(field)) for field, _ in _METRICS)
             lines.append(f"| {mapping} | {mode} | {row} |")
 
+    # A VALID row may omit `hallucination_type` / `difficulty_tier` altogether: in v1.2 the entries
+    # relabelled HALLUCINATED -> VALID carry neither key.
     by_type: dict[str, list[dict]] = defaultdict(list)
     for e in labeled:
-        by_type[e["hallucination_type"] or "VALID"].append(e)
+        by_type[e.get("hallucination_type") or "VALID"].append(e)
     lines += [
         "",
         "## Per type",
@@ -616,10 +629,12 @@ def build_summary(
             c["x" if not p.evaluated else p.label[0]] += 1
         return " / ".join(str(c[k]) for k in ("H", "V", "U", "x"))
 
-    order = sorted(by_type, key=lambda t: (t != "VALID", by_type[t][0]["difficulty_tier"] or 0, t))
+    order = sorted(
+        by_type, key=lambda t: (t != "VALID", by_type[t][0].get("difficulty_tier") or 0, t)
+    )
     for t in order:
         es = by_type[t]
-        tier = es[0]["difficulty_tier"] or "—"
+        tier = es[0].get("difficulty_tier") or "—"
         lines.append(
             f"| {t} | {tier} | {len(es)} | {tally('identity', es)} | {tally('strict', es)} |"
         )
@@ -632,7 +647,7 @@ def build_summary(
             p = predictions[mapping][e["bibtex_key"]]
             lines.append(
                 f"- `{e['bibtex_key']}` {_short(e['fields'].get('title', ''), 100)} "
-                f"({e['fields'].get('year', '?')}) — {_short(p.reason)}"
+                f"({e['fields'].get('year', '?')}) — {_short(p.reason)}{_relabel_note(e)}"
             )
 
     unresolved = [e for e in labeled
@@ -654,7 +669,7 @@ def build_summary(
             p = predictions["strict"][e["bibtex_key"]]
             lines.append(
                 f"- `{e['bibtex_key']}` {_short(e['fields'].get('title', ''), 100)} — "
-                f"{_short(p.reason)}"
+                f"{_short(p.reason)}{_relabel_note(e)}"
             )
         lines.append("")
     return "\n".join(lines) + "\n"

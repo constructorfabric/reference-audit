@@ -195,3 +195,46 @@ def test_chunk_that_raises_reports_every_entry(tmp_path, monkeypatch):
     rows = hb.audit_chunk(_records(), tmp_path / "c.bib", AuditConfig(), tmp_path / "c.db")
     assert [r.status for r in rows] == ["failed", "failed"]
     assert all("OSError: disk full" in r.failure for r in rows)
+
+
+# --- summary.md ---------------------------------------------------------------------------------
+
+
+def _labeled(key, label, htype=None, tier=None, *, type_keys=True, **extra):
+    row = {"bibtex_key": key, "label": label, "fields": {"title": f"Title {key}", "year": "2021"}}
+    if type_keys:
+        row |= {"hallucination_type": htype, "difficulty_tier": tier}
+    return row | extra
+
+
+def test_summary_handles_relabelled_rows_without_type_keys():
+    # HALLMARK v1.2 rows relabelled HALLUCINATED -> VALID carry no hallucination_type /
+    # difficulty_tier key at all, unlike other VALID rows (where both are null).
+    labeled = [
+        _labeled("v_plain", "VALID"),
+        _labeled("v_relab", "VALID", type_keys=False,
+                 relabeled_from="HALLUCINATED", relabel_reason="real paper"),
+        _labeled("h_miss", "HALLUCINATED", "fabricated_doi", 1),
+    ]
+    assert "hallucination_type" not in labeled[1]
+    label = {"v_plain": "VALID", "v_relab": "HALLUCINATED", "h_miss": "VALID"}
+    predictions = {
+        m: {k: hb.Prediction(bibtex_key=k, label=v, confidence=0.9, reason=f"why {k}")
+            for k, v in label.items()}
+        for m in hb.MAPPINGS
+    }
+    metrics = {"detection_rate": 0.0, "coverage": 1.0, "num_evaluated": 3}
+    results = {m: {"conservative": metrics, "aggressive": metrics} for m in hb.MAPPINGS}
+    meta = {
+        "entries": 3, "counts": {}, "counts_before_retry": {}, "reference_audit_sha": "x",
+        "pipeline_version": "0", "model": "m", "llm_enabled": True, "hallmark_sha": "y",
+        "hallmark_version": "v1.2", "wall_seconds": 60, "from_cache": 0,
+    }
+    summary = hb.build_summary("dev_public", meta, labeled, predictions, results)
+    assert "| VALID | — | 2 | 1 / 1 / 0 / 0 | 1 / 1 / 0 / 0 |" in summary
+    assert "| fabricated_doi | 1 | 1 | 0 / 1 / 0 / 0 | 0 / 1 / 0 / 0 |" in summary
+    # the false positive carries HALLMARK's own relabel history; a plain row carries none
+    assert ("`v_relab` Title v_relab (2021) — why v_relab "
+            "[HALLMARK relabelled HALLUCINATED → VALID: real paper]") in summary
+    assert "### fabricated_doi (1 of 1)" in summary
+    assert "| 1.000 |" in summary  # coverage is in the metrics table
