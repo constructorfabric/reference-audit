@@ -23,6 +23,7 @@ tests/documents/*/.build/
 # Studio generated runtime (config/ is tracked; these are generated)
 .cf-studio/.core/
 .cf-studio/.gen/
+.cf-studio/.cache/
 
 # BEGIN Constructor Studio
 # Generated Constructor Studio runtime and agent integration files.
