@@ -19,12 +19,24 @@ that quote it. Among titles of equal length the most-cited comes first, as an AP
 would put it (the 2017 "Attention Is All You Need" ahead of a later repost with the same title). Without the index the search is a scan of hundreds of millions of rows, so `preflight`
 refuses to run without it, quoting the statements that build it.
 
+All-words matching is strict: one misspelt or extra word in the cited title hides the real record.
+So when no all-words hit is a near-exact title (`title_ratio` below `title_accept`) and the title has
+at least `RELAXED_MIN_WORDS` distinct words, the search is repeated with each word left out in turn
+(one query, the leave-one-out conditions OR-ed, still served by the index). Those hits rank by edit
+distance to the cited title, then citations, and come ahead of the all-words hits. Two wrong words
+still find nothing; the APIs' relevance search is more forgiving than that.
+
+**Coverage.** `preflight` also reads how far each snapshot reaches (`coverage_end`): DBLP's latest
+dump date, OpenAlex's newest `updated_date`, and the newest publication date in the S2 dump. The
+pipeline names it next to a `none` verdict for an entry from that year or later.
+
 **Failures are errors, never "not found":** an unreachable server, a timeout or a query error becomes
 `SourceQueryResult.error`, which the pipeline reports and retries next run.
 
 What the local data cannot supply, compared with the APIs:
-- OpenAlex has no `locations` table locally, so a Work's version links are its primary location only.
-  The preprint↔published merge then relies on the identifier links the other sources supply.
+- OpenAlex has no `locations` table locally, so a Work's version links are its primary location and
+  its best open-access location only. The preprint↔published merge then relies on those and on the
+  identifier links the other sources supply.
 - The DBLP dump table has no landing-page URL (`ee`) and no pages.
 - Coverage ends at each snapshot's ingest date. A work newer than the snapshot is not found locally.
 """
@@ -34,9 +46,11 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+from datetime import date, datetime
 from typing import Any
 
 from reference_audit.config import AuditConfig
+from reference_audit.matching.features import title_ratio
 from reference_audit.models import (
     BibEntry,
     EntryType,
@@ -59,6 +73,36 @@ TITLE_INDEX_DDL = (
     "TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(title));\n"
     "ALTER TABLE {table} MATERIALIZE INDEX " + TITLE_INDEX + ";"
 )
+
+
+# The leave-one-word-out retry needs at least this many distinct title words: with fewer, the words
+# left would match far too many titles to rank the right one into the first page.
+RELAXED_MIN_WORDS = 4
+
+
+def _all_words_condition(words: list[str]) -> tuple[str, dict]:
+    return "hasAllTokens(title, {w:Array(String)})", {"w": words}
+
+
+def _leave_one_out_condition(words: list[str]) -> tuple[str, dict]:
+    """Every distinct word but one must match, for each word in turn."""
+    distinct = list(dict.fromkeys(words))
+    subsets = [distinct[:i] + distinct[i + 1:] for i in range(len(distinct))]
+    sql = " OR ".join(f"hasAllTokens(title, {{w{i}:Array(String)}})" for i in range(len(subsets)))
+    return f"({sql})", {f"w{i}": sub for i, sub in enumerate(subsets)}
+
+
+def _as_date(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
 
 
 class ClickHouseUnavailableError(RuntimeError):
@@ -189,10 +233,16 @@ def _no_words(name: str, title: str) -> SourceQueryResult:
 
 
 class _ClickHouseAdapter(SourceAdapter):
-    """Shared plumbing: the connection, the per-run preflight, and closing."""
+    """Shared plumbing: the connection, the per-run preflight, title search, and closing.
+
+    A subclass supplies `_title_rows` (one page of title hits, each with `id` and title `t`),
+    `_records` (those hits as `SourceRecord`s, in order), the two orderings, and `coverage_sql`.
+    """
 
     backend = "clickhouse"
     rate_per_sec = 1000.0  # local server; concurrency is bounded by the connection's semaphore
+    strict_order = ""      # ORDER BY of the all-words search
+    relaxed_order = ""     # ORDER BY of the leave-one-out search; may use {cited:String}
 
     def __init__(self, connection: ClickHouseConnection, **kw):
         super().__init__(**kw)
@@ -201,8 +251,53 @@ class _ClickHouseAdapter(SourceAdapter):
     def search_tables(self) -> list[str]:
         raise NotImplementedError
 
+    def coverage_sql(self) -> str:
+        """One row, one column `d`: the newest date this snapshot covers."""
+        raise NotImplementedError
+
     async def preflight(self) -> None:
         await self.ch.ensure_ready(self.search_tables())
+        try:
+            rows = await self.ch.query(self.coverage_sql())
+        except ClickHouseQueryError as exc:
+            raise ClickHouseUnavailableError(
+                f"source_backend=clickhouse: cannot read how far the local {self.name} snapshot "
+                f"reaches ({exc})"
+            ) from exc
+        self.coverage_end = _as_date(rows[0]["d"]) if rows else None
+        if self.coverage_end is None or self.coverage_end.year < 2000:  # 1970: an unset value
+            raise ClickHouseUnavailableError(
+                f"source_backend=clickhouse: the local {self.name} snapshot reports no usable "
+                f"coverage date ({rows[0]['d'] if rows else 'no rows'}); is the table empty?"
+            )
+
+    async def _title_rows(self, condition: str, params: dict, order: str, limit: int) -> list[dict]:
+        raise NotImplementedError
+
+    async def _records(self, rows: list[dict]) -> list[SourceRecord]:
+        raise NotImplementedError
+
+    async def search_by_metadata(self, entry: BibEntry, limit: int = 10) -> SourceQueryResult:
+        if not entry.title:
+            return SourceQueryResult(source=self.name, query_kind="metadata", records=[])
+        words = title_search_words(entry.title)
+        if not words:
+            return _no_words(self.name, entry.title)
+        try:
+            rows = await self._title_rows(*_all_words_condition(words), self.strict_order, limit)
+            near_exact = any(
+                title_ratio(entry.title, r["t"]) >= self.ch.config.title_accept for r in rows
+            )
+            if not near_exact and len(set(words)) >= RELAXED_MIN_WORDS:
+                condition, params = _leave_one_out_condition(words)
+                params["cited"] = entry.title.lower()
+                relaxed = await self._title_rows(condition, params, self.relaxed_order, limit)
+                seen = {r["id"] for r in relaxed}
+                rows = (relaxed + [r for r in rows if r["id"] not in seen])[:limit]
+            records = await self._records(rows)
+        except ClickHouseQueryError as exc:
+            return _error(self.name, "metadata", exc)
+        return SourceQueryResult(source=self.name, query_kind="metadata", records=records)
 
     async def aclose(self) -> None:
         await super().aclose()
@@ -221,8 +316,18 @@ class ClickHouseSemanticScholarAdapter(_ClickHouseAdapter):
     def db(self) -> str:
         return self.ch.config.clickhouse_s2_db
 
+    strict_order = "length(t), c DESC, id"
+    relaxed_order = "editDistance(lower(t), {cited:String}), c DESC, id"
+
     def search_tables(self) -> list[str]:
         return [f"{self.db}.papers"]
+
+    def coverage_sql(self) -> str:
+        # The S2 dump has no snapshot date; its newest (non-future) publication date stands in.
+        return (
+            f"SELECT max(publicationdate) AS d FROM {self.db}.papers "
+            "WHERE publicationdate <= toString(today())"
+        )
 
     async def lookup_by_id(self, ids: Identifiers) -> SourceQueryResult:
         # The API looks up DOI, else arXiv, else PMID; so does this (the same precedence).
@@ -241,23 +346,16 @@ class ClickHouseSemanticScholarAdapter(_ClickHouseAdapter):
             return _error(self.name, "id", exc)
         return SourceQueryResult(source=self.name, query_kind="id", records=records)
 
-    async def search_by_metadata(self, entry: BibEntry, limit: int = 10) -> SourceQueryResult:
-        if not entry.title:
-            return SourceQueryResult(source=self.name, query_kind="metadata", records=[])
-        words = title_search_words(entry.title)
-        if not words:
-            return _no_words(self.name, entry.title)
-        try:
-            rows = await self.ch.query(
-                f"SELECT corpusid, any(title) AS t, max(ifNull(citationcount, 0)) AS c "
-                f"FROM {self.db}.papers WHERE hasAllTokens(title, {{w:Array(String)}}) "
-                "GROUP BY corpusid ORDER BY length(t), c DESC, corpusid LIMIT {n:UInt32}",
-                {"w": words, "n": limit},
-            )
-            records = await self._papers([r["corpusid"] for r in rows])
-        except ClickHouseQueryError as exc:
-            return _error(self.name, "metadata", exc)
-        return SourceQueryResult(source=self.name, query_kind="metadata", records=records)
+    async def _title_rows(self, condition: str, params: dict, order: str, limit: int) -> list[dict]:
+        return await self.ch.query(
+            f"SELECT corpusid AS id, any(title) AS t, max(ifNull(citationcount, 0)) AS c "
+            f"FROM {self.db}.papers WHERE {condition} "
+            f"GROUP BY id ORDER BY {order} LIMIT {{n:UInt32}}",
+            {**params, "n": limit},
+        )
+
+    async def _records(self, rows: list[dict]) -> list[SourceRecord]:
+        return await self._papers([r["id"] for r in rows])
 
     async def _papers(self, corpusids: list[int]) -> list[SourceRecord]:
         """Full records for `corpusids`, in the given order (newest ingest of each)."""
@@ -324,8 +422,14 @@ class ClickHouseOpenAlexAdapter(_ClickHouseAdapter):
     def db(self) -> str:
         return self.ch.config.clickhouse_openalex_db
 
+    strict_order = "length(t), c DESC, id"
+    relaxed_order = "editDistance(lower(t), {cited:String}), c DESC, id"
+
     def search_tables(self) -> list[str]:
         return [f"{self.db}.works_slim"]
+
+    def coverage_sql(self) -> str:
+        return f"SELECT max(updated_date) AS d FROM {self.db}.works"
 
     async def lookup_by_id(self, ids: Identifiers) -> SourceQueryResult:
         # The API's precedence: DOI, else arXiv (via its DataCite DOI), else a cited Work id.
@@ -347,23 +451,16 @@ class ClickHouseOpenAlexAdapter(_ClickHouseAdapter):
             return _error(self.name, "id", exc)
         return SourceQueryResult(source=self.name, query_kind="id", records=records)
 
-    async def search_by_metadata(self, entry: BibEntry, limit: int = 10) -> SourceQueryResult:
-        if not entry.title:
-            return SourceQueryResult(source=self.name, query_kind="metadata", records=[])
-        words = title_search_words(entry.title)
-        if not words:
-            return _no_words(self.name, entry.title)
-        try:
-            rows = await self.ch.query(
-                f"SELECT id, any(title) AS t, max(ifNull(cited_by_count, 0)) AS c "
-                f"FROM {self.db}.works_slim WHERE hasAllTokens(title, {{w:Array(String)}}) "
-                "GROUP BY id ORDER BY length(t), c DESC, id LIMIT {n:UInt32}",
-                {"w": words, "n": limit},
-            )
-            records = await self._works([r["id"] for r in rows])
-        except ClickHouseQueryError as exc:
-            return _error(self.name, "metadata", exc)
-        return SourceQueryResult(source=self.name, query_kind="metadata", records=records)
+    async def _title_rows(self, condition: str, params: dict, order: str, limit: int) -> list[dict]:
+        return await self.ch.query(
+            f"SELECT id, any(title) AS t, max(ifNull(cited_by_count, 0)) AS c "
+            f"FROM {self.db}.works_slim WHERE {condition} "
+            f"GROUP BY id ORDER BY {order} LIMIT {{n:UInt32}}",
+            {**params, "n": limit},
+        )
+
+    async def _records(self, rows: list[dict]) -> list[SourceRecord]:
+        return await self._works([r["id"] for r in rows])
 
     async def _works(self, work_ids: list[str]) -> list[SourceRecord]:
         """Full records for `work_ids`, in the given order: the slim table for the work, the full
@@ -378,6 +475,8 @@ class ClickHouseOpenAlexAdapter(_ClickHouseAdapter):
         full = await self.ch.query(
             "SELECT id, biblio.volume AS volume, biblio.issue AS issue, "
             "biblio.first_page AS first_page, biblio.last_page AS last_page, "
+            "best_oa_location.landing_page_url AS oa_landing_page_url, "
+            "best_oa_location.pdf_url AS oa_pdf_url, "
             f"abstract_inverted_index FROM {self.db}.works "
             "WHERE id IN {ids:Array(String)} ORDER BY id, version DESC LIMIT 1 BY id",
             {"ids": work_ids},
@@ -388,6 +487,16 @@ class ClickHouseOpenAlexAdapter(_ClickHouseAdapter):
             openalex_work_to_record(openalex_row_to_api_work(by_id[w], extra.get(w)))
             for w in work_ids if w in by_id
         ]
+
+
+def _best_oa_location(full: dict, primary: dict) -> list[dict]:
+    """The `works` row's best open-access location, unless it is missing or is the primary one."""
+    landing, pdf = full.get("oa_landing_page_url"), full.get("oa_pdf_url")
+    if not (landing or pdf):
+        return []
+    if (landing, pdf) == (primary.get("landing_page_url"), primary.get("pdf_url")):
+        return []
+    return [{"landing_page_url": landing, "pdf_url": pdf}]
 
 
 def openalex_row_to_api_work(slim: dict, full: dict | None) -> dict:
@@ -411,8 +520,9 @@ def openalex_row_to_api_work(slim: dict, full: dict | None) -> dict:
         "type": slim.get("type"),
         "authorships": [{"author": {"display_name": n}} for n in slim.get("author_names") or [] if n],
         "primary_location": primary,
-        # No `locations` table locally: the primary location is the only one known.
-        "locations": [primary],
+        # No `locations` table locally: the primary and the best open-access location are all
+        # that is known. The latter is often the arXiv copy of a published paper.
+        "locations": [primary, *_best_oa_location(full, primary)],
         "biblio": {k: full.get(k) for k in ("volume", "issue", "first_page", "last_page")},
         "cited_by_count": slim.get("cited_by_count") or 0,
         "abstract_inverted_index": abstract_index if isinstance(abstract_index, dict) else None,
@@ -428,29 +538,31 @@ class ClickHouseDblpAdapter(_ClickHouseAdapter):
     def db(self) -> str:
         return self.ch.config.clickhouse_dblp_db
 
+    strict_order = "length(title), key, ingested_at DESC"
+    relaxed_order = "editDistance(lower(title), {cited:String}), key, ingested_at DESC"
+
     def search_tables(self) -> list[str]:
         return [f"{self.db}.dblp_publication"]
 
-    async def search_by_metadata(self, entry: BibEntry, limit: int = 10) -> SourceQueryResult:
-        if not entry.title:
-            return SourceQueryResult(source=self.name, query_kind="metadata", records=[])
-        words = title_search_words(entry.title)
-        if not words:
-            return _no_words(self.name, entry.title)
+    def coverage_sql(self) -> str:
+        return f"SELECT max(dump_date) AS d FROM {self.db}.dblp_publication"
+
+    async def _title_rows(self, condition: str, params: dict, order: str, limit: int) -> list[dict]:
         table = f"{self.db}.dblp_publication"
-        try:
-            # The table keeps one partition per dump; only the latest dump is the current DBLP.
-            rows = await self.ch.query(
-                "SELECT key, kind, publtype, title, year, venue, authors, dois "
-                f"FROM {table} WHERE dump_date = (SELECT max(dump_date) FROM {table}) "
-                "AND hasAllTokens(title, {w:Array(String)}) "
-                "ORDER BY length(title), key, ingested_at DESC LIMIT 1 BY key LIMIT {n:UInt32}",
-                {"w": words, "n": limit},
-            )
-        except ClickHouseQueryError as exc:
-            return _error(self.name, "metadata", exc)
-        records = [dblp_dump_row_to_record(r) for r in rows]
-        return SourceQueryResult(source=self.name, query_kind="metadata", records=records)
+        # The table keeps one partition per dump; only the latest dump is the current DBLP.
+        rows = await self.ch.query(
+            "SELECT key, kind, publtype, title, year, venue, authors, dois "
+            f"FROM {table} WHERE dump_date = (SELECT max(dump_date) FROM {table}) "
+            f"AND {condition} ORDER BY {order} LIMIT 1 BY key LIMIT {{n:UInt32}}",
+            {**params, "n": limit},
+        )
+        return [{**r, "id": r["key"], "t": r["title"]} for r in rows]
+
+    async def _records(self, rows: list[dict]) -> list[SourceRecord]:
+        return [
+            dblp_dump_row_to_record({k: v for k, v in r.items() if k not in ("id", "t")})
+            for r in rows
+        ]
 
 
 def build_clickhouse_adapters(config: AuditConfig) -> list[SourceAdapter]:

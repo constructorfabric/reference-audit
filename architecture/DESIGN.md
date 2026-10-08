@@ -158,8 +158,9 @@ failure, never a silently empty reference list.
 |--------|-------------|--------|
 | BibEntry | A parsed `.bib` entry with normalized `Identifiers`. | [models.py](../src/reference_audit/models.py) |
 | Identifiers | Normalized DOI / ISBN13 (set-valued: `all_isbn13()` carries print+electronic) / arXiv / OpenAlex Work id / Google Books volume id / URL / PMID. | [models.py](../src/reference_audit/models.py) |
-| EntryAudit | A `BibEntry` plus its verdict and issue list. | [models.py](../src/reference_audit/models.py) |
-| AuditReport | The aggregate report (entries + bookkeeping + summary). | [models.py](../src/reference_audit/models.py) |
+| EntryAudit | A `BibEntry` plus its verdict, issue list, and the reasons a verdict could not be reached (`unresolved_reasons`). | [models.py](../src/reference_audit/models.py) |
+| UnparsedEntry | A live `.bib` entry the BibTeX parser could not read (key, type, line, reason); reported, never audited. | [models.py](../src/reference_audit/models.py) |
+| AuditReport | The aggregate report (entries + bookkeeping, including unparsed entries, + summary). | [models.py](../src/reference_audit/models.py) |
 | SourceRecord | A candidate artifact returned by a database/web adapter. | [models.py](../src/reference_audit/models.py) |
 | Verdict / MatchedArtifact | The 3-way verdict and the clustered artifact(s) it resolves to. | [models.py](../src/reference_audit/models.py) |
 | FieldFinding | A per-field correctness/formatting finding for an exactly-one match. | [models.py](../src/reference_audit/models.py) |
@@ -253,8 +254,11 @@ Semantic Scholar, OpenAlex and DBLP have two interchangeable backends, selected 
 - a local ClickHouse mirror of the same databases (`sources/clickhouse.py`).
 
 The local adapters keep the API adapters' names and normalizers. Title search uses a full-text index
-on each table; a preflight refuses a mirror that is unreachable or lacks a fully built index; and
-cached responses are keyed per backend (`cache_source`). **IMPLEMENTED** (not yet `@cpt`-traced).
+on each table, with all words required and a leave-one-word-out retry when no hit is a near-exact
+title. A preflight refuses a mirror that is unreachable or lacks a fully built index, and records how
+far each snapshot reaches (`coverage_end`), which the pipeline cites next to a `none` verdict for a
+recent entry. Cached responses are keyed per backend (`cache_source`). **IMPLEMENTED** (not yet
+`@cpt`-traced).
 
 ##### Responsibility boundaries
 

@@ -107,6 +107,7 @@ class CompactAudit(BaseModel):
     author_mismatches: list[str] = Field(default_factory=list)
     findings: list[FieldFinding] = Field(default_factory=list)  # error / uncertain / unverifiable
     issues: list[str] = Field(default_factory=list)
+    unresolved_reasons: list[str] = Field(default_factory=list)  # why the verdict is None
     llm_adjudications: int = 0
     from_cache: bool = False
     retried: bool = False
@@ -177,10 +178,11 @@ def round_trip(
     """
     bib = workdir / "preflight.bib"
     write_bib(records, bib)
-    entries, twins = parse_bib(bib)
+    entries, twins, unparsed = parse_bib(bib)
     parsed: dict[str, list] = defaultdict(list)
     for e in [*entries, *twins]:
         parsed[e.key].append(e)
+    unparsed_why = {u.key: u.reason for u in unparsed}
 
     intact: list[HallmarkRecord] = []
     broken: dict[str, str] = {}
@@ -191,9 +193,14 @@ def round_trip(
                 f"{k}={v!r}" for k, v in r.fields.items() if v.count("{") != v.count("}")
             ]
             cause = f"; unbalanced braces in {', '.join(unbalanced)}" if unbalanced else ""
-            broken[r.bibtex_key] = (
-                f".bib round-trip: entry parsed back {len(got)} times (expected 1){cause}"
-            )
+            if not got and r.bibtex_key in unparsed_why:
+                broken[r.bibtex_key] = (
+                    f".bib entry could not be parsed: {unparsed_why[r.bibtex_key]}{cause}"
+                )
+            else:
+                broken[r.bibtex_key] = (
+                    f".bib round-trip: entry parsed back {len(got)} times (expected 1){cause}"
+                )
             continue
         entry = got[0]
         if entry.is_commented:
@@ -242,6 +249,7 @@ def compact(audit: EntryAudit) -> CompactAudit:
             f for f in audit.field_findings if f.status in ("error", "uncertain", "unverifiable")
         ],
         issues=audit.issues,
+        unresolved_reasons=audit.unresolved_reasons,
         llm_adjudications=sum(1 for c in audit.candidates if c.llm is not None),
         from_cache=audit.from_cache,
     )
@@ -276,7 +284,7 @@ def predict(audit: CompactAudit, mapping: Mapping) -> Prediction:
             evaluated=False,
         )
     if audit.verdict is None:
-        why = "; ".join(audit.issues) or "no reason recorded"
+        why = "; ".join(audit.unresolved_reasons or audit.issues) or "no reason recorded"
         return out("UNCERTAIN", CONF_UNCERTAIN, f"unresolved: {why}")
     if audit.verdict == "multiple":
         return out("UNCERTAIN", CONF_UNCERTAIN, f"multiple matches: {audit.rationale}")
@@ -357,11 +365,16 @@ def audit_chunk(
         why = f"chunk audit raised: {type(exc).__name__}: {exc}"
         return [not_audited(r.bibtex_key, "failed", why) for r in records]
     by_key = {a.entry.key: a for a in report.entries}
-    return [
-        compact(by_key[r.bibtex_key]) if r.bibtex_key in by_key
-        else not_audited(r.bibtex_key, "failed", "entry missing from the audit report")
-        for r in records
-    ]
+    unparsed = {u.key: u.reason for u in report.unparsed}
+
+    def one(key: str) -> CompactAudit:
+        if key in by_key:
+            return compact(by_key[key])
+        if key in unparsed:
+            return not_audited(key, "unparsed", f".bib entry could not be parsed: {unparsed[key]}")
+        return not_audited(key, "failed", "entry missing from the audit report")
+
+    return [one(r.bibtex_key) for r in records]
 
 
 def _log(msg: str) -> None:
@@ -621,6 +634,13 @@ def build_summary(
                 f"- `{e['bibtex_key']}` {_short(e['fields'].get('title', ''), 100)} "
                 f"({e['fields'].get('year', '?')}) — {_short(p.reason)}"
             )
+
+    unresolved = [e for e in labeled
+                  if predictions["identity"][e["bibtex_key"]].reason.startswith("unresolved:")]
+    lines += ["", f"## Unresolved ({len(unresolved)})", ""]
+    for e in unresolved:
+        p = predictions["identity"][e["bibtex_key"]]
+        lines.append(f"- `{e['bibtex_key']}` ({e['label']}) — {_short(p.reason)}")
 
     lines += ["", "## Misses — `strict` (hallucinated, predicted VALID)", ""]
     for t in order:

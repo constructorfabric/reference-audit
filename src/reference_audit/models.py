@@ -153,6 +153,16 @@ class BibEntry(BaseModel):
         return self
 
 
+class UnparsedEntry(BaseModel):
+    """A live `.bib` entry the BibTeX parser could not read. It is reported, never audited: its fields
+    are unknown, so any check would be a guess."""
+
+    key: str
+    entry_type: str = ""
+    line: int = 0                     # 1-based line of the `@type{key` header
+    reason: str
+
+
 class SourceRecord(BaseModel):
     """One candidate, normalized across sources."""
 
@@ -353,6 +363,9 @@ class EntryAudit(BaseModel):
     alignment_findings: list[AlignmentFinding] = Field(default_factory=list)  # citation alignment
     canonical_bibtex: str = ""              # step 3 (follow-on)
     issues: list[str] = Field(default_factory=list)
+    # Why the verdict is None, one line per cause (a named source error, an LLM failure, an
+    # adjudication that stayed inconclusive). Empty once a verdict is reached. Each is also an issue.
+    unresolved_reasons: list[str] = Field(default_factory=list)
     from_cache: bool = False
 
 
@@ -362,6 +375,7 @@ class AuditReport(BaseModel):
     uncited: list[str] = Field(default_factory=list)            # in .bib, never cited
     commented_twins: list[str] = Field(default_factory=list)    # informational (T1 context)
     missing_includes: list[str] = Field(default_factory=list)   # \input targets not found on disk
+    unparsed: list[UnparsedEntry] = Field(default_factory=list)  # .bib entries that could not be read
     summary: dict = Field(default_factory=dict)
 
     # --- provenance of the input itself ---

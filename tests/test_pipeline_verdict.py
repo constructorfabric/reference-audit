@@ -209,4 +209,9 @@ async def test_transient_error_does_not_flag_hallucination(tmp_path):
     await pipe.aclose()
     cache.close()
     # an outage leaves the entry UNRESOLVED, never a false 'none'
-    assert report.entries[0].verdict is None
+    audit = report.entries[0]
+    assert audit.verdict is None
+    # ... and says which source failed, as a reason and as an issue
+    assert audit.unresolved_reasons
+    assert all(r.startswith("crossref ") and "query failed" in r for r in audit.unresolved_reasons)
+    assert any(i.startswith("unresolved: crossref ") for i in audit.issues)

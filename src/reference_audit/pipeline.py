@@ -18,8 +18,8 @@ from reference_audit.cache.store import AuditCache
 from reference_audit.config import AuditConfig
 from reference_audit.llm.client import LLMClient
 from reference_audit.matching.adjudicate import adjudicate_entry
-from reference_audit.matching.features import _published_doi, compute_features
-from reference_audit.matching.names import mismatched_authors
+from reference_audit.matching.features import _published_doi, compute_features, title_ratio
+from reference_audit.matching.names import author_overlap, mismatched_authors
 from reference_audit.matching.pool import pool_candidates
 from reference_audit.matching.sameobject import cluster_accepted
 from reference_audit.matching.scoring import bucket
@@ -33,6 +33,7 @@ from reference_audit.models import (
     CandidateAssessment,
     EntryAudit,
     EntryType,
+    FieldFinding,
     Identifiers,
     MatchedArtifact,
     SourceQueryResult,
@@ -115,14 +116,23 @@ def build_parse_report(tex_path: str | Path | None, bib_path: str | Path) -> Aud
     `tex_path` may be None (audit a .bib without a manuscript); then nothing is 'uncited'.
     """
     # @cpt-begin:cpt-referenceaudit-flow-parsing-build-report:p1:inst-parse-bib
-    entries, twins = parse_bib(bib_path)
+    entries, twins, unparsed = parse_bib(bib_path)
     if not entries:
-        detail = f" ({len(twins)} commented-out twin(s) ignored)" if twins else ""
+        notes = []
+        if twins:
+            notes.append(f"{len(twins)} commented-out twin(s) ignored")
+        if unparsed:
+            notes.append(
+                f"{len(unparsed)} unparseable entr{'y' if len(unparsed) == 1 else 'ies'}: "
+                + "; ".join(f"{u.key} (line {u.line}): {u.reason}" for u in unparsed[:5])
+            )
+        detail = f" ({'; '.join(notes)})" if notes else ""
         raise EmptyBibliographyError(
             f"No auditable bibliography entries found in {bib_path}{detail}. "
             "Is it a valid .bib file, and are the .bib/.tex arguments in the right order?"
         )
     bib_keys = {e.key for e in entries}
+    unparsed_keys = {u.key for u in unparsed}
     # @cpt-end:cpt-referenceaudit-flow-parsing-build-report:p1:inst-parse-bib
 
     # @cpt-begin:cpt-referenceaudit-flow-parsing-build-report:p1:inst-parse-tex
@@ -142,7 +152,11 @@ def build_parse_report(tex_path: str | Path | None, bib_path: str | Path) -> Aud
         audits.append(EntryAudit(entry=e, verdict=None, issues=_parse_issues(e)))
         # @cpt-end:cpt-referenceaudit-flow-parsing-build-report:p1:inst-collect-issues
 
-    cited_but_missing = sorted(k for k in cited_keys if k not in bib_keys)
+    # A cited key whose entry exists but could not be parsed is reported under `unparsed`, not as a
+    # dangling citation.
+    cited_but_missing = sorted(
+        k for k in cited_keys if k not in bib_keys and k not in unparsed_keys
+    )
     uncited = [] if (tex_path is None or nocite_star) else sorted(
         k for k in bib_keys if k not in cited_keys
     )
@@ -159,6 +173,7 @@ def build_parse_report(tex_path: str | Path | None, bib_path: str | Path) -> Aud
         "cited_but_missing": len(cited_but_missing),
         "commented_twins": len(twins),
         "missing_includes": len(missing_includes),
+        "unparsed": len(unparsed),
         "entries_with_issues": sum(1 for a in audits if a.issues),
         "by_type": by_type,
     }
@@ -169,6 +184,7 @@ def build_parse_report(tex_path: str | Path | None, bib_path: str | Path) -> Aud
         uncited=uncited,
         commented_twins=[t.key for t in twins],
         missing_includes=missing_includes,
+        unparsed=unparsed,
         summary=summary,
     )
     # @cpt-end:cpt-referenceaudit-flow-parsing-build-report:p1:inst-build-report
@@ -298,6 +314,11 @@ def _shares_strong_id(a: Identifiers, b: Identifiers) -> bool:
         or bool(a.all_isbn13() & b.all_isbn13())
         or (a.arxiv_id and a.arxiv_id == b.arxiv_id)
     )
+
+
+def _lookup_ids(ids: Identifiers) -> tuple:
+    """The identifiers a by-id lookup is routed and queried by."""
+    return (ids.doi, ids.arxiv_id, ids.all_isbn13(), ids.pmid, ids.openalex, ids.google_books)
 
 
 def _verdict_records(verdict: Verdict | None) -> list[SourceRecord]:
@@ -437,6 +458,13 @@ class AuditPipeline:
             await task
         report.summary["verdicts"] = _verdict_summary(report)
         report.summary["source_backend"] = self.config.source_backend
+        coverage = {
+            a.name: end.isoformat()
+            for a in self.adapters
+            if (end := getattr(a, "coverage_end", None)) is not None
+        }
+        if coverage:
+            report.summary["source_coverage"] = coverage
         return report
 
     async def _audit_entry(self, audit: EntryAudit) -> None:
@@ -449,6 +477,7 @@ class AuditPipeline:
             raise
         except Exception as exc:
             audit.verdict = None
+            audit.unresolved_reasons = [f"audit failed: {type(exc).__name__}: {exc}"]
             audit.issues.append(f"audit failed (left unresolved, will retry next run): {exc}")
 
     # @cpt-flow:cpt-referenceaudit-flow-identification-audit-entry:p1
@@ -461,6 +490,7 @@ class AuditPipeline:
         # Near-impossible from a .bib; routine when GROBID cannot structure a printed reference.
         if not entry.title and not entry.ids.any_present():
             audit.verdict = None
+            audit.unresolved_reasons = ["no title and no identifier to search on"]
             audit.issues.append(
                 "no title and no identifier — nothing to search on; this reference could not be "
                 "checked"
@@ -473,6 +503,7 @@ class AuditPipeline:
             if cached is not None:
                 audit.verdict = cached
                 audit.from_cache = True
+                self._note_snapshot_coverage(audit, cached)
                 # Issues/field findings aren't part of the cached verdict; recompute them from the
                 # cached artifact records (all deterministic, and per-field LLM decisions are
                 # themselves cached) so a cached run reports identically to a --fresh one.
@@ -503,12 +534,14 @@ class AuditPipeline:
             # against its own page; anything else is simply left unresolved.
             verdict = await self._resolve_web(audit, None)
             audit.verdict = verdict
+            if verdict is None:
+                self._record_unresolved(audit, [], [], None)
             if self.cache is not None and verdict is not None:
                 self.cache.put_entry_verdict(entry.content_hash, verdict)
             return
 
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-gather
-        records, errored = await self._gather_candidates(entry, route)
+        records, source_errors = await self._gather_candidates(entry, route)
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-gather
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-assess
         pooled = pool_candidates(records)
@@ -520,16 +553,17 @@ class AuditPipeline:
         audit.candidates = [self._assess(entry, r, entry_has_id=entry_has_id) for r in pooled]
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-assess
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-verdict
-        verdict = await self._verdict(audit, errored=errored)
+        verdict = await self._verdict(audit, errored=bool(source_errors))
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-verdict
 
         # README: "unless a returned record is a 100% match, use an LLM to filter results one by
         # one." A formal exactly_one IS the 100%-match short-circuit, so only invoke the per-
         # candidate LLM filter when the formal rules left the entry unresolved.
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-llm-adjudicate
+        llm_errors: list[str] = []
         if verdict is None and self.llm is not None:
-            llm_errored = await adjudicate_entry(audit, self.llm, self.config, self.cache)
-            verdict = await self._verdict(audit, errored=errored or llm_errored)
+            llm_errors = await adjudicate_entry(audit, self.llm, self.config, self.cache)
+            verdict = await self._verdict(audit, errored=bool(source_errors or llm_errors))
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-llm-adjudicate
 
         # URL-only web @misc (a blog/software page no scholarly DB indexes): fetch the cited page and
@@ -569,6 +603,9 @@ class AuditPipeline:
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-best-output
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-cache-store
         audit.verdict = verdict
+        if verdict is None:
+            self._record_unresolved(audit, source_errors, llm_errors, book)
+        self._note_snapshot_coverage(audit, verdict)
         if self.cache is not None and verdict is not None:
             self.cache.put_entry_verdict(entry.content_hash, verdict)
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-cache-store
@@ -589,7 +626,10 @@ class AuditPipeline:
         return build_verdict(audit.candidates, artifacts, errored=errored or cluster_errored)
         # @cpt-end:cpt-referenceaudit-algo-identification-verdict:p1:inst-build
 
-    async def _gather_candidates(self, entry, route) -> tuple[list[SourceRecord], bool]:
+    async def _gather_candidates(self, entry, route) -> tuple[list[SourceRecord], list[str]]:
+        """Query the routed adapters (cached). Returns the records and one line per failed query,
+        naming the source, so an unresolved entry can say which source it could not reach."""
+
         async def one(adapter: SourceAdapter, kind: str) -> SourceQueryResult:
             cached = (
                 self.cache.get_source_query(entry.content_hash, adapter.cache_source, kind)
@@ -611,12 +651,82 @@ class AuditPipeline:
         tasks += [one(a, "metadata") for a in route.metadata_adapters]
         results = await asyncio.gather(*tasks)
         records: list[SourceRecord] = []
-        errored = False
+        errors: list[str] = []
         for res in results:
             if res.error:
-                errored = True
+                errors.append(f"{res.source} {res.query_kind} query failed: {res.error}")
             records.extend(res.records)
-        return records, errored
+        return records, errors
+
+    def _note_snapshot_coverage(self, audit: EntryAudit, verdict: Verdict | None) -> None:
+        """Caveat a `none` verdict reached on local snapshots that may predate the cited work.
+
+        A snapshot holds nothing published after its date, so for an entry from that year or later a
+        'no match' may be a coverage gap rather than a hallucination. The verdict stands (the other
+        sources were live); the report names the snapshots. Year-level, since entries carry no date.
+        """
+        if verdict is None or verdict.kind != "none" or audit.entry.year is None:
+            return
+        stale = [
+            (a.name, end) for a in self.adapters
+            if (end := getattr(a, "coverage_end", None)) is not None
+            and audit.entry.entry_type in a.handles
+            and audit.entry.year >= end.year
+        ]
+        if stale:
+            ends = ", ".join(f"{name} up to {end.isoformat()}" for name, end in stale)
+            audit.issues.append(
+                f"cited year {audit.entry.year} is not before the end of the local snapshot(s) "
+                f"({ends}); a work published later is missing from them, so this no-match may be "
+                "a coverage gap"
+            )
+
+    def _record_unresolved(
+        self,
+        audit: EntryAudit,
+        source_errors: list[str],
+        llm_errors: list[str],
+        book: _BookResolution | None,
+    ) -> None:
+        """Say why the entry was left without a verdict, one line per cause.
+
+        Each cause is stored on `audit.unresolved_reasons` (for machine consumers) and as an issue.
+        Causes the web and book checks already reported as issues are referred to, not repeated.
+        """
+        reasons = [*source_errors, *(f"LLM adjudication failed for {e}" for e in llm_errors)]
+        if book is not None and book.error:
+            reasons.append(
+                f"Open Library (the authority for books) could not be queried: {book.error}"
+            )
+        pending = [c for c in audit.candidates if c.bucket == "adjudicate"]
+        if pending and self.llm is None:
+            why = (
+                "disabled (--no-llm)" if not self.config.use_llm
+                else "not configured (no OPENAI_API_KEY)"
+            )
+            reasons.append(
+                f"{len(pending)} candidate(s) need LLM adjudication, but the LLM is {why}"
+            )
+        elif pending:
+            low = [c for c in pending if c.llm is not None]
+            if low:
+                best = max(low, key=lambda c: c.features.composite).record
+                reasons.append(
+                    f"LLM adjudication was inconclusive (low confidence) for {len(low)} "
+                    f"candidate(s); closest: {best.source} '{best.title}'"
+                )
+            unasked = len(pending) - len(low) - len(llm_errors)
+            if unasked > 0:
+                reasons.append(
+                    f"{unasked} candidate(s) beyond the per-entry LLM cap "
+                    f"(llm_max_candidates={self.config.llm_max_candidates}) were not adjudicated"
+                )
+        if not reasons and _is_url_only_web(audit.entry):
+            reasons.append("the cited web page could not be confirmed (see the web-check issue)")
+        if not reasons:
+            reasons.append("no identification rule reached a verdict (see the issues reported)")
+        audit.unresolved_reasons = reasons
+        audit.issues.extend(f"unresolved: {r}" for r in reasons)
 
     async def _gather_by_id(
         self, entry: BibEntry, ids: Identifiers, adapters: list[SourceAdapter]
@@ -679,8 +789,14 @@ class AuditPipeline:
             id_adapters.append(publisher)
         if not id_adapters:
             return
+        # Cache under the entry only when the lookup is the one identification made (same ids). With
+        # other ids (a backfilled or matched DOI), the entry's "id" slot would be overwritten by the
+        # matched work's records, and the next run's identification would read them as the entry's.
+        cache_key = audit.entry if _lookup_ids(ids) == _lookup_ids(audit.entry.ids) else BibEntry(
+            key=audit.entry.key, entry_type=audit.entry.entry_type, ids=ids
+        )
         try:
-            new_records, errors = await self._gather_by_id(audit.entry, ids, id_adapters)
+            new_records, errors = await self._gather_by_id(cache_key, ids, id_adapters)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — advisory; report, never fail the entry
@@ -871,6 +987,9 @@ class AuditPipeline:
                 audit.entry, verdict.artifacts[0], self.llm, self.config, self.cache,
                 skip_fields=skip_fields,
             )
+            doi_finding = await self._check_cited_doi(audit.entry, verdict.artifacts[0])
+            if doi_finding is not None:
+                findings.append(doi_finding)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — advisory; report, don't fail the entry
@@ -882,7 +1001,13 @@ class AuditPipeline:
                 audit.issues.append(finding_note(f))
         # Collapse the (often several) could-not-verify fields into a single line to keep the report
         # readable while still reporting the gap (reliability: never silently pass an unchecked field).
-        unverifiable = [f.field for f in findings if f.status == "unverifiable"]
+        # An unverifiable DOI has its own cause (no record, doi.org unreachable), not a missing field.
+        for f in findings:
+            if f.field == "doi" and f.status == "unverifiable":
+                audit.issues.append(finding_note(f))
+        unverifiable = [
+            f.field for f in findings if f.status == "unverifiable" and f.field != "doi"
+        ]
         if unverifiable:
             # Name the sources we actually consulted — never claim universal absence (a null field on
             # the sources we reached is not proof the datum does not exist; cf. the publisher export).
@@ -891,6 +1016,104 @@ class AuditPipeline:
                 f"could not verify field(s) {', '.join(unverifiable)} — "
                 f"not present in the metadata from {where}"
             )
+
+    async def _check_cited_doi(
+        self, entry: BibEntry, artifact: MatchedArtifact
+    ) -> FieldFinding | None:
+        """Is the cited DOI the matched work's? A `doi` field finding, or None if there is no DOI.
+
+        Identification can match a real work on title and authors while the cited DOI points
+        elsewhere: to another paper, or to nothing at all. The DOI's own by-id records settle it:
+        - the matched work carries the DOI → `ok`;
+        - a source has a record for it that is another work → `error`, naming that work;
+        - a record with the same title and authors that was not merged → `uncertain`;
+        - no record, and doi.org answers 404 → `error`;
+        - no record, but doi.org knows it → `uncertain` (it cannot be tied to the matched work);
+        - no record and no answer from doi.org → `unverifiable`.
+
+        Books are skipped: they are identified by Open Library editions, which carry no DOI, and a
+        book is legitimately cited by a chapter-level DOI that names the chapter, not the book.
+        An arXiv DataCite DOI is a preprint id, not a competing published DOI, and is skipped too.
+        """
+        cited = _published_doi((entry.ids.doi or "").lower())
+        if not cited or entry.entry_type in _NEEDS_ISBN:
+            return None
+        records = [*artifact.records, *artifact.versions]
+        if artifact.best_record is not None:
+            records.append(artifact.best_record)
+        carriers = [
+            r for r in records
+            if cited in {
+                d.lower() for d in [r.ids.doi or "", *((r.raw or {}).get("merged_dois") or [])]
+            }
+        ]
+        matched_doi = artifact.merged_ids.doi or next((r.ids.doi for r in records if r.ids.doi), "")
+
+        def finding(status: str, detail: str, sources: list[str]) -> FieldFinding:
+            return FieldFinding(
+                field="doi", bib_value=cited, canonical_value=matched_doi or "",
+                sources=sorted(set(sources)), status=status, detail=detail,
+            )
+
+        if carriers or (artifact.merged_ids.doi or "").lower() == cited:
+            return finding(
+                "ok", "the matched work carries the cited DOI", [r.source for r in carriers]
+            )
+
+        # The cited DOI on its own, cached under a probe entry keyed by that DOI alone. Only reached
+        # when the match does not carry the DOI, so this extra lookup is rare.
+        probe = BibEntry(key=entry.key, entry_type=entry.entry_type, ids=Identifiers(doi=cited))
+        adapters = list(route_entry(probe, self.adapters).id_adapters)
+        holders: list[SourceRecord] = []
+        errors: list[str] = []
+        if adapters:
+            found, errors = await self._gather_by_id(probe, probe.ids, adapters)
+            holders = [r for r in found if (r.ids.doi or "").lower() == cited]
+        matched = f" (the matched work's DOI is {matched_doi})" if matched_doi else ""
+        if holders:
+            h = holders[0]
+            best = artifact.best_record
+            same_work = best is not None and (
+                title_ratio(h.title, best.title) >= self.config.title_accept
+                and author_overlap(best.authors, h.authors) >= self.config.author_accept
+            )
+            year = f", {h.year}" if h.year else ""
+            if same_work:
+                return finding(
+                    "uncertain",
+                    f"the cited DOI belongs to a record with the same title and authors "
+                    f"('{h.title}'{year}) that was not merged with the matched work; check that "
+                    f"it is a version of it{matched}",
+                    [r.source for r in holders],
+                )
+            return finding(
+                "error",
+                f"the cited DOI belongs to a different work: '{h.title}'{year}{matched}",
+                [r.source for r in holders],
+            )
+
+        publisher = next((a for a in self.adapters if a.name == "publisher"), None)
+        resolves = await self._doi_resolves(cited, publisher) if publisher is not None else None
+        if resolves is False:
+            return finding(
+                "error", f"the cited DOI does not resolve at doi.org (404 DOI Not Found){matched}",
+                ["doi.org"],
+            )
+        if resolves is True:
+            return finding(
+                "uncertain",
+                "the cited DOI is registered at doi.org, but no source we queried has a record "
+                f"for it, so it could not be tied to the matched work{matched}",
+                ["doi.org"],
+            )
+        why = "; ".join(errors) if errors else "no source has a record for it"
+        reach = (
+            "doi.org could not be reached" if publisher is not None
+            else "no doi.org check is configured"
+        )
+        return finding(
+            "unverifiable", f"could not check the cited DOI: {why}, and {reach}{matched}", [],
+        )
 
     async def _check_alignment(self, audit: EntryAudit, verdict) -> None:
         """Citation alignment: check each citing context against the cited work's abstract.

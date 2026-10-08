@@ -122,7 +122,12 @@ class AuditConfig(BaseSettings):
     # 0.19: a second source backend — Semantic Scholar, OpenAlex and DBLP read from a local ClickHouse
     #       mirror (full-text title index, all title words required, shortest title first). The
     #       verdict cache is now also keyed by backend.
-    pipeline_version: str = "0.19"
+    # 0.20: the local ClickHouse title search retries with each word left out when no all-words hit is
+    #       a near-exact title, and OpenAlex rows gain their best open-access location as a version
+    #       link (candidates change). A cited DOI the matched work does not carry is checked and
+    #       reported as a `doi` field finding; an unresolved entry records why; a `none` on a local
+    #       snapshot that may predate the work carries a coverage caveat.
+    pipeline_version: str = "0.20"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

@@ -92,6 +92,11 @@ plus, for an `exactly_one` match, the canonical best version.
 **Error Scenarios**:
 - A source/LLM failure leaves the entry `unresolved` (verdict `None`), never a false `none`; it is
   retried on the next run and never cached.
+- An unresolved entry records why, one line per cause, on `EntryAudit.unresolved_reasons` and as an
+  `unresolved: …` issue: each failed source query (named by source and query kind), each failed LLM
+  call, an Open Library outage for a book, candidates left undecided because the LLM is off, a
+  low-confidence LLM ruling, or candidates beyond the per-entry LLM cap. Implemented in
+  `_record_unresolved`, within the `inst-cache-store` step; not separately traced.
 
 **Steps**:
 1. [x] - `p1` - **IF** the whole-entry verdict is cached, reuse it and re-derive issues - `inst-cache-lookup`
@@ -203,19 +208,27 @@ databases (`sources/clickhouse.py`).
   the API normalizers wherever one exists, so routing, field priorities, identity pinning and reports
   are unchanged.
 - **Title search:** a full-text title index with every searchable word required, shortest title
-  first, then most-cited (the DBLP word-search contract).
+  first, then most-cited (the DBLP word-search contract). When no such hit is a near-exact title
+  (`title_ratio` below `title_accept`) and the title has at least 4 distinct words, the search is
+  repeated with each word left out in turn (one query, served by the same index), ranked by edit
+  distance to the cited title. One misspelt or extra word then no longer hides the real record.
 - **Preflight:** before any entry is audited, the run checks that the server answers and that every
   title index exists and is fully built. Otherwise it stops with the statements that build them,
   never degrading into per-entry scans.
 - **Failures:** a query failure or timeout is a source **error**.
 - **Caching:** cached source responses are keyed per backend (`cache_source`), and the verdict cache
   is keyed by `(entry_hash, backend)`, so one backend's snapshot never answers for the other's.
+- **Coverage:** the preflight also reads how far each snapshot reaches (`coverage_end`: DBLP's dump
+  date, OpenAlex's newest `updated_date`, the S2 dump's newest publication date). A `none` verdict
+  for an entry dated in or after a snapshot's year carries an issue naming that snapshot, since a
+  newer work cannot be in it. The verdict itself stands: the other sources are live.
 - **Known limits:** coverage ends at each snapshot's ingest date, OpenAlex has no `locations`
-  locally (version links are the primary location only), and the DBLP dump has no landing page or
-  pages.
+  locally (version links are the primary and best open-access locations only), and the DBLP dump has
+  no landing page or pages.
 
-This backend is implemented and unit-tested (`tests/test_clickhouse.py`, plus a live check gated on
-`REFERENCE_AUDIT_LIVE`). It is not yet `@cpt`-traced to its own flow or algorithm.
+This backend, the leave-one-out search and the coverage caveat are implemented and unit-tested
+(`tests/test_clickhouse.py`, `tests/test_unresolved.py`, plus a live check gated on
+`REFERENCE_AUDIT_LIVE`). They are not yet `@cpt`-traced to their own flow or algorithm.
 
 A **truncated author list** — the BibTeX `and others` convention (and a written-out "et al.") —
 is treated as a truncation marker, not a literal author (`matching/names.py`). Left in, the phantom
@@ -286,6 +299,24 @@ year/publisher, so the match grounds on the edition the author cited, not whiche
 rides on. The editions fetch is cache-keyed by the original entry so the cached re-derivation reports
 identically. This runs in the `inst-book` step.
 
+A **cited DOI** that the matched work does not carry is checked on every `exactly_one` match
+(`_check_cited_doi`, run with the field checks). Without it, an entry whose title and authors match
+a real work passed clean even when its DOI pointed at another paper or at nothing, which is the
+`fabricated_doi` pattern. The result is a `FieldFinding` on the `doi` field:
+- `ok` when the matched work carries the DOI. Pooling keeps every member record's DOI
+  (`raw["merged_dois"]`), since the pooled record's own `ids.doi` is one DOI only, often the arXiv
+  DataCite DOI of the preprint.
+- `error` when a source's by-id record for the DOI is a different work (named in the finding), or
+  when doi.org answers 404.
+- `uncertain` when that record has the same title and authors but was not merged, or when doi.org
+  knows the DOI but no source has a record for it.
+- `unverifiable` when no source has a record and doi.org cannot be reached.
+
+Books (identified by Open Library editions, and legitimately cited by a chapter-level DOI) and arXiv
+DataCite DOIs are not checked. The DOI's own lookup is cached under a probe entry keyed by that DOI.
+The finding is advisory like every field finding: the verdict is unchanged. Implemented and tested
+(`tests/test_cited_doi.py`); not separately `@cpt`-traced.
+
 **Implements**:
 - `cpt-referenceaudit-algo-identification-verdict`
 
@@ -312,6 +343,11 @@ editions) when one exists.
 
 The system **MUST** memoize successful whole-entry verdicts (and the underlying source / LLM calls)
 so repeated audits reuse them, and **MUST NOT** cache transient errors.
+
+A by-id lookup is cached under the entry only when it uses the entry's own identifiers. Enrichment by
+a matched or backfilled identifier is cached under a probe entry keyed by those identifiers;
+otherwise it overwrote the entry's `id` slot, and the next run's identification read the matched
+work's records as the entry's own by-id result.
 
 **Implements**:
 - `cpt-referenceaudit-flow-identification-audit-entry`

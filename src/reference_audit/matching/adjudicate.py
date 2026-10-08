@@ -2,8 +2,9 @@
 
 Runs one independent `CAN_CORRESPOND` call per surviving candidate (capped, top-k by composite),
 caching each decision. A candidate the model affirmatively confirms is promoted to `auto_accept`;
-everything else stays as-is. Returns whether an LLM error occurred, so the caller can keep an entry
-UNRESOLVED rather than emit a false `none` when the deciding call failed.
+everything else stays as-is. Returns the LLM errors that occurred (empty when none did), so the
+caller can keep an entry UNRESOLVED rather than emit a false `none` when the deciding call failed,
+and say which call failed.
 """
 
 from __future__ import annotations
@@ -19,36 +20,38 @@ from reference_audit.models import CanCorrespondResult, EntryAudit
 
 async def adjudicate_entry(
     audit: EntryAudit, llm: LLMClient, config: AuditConfig, cache: AuditCache | None
-) -> bool:
-    """Adjudicate an entry's `adjudicate` candidates with the LLM. Returns errored flag."""
+) -> list[str]:
+    """Adjudicate an entry's `adjudicate` candidates with the LLM. Returns the LLM errors."""
     candidates = [c for c in audit.candidates if c.bucket == "adjudicate"]
     candidates.sort(key=lambda c: c.features.composite, reverse=True)
     candidates = candidates[: config.llm_max_candidates]
     if not candidates:
-        return False
+        return []
 
-    async def decide(candidate) -> tuple[object, CanCorrespondResult | None, bool]:
+    async def decide(candidate) -> tuple[object, CanCorrespondResult | None, str | None]:
         system = CAN_CORRESPOND_SYSTEM
         user = can_correspond_user(audit.entry, candidate.record, candidate.features)
         p_hash = prompt_hash(system + "\n" + user)
         if cache is not None:
             cached = cache.get_llm_decision(p_hash, "can_correspond")
             if cached is not None:
-                return candidate, CanCorrespondResult.model_validate_json(cached), False
+                return candidate, CanCorrespondResult.model_validate_json(cached), None
         try:
             result = await llm.structured(
                 system, user, CanCorrespondResult, "can_correspond"
             )
-        except LLMError:
-            return candidate, None, True
+        except LLMError as exc:
+            where = f"{candidate.record.source} '{candidate.record.title[:80]}'"
+            return candidate, None, f"candidate {where}: {exc}"
         if cache is not None:
             cache.put_llm_decision(p_hash, "can_correspond", result.model_dump_json())
-        return candidate, result, False
+        return candidate, result, None
 
     outcomes = await asyncio.gather(*(decide(c) for c in candidates))
-    errored = False
+    errors: list[str] = []
     for candidate, result, err in outcomes:
-        errored = errored or err
+        if err:
+            errors.append(err)
         if result is None:
             continue
         candidate.llm = result
@@ -57,4 +60,4 @@ async def adjudicate_entry(
             # entry can conclude `none` when every candidate is rejected. Low confidence stays
             # `adjudicate` (the entry remains unresolved rather than guessed).
             candidate.bucket = "auto_accept" if result.can_correspond else "auto_reject"
-    return errored
+    return errors

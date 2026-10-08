@@ -280,7 +280,7 @@ async def test_pdf_and_bib_entries_for_the_same_work_share_a_content_hash(pdf, t
         "  doi = {10.1073/pnas.2004976117}\n}\n",
         encoding="utf-8",
     )
-    (from_bib,), _ = parse_bib(bib)
+    (from_bib,), _, _ = parse_bib(bib)
     parsed = await build_pdf_parse_report(pdf, client=StubGrobid(_tei(_ONE_ARTICLE)))
     from_pdf = parsed.report.entries[0].entry
 

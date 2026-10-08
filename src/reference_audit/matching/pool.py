@@ -222,8 +222,19 @@ def _representative(recs: list[SourceRecord]) -> SourceRecord:
     best_abstract = _best_abstract(recs)
     if best_abstract:
         merged.abstract = best_abstract
-    merged.raw = {"merged_from": sorted({s for r in recs for s in _underlying_sources(r)})}
+    merged.raw = {
+        "merged_from": sorted({s for r in recs for s in _underlying_sources(r)}),
+        # `ids.doi` keeps one DOI (the richest record's, often an arXiv DataCite DOI); every member's
+        # DOI is kept here so a cited published DOI can still be recognised as this work's.
+        "merged_dois": sorted({d for r in recs for d in _member_dois(r)}),
+    }
     return merged
+
+
+def _member_dois(rec: SourceRecord) -> list[str]:
+    """The record's own DOI plus those of the records it already merged (pooling is re-run)."""
+    merged = rec.raw.get("merged_dois") if isinstance(rec.raw, dict) else None
+    return [*(merged or []), *([rec.ids.doi] if rec.ids.doi else [])]
 
 
 def _is_preprintish(rec: SourceRecord) -> bool:

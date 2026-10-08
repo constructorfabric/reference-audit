@@ -60,7 +60,7 @@ def ground_truth(bib_path: Path, bbl_path: Path) -> list[BibEntry]:
     An entry named in the `.bbl` but absent from the `.bib` cannot happen for a document we compiled
     ourselves; if it ever does, it is a harness bug and must surface rather than be skipped silently.
     """
-    entries, _ = parse_bib(bib_path)
+    entries, _, _ = parse_bib(bib_path)
     by_key = {e.key: e for e in entries}
     order = printed_order(bbl_path)
     missing = [k for k in order if k not in by_key]

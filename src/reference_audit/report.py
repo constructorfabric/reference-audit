@@ -161,6 +161,8 @@ def render_text(report: AuditReport) -> str:
     else:
         counts.append("citedness unknown")
     counts.append(f"{s.get('entries_with_issues', 0)} with issues")
+    if s.get("unparsed"):
+        counts.append(f"{s['unparsed']} unparseable")
     if not pdf:
         # A PDF has no commented-out entries, so the count is not zero — it is meaningless.
         counts.append(f"{s.get('commented_twins', 0)} commented twins")
@@ -174,6 +176,12 @@ def render_text(report: AuditReport) -> str:
         )
         if s.get("source_backend") == "clickhouse":
             lines.append("  sources: Semantic Scholar, OpenAlex and DBLP read from local ClickHouse")
+            coverage = s.get("source_coverage") or {}
+            if coverage:
+                lines.append(
+                    "  local snapshots reach: "
+                    + ", ".join(f"{name} {end}" for name, end in sorted(coverage.items()))
+                )
     align = [f for a in report.entries for f in a.alignment_findings]
     if align:
         by_status: dict[str, int] = {}
@@ -198,6 +206,19 @@ def render_text(report: AuditReport) -> str:
         for note in report.notes:
             lines.append(f"    · {note}")
         lines.append("")
+
+    # Entries the .bib parser could not read were never checked. They lead the findings: a reader who
+    # skipped this section would take the report as covering the whole bibliography.
+    if report.unparsed:
+        lines.append(
+            f"UNPARSEABLE .bib ENTRIES ({len(report.unparsed)}) — could not be read, so not checked:"
+        )
+        lines.append("")
+        for u in report.unparsed:
+            kind = f"[{u.entry_type}] " if u.entry_type else ""
+            lines.append(f"{kind}{u.key}  (line {u.line})")
+            lines.append(f"    ⚠ {u.reason}")
+            lines.append("")
 
     # Group entries so the reader sees the gravest first. The two headline categories lead, each its
     # own section: CAPITAL OFFENCES (conclusive hallucinations — verdict `none`, no real document

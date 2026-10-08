@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC
+from datetime import date
 
 from reference_audit.models import BibEntry, EntryType, Identifiers, SourceQueryResult
 from reference_audit.sources.http import MonotonicRateLimiter, new_client
@@ -24,6 +25,9 @@ class SourceAdapter(ABC):
     # ("clickhouse"). Two backends of one source share `name` (routing, field priorities and reports
     # are about the database, not the transport), so cached responses are keyed by `cache_source`.
     backend: str = "api"
+    # The newest date a local snapshot covers, set by `preflight`. None for a live API: a work too
+    # new for a snapshot cannot be found there, and the report says so next to a `none` verdict.
+    coverage_end: date | None = None
 
     def __init__(self, *, client=None, limiter: MonotonicRateLimiter | None = None):
         self.client = client or new_client()

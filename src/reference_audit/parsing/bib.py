@@ -1,6 +1,6 @@
 r"""BibTeX parsing → BibEntry.
 
-Uses bibtexparser v1 (`loads` + `db.entries`, `convert_to_unicode`). Two non-standard behaviors:
+Uses bibtexparser v1 (`loads` + `db.entries`, `convert_to_unicode`). Three non-standard behaviors:
 
 1. **Commented-twin detection.** The pilot has a `%@misc{bagrov2024visual, ...}` block whose
    only-commented header is the arXiv preprint of `kravchenko2026`. Whether bibtexparser drops
@@ -8,18 +8,22 @@ Uses bibtexparser v1 (`loads` + `db.entries`, `convert_to_unicode`). Two non-sta
    from the *raw source line* and route such entries to `twins` (informational), never the
    audited list — T1 is solved from the DBs, not from this block.
 2. **LaTeX-accent decode** via `convert_to_unicode` ({\'e}→é) for clean matching.
+3. **Dropped-entry detection.** bibtexparser 1.x skips an entry it cannot parse (an unbalanced brace,
+   most often) without a word. Every live `@type{key` header in the raw text that produced no entry
+   is returned as an `UnparsedEntry` with the reason, so the report can say it was not checked.
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 import bibtexparser
 from bibtexparser.bparser import BibTexParser
 from bibtexparser.customization import convert_to_unicode
 
-from reference_audit.models import BibEntry, Identifiers, entry_type_from_bib
+from reference_audit.models import BibEntry, Identifiers, UnparsedEntry, entry_type_from_bib
 from reference_audit.parsing.identifiers import (
     extract_arxiv_id,
     normalize_doi,
@@ -32,6 +36,8 @@ from reference_audit.parsing.identifiers import (
 # An @type{key occurrence; we inspect whether a '%' precedes the '@' on the same line.
 _ENTRY_LINE_RE = re.compile(r"(?m)^(?P<pre>[^\n@]*)@(?P<type>\w+)\s*\{\s*(?P<key>[^,\s}]+)")
 _FIELD_RE = re.compile(r"(\w+)\s*=\s*[{\"]([^{}\"]*)[}\"]")
+# `@string`, `@preamble` and `@comment` blocks are not entries.
+_NON_ENTRY_TYPES = {"string", "preamble", "comment"}
 
 
 def _classify_keys(raw: str) -> set[str]:
@@ -138,8 +144,57 @@ def _twin_from_raw(raw: str, key: str) -> BibEntry | None:
     return entry_from_fields(key, bib_type, fields, commented=True)
 
 
-def parse_bib(bib_path: str | Path) -> tuple[list[BibEntry], list[BibEntry]]:
-    """Parse a .bib file. Returns (audited_entries, commented_twins)."""
+class BibParse(NamedTuple):
+    entries: list[BibEntry]          # audited
+    twins: list[BibEntry]            # commented-out entries (informational)
+    unparsed: list[UnparsedEntry]    # live entries bibtexparser could not read (never audited)
+
+
+def _brace_balance(text: str) -> int:
+    """Net `{` minus `}` in `text`, ignoring escaped braces (`\\{`, `\\}`)."""
+    unescaped = re.sub(r"\\[{}]", "", text)
+    return unescaped.count("{") - unescaped.count("}")
+
+
+def _unparsed_entries(
+    raw: str, parsed_keys: set[str], commented_only: set[str]
+) -> list[UnparsedEntry]:
+    """Live entry headers in `raw` that produced no parsed entry, each with the likeliest reason.
+
+    The block of an entry runs from its header to the next header. Its net brace count is what
+    bibtexparser trips over: a block that does not balance is reported as such; otherwise the reason is
+    the generic one, never a guess.
+    """
+    headers = [
+        m for m in _ENTRY_LINE_RE.finditer(raw)
+        if m.group("type").lower() not in _NON_ENTRY_TYPES
+        and not re.search(r"(?<!\\)%", m.group("pre"))
+    ]
+    out: list[UnparsedEntry] = []
+    reported: set[str] = set()
+    for i, m in enumerate(headers):
+        key = m.group("key")
+        if key in parsed_keys or key in commented_only or key in reported:
+            continue
+        end = headers[i + 1].start() if i + 1 < len(headers) else len(raw)
+        balance = _brace_balance(raw[m.start("type") - 1:end])
+        if balance > 0:
+            reason = f"unbalanced braces ({balance} more '{{' than '}}')"
+        elif balance < 0:
+            reason = f"unbalanced braces ({-balance} more '}}' than '{{')"
+        else:
+            reason = "bibtexparser could not parse this entry"
+        line = raw.count("\n", 0, m.start()) + 1
+        out.append(UnparsedEntry(
+            key=key, entry_type=m.group("type").lower(), line=line,
+            reason=f"{reason}; the entry was not read, so it was not checked",
+        ))
+        reported.add(key)
+    return out
+
+
+def parse_bib(bib_path: str | Path) -> BibParse:
+    """Parse a .bib file. Returns (audited_entries, commented_twins, unparsed_entries)."""
     raw = Path(bib_path).read_text(encoding="utf-8", errors="replace")
     commented_only = _classify_keys(raw)
 
@@ -167,4 +222,4 @@ def parse_bib(bib_path: str | Path) -> tuple[list[BibEntry], list[BibEntry]]:
         if twin is not None:
             twins.append(twin)
 
-    return entries, twins
+    return BibParse(entries, twins, _unparsed_entries(raw, seen_keys, commented_only))

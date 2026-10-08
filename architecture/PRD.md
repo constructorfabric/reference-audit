@@ -384,6 +384,9 @@ Contracts this library expects from external systems.
 
 **Alternative Flows**:
 - **Source/LLM failure**: The affected entry is left `unresolved` (never `none`) and retried next run.
+  The report names the cause: the failed source, the failed LLM call, or the undecided candidates.
+- **Unreadable `.bib` entry**: An entry the BibTeX parser cannot read is listed as unparseable, with
+  its line and reason, and is not checked.
 
 #### Check citations are used faithfully
 

@@ -70,9 +70,13 @@ User-facing interaction: an author requests a parse-only audit and receives an `
 
 **Error Scenarios**:
 - Missing `\input`/`\include` targets are reported, not fatal.
+- An entry the BibTeX parser cannot read (bibtexparser 1.x skips it without a word; most often an
+  unbalanced brace) is reported as an `UnparsedEntry` with its line and reason, never silently
+  dropped. Its neighbours are parsed normally, and a `\cite` of its key is not counted as
+  cited-but-missing. A `.bib` whose only entries are unparseable names them in the error.
 
 **Steps**:
-1. [x] - `p1` - Parse the `.bib` into entries and commented twins (`parse_bib`) - `inst-parse-bib`
+1. [x] - `p1` - Parse the `.bib` into entries, commented twins and unparseable entries (`parse_bib`) - `inst-parse-bib`
 2. [x] - `p1` - Parse the `.tex` for cited keys and missing includes (`parse_cited_keys`) - `inst-parse-tex`
 3. [x] - `p1` - Mark each entry `cited` and compute cited-but-missing / uncited sets - `inst-mark-cited`
 4. [x] - `p1` - **FOR EACH** entry collect deterministic issues (`_parse_issues`) - `inst-collect-issues`
@@ -117,7 +121,13 @@ state machine in this slice.
 - [x] `p1` - **ID**: `cpt-referenceaudit-dod-parsing-bookkeeping`
 
 The system **MUST** assemble an `AuditReport` whose cited / uncited / cited-but-missing /
-commented-twins / missing-includes counts are correct for the parsed inputs.
+commented-twins / missing-includes / unparsed counts are correct for the parsed inputs.
+
+`parse_bib` finds the dropped entries by comparing every live `@type{key` header in the raw text
+(not `@string`, `@preamble`, `@comment`, nor a `%`-commented twin) with the keys bibtexparser
+returned. The reason is "unbalanced braces" when the entry's block does not balance, and otherwise
+the generic "could not parse"; the fields are never reconstructed, since any check of a guessed
+entry would be a guess.
 
 **Implements**:
 - `cpt-referenceaudit-flow-parsing-build-report`
@@ -148,3 +158,5 @@ forms.
 - [x] Parse-only audit returns correct cited/uncited/missing-include counts for the pilot fixture.
 - [x] DOI/ISBN/arXiv identifiers are normalized to canonical forms.
 - [x] Commented preprint twins are routed to an informational list, never the audited list.
+- [x] An entry the BibTeX parser cannot read is reported as unparsed, with its line and reason, and
+      is never silently dropped.

@@ -54,7 +54,13 @@ to an LLM when needed:
 5. **Adjudicate** anything that isn't a clean match with an LLM, asking one record at a time whether
    it can correspond to the entry; a second LLM check decides whether two strong candidates are the
    *same* work.
-6. **Verdict** — count the distinct works and report none / exactly one / multiple.
+6. **Verdict** — count the distinct works and report none / exactly one / multiple. An entry left
+   without a verdict says why: the source that failed, the LLM call that failed, or the candidates
+   that stayed undecided.
+7. **Check the fields** of an exactly-one match against the canonical record (year, venue, volume,
+   pages, …). This includes the **cited DOI**: when the matched work does not carry it, the DOI's
+   own records are looked up. A DOI that belongs to a different paper, or that doi.org does not know
+   (404), is reported as a wrong `doi` field, naming that paper.
 
 A reference identified only by a URL (a `@misc` blog post, software or project page that no scholarly
 database indexes) is verified against the page itself: the tool fetches the URL, checks the page's
@@ -258,10 +264,12 @@ cached responses are kept apart, and the verdict cache is keyed by backend, so n
 serves the other's result.
 
 **Title search** needs a full-text index on each searched table. It matches titles that contain
-every searchable word of the cited title, shortest title first, then most-cited first. Before any
-entry is audited, the run checks that the server answers and that each index exists and is fully
-built. If not, it exits with the statements below rather than scanning hundreds of millions of rows
-per reference:
+every searchable word of the cited title, shortest title first, then most-cited first. When none of
+those is a near-exact title (and the title has at least 4 distinct words), it searches again with
+each word left out in turn, ranked by edit distance to the cited title. So one misspelt or extra
+word no longer hides the real paper; two still do. Before any entry is audited, the run checks that
+the server answers and that each index exists and is fully built. If not, it exits with the
+statements below rather than scanning hundreds of millions of rows per reference:
 
 ```sql
 ALTER TABLE s2ag.papers           ADD INDEX IF NOT EXISTS idx_title_text title TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(title));
@@ -277,16 +285,19 @@ lookups use `s2ag.paper_external_ids` and `openalex.works_slim.doi`, which need 
 
 What the local data cannot supply, compared with the APIs:
 
-- **Coverage ends at the snapshot.** On the reference machine: OpenAlex 2026-06-26, DBLP dump
-  2026-09-19, S2 with papers dated into 2026. A work newer than its snapshot is simply not there,
-  so audit very recent papers with the API backend.
-- **OpenAlex has no `locations` locally**, so a Work's version links are its primary location only.
-  The preprint↔published merge then rests on the identifier links the other sources supply. Pages
-  and the abstract come from the full `openalex.works` table (on disk, about 1 s per batch).
+- **Coverage ends at the snapshot.** The run reads each snapshot's end at startup (DBLP's dump date,
+  OpenAlex's newest `updated_date`, the newest publication date in the S2 dump) and prints it in the
+  report header. On the reference machine: OpenAlex 2026-06-26, DBLP 2026-09-19, S2 current. A work
+  newer than its snapshot is not there, so a *no match* for an entry dated in or after a snapshot's
+  year carries a note naming the snapshot. Audit very recent papers with the API backend.
+- **OpenAlex has no `locations` locally**, so a Work's version links are its primary and best
+  open-access locations only. The preprint↔published merge then also rests on the identifier links
+  the other sources supply. Pages and the abstract come from the full `openalex.works` table (on
+  disk, about 1 s per batch).
 - **The DBLP dump table has no landing-page URL and no pages.**
-- Title search requires *all* searchable words, like DBLP's own search, and the API searches are
-  more forgiving. A cited title with an extra or misspelt word finds nothing locally, though the
-  API might return the real paper.
+- Title search tolerates one wrong word (see above); the API searches are more forgiving still.
+- A cold title search on S2 takes up to about 2 s: the text index is evaluated per part, and the
+  largest part holds about 200 M rows. Accepted as is; a finer index granularity could help.
 
 ### Reading the output
 
@@ -310,11 +321,16 @@ The remaining entries (at least one match found) are then split into `ISSUES`,
 - **`? multiple matches`** — ambiguous; the entry matches more than one distinct work.
 - **`unresolved`** — the tool could not conclude (e.g. a transient API error, or a cited web page
   that is a dead link, a JavaScript app shell no browser could render, or otherwise could not be
-  confirmed). Never reported as a hallucination.
+  confirmed). Never reported as a hallucination. Each cause is an `⚠ unresolved: …` line naming
+  the failed source or the undecided candidates, and the JSON carries the list as
+  `unresolved_reasons`.
 - **`⚠` lines** — per-entry issues: a normalized/backfilled identifier, a missing ISBN, a dangling
   citation, etc.
 - The header also lists **cited-but-missing** citations (a `\cite` with no `.bib` entry) and
   **uncited** entries.
+- **`UNPARSEABLE .bib ENTRIES`** — entries the BibTeX parser could not read (an unbalanced brace, most
+  often), with their line and the reason. They are not checked at all, and a `\cite` of one is not
+  counted as missing. The JSON lists them under `unparsed`.
 
 ### Citation alignment (`--check-citations`)
 
@@ -448,8 +464,8 @@ uv run python benchmarks/hallmark_bench.py score --split dev_public   #   ~1 h o
 
 Before anything is audited, every record goes through a `.bib` write → `parse_bib` round-trip. A record
 that does not survive it is reported, never audited as something else. In HALLMARK v1.2 these are
-values truncated inside a brace, such as `Man{\'e`. They become a not-evaluated prediction with the
-reason, never a guessed label.
+values truncated inside a brace, such as `Man{\'e`, which `parse_bib` reports as unparseable. They
+become a not-evaluated prediction with the parser's reason, never a guessed label.
 
 **`score`** writes `predictions.identity.jsonl` and `predictions.strict.jsonl`. It runs
 `hallmark evaluate --eval-mode both --strict` on each, restricted to the audited entries, and writes
@@ -457,6 +473,7 @@ reason, never a guessed label.
 - the metrics;
 - per-type label counts;
 - every false positive;
+- the unresolved entries, with why;
 - the misses by type.
 
 The two mappings exist because the two tools ask different questions. reference-audit's verdict asks
@@ -483,9 +500,9 @@ HALLMARK's two scoring modes treat UNCERTAIN differently:
 
 Both modes exclude `evaluated=false` predictions.
 
-Known gap: a cited DOI that does not resolve, or that belongs to a different paper, is not reported
-when the title and authors match a real work. `fabricated_doi` and `hybrid_fabrication` are therefore
-caught only when the rest of the entry fails to match.
+A cited DOI that belongs to a different paper, or that does not resolve, is an `error` field finding
+on the `doi` field (see [How it works](#how-it-works)). `strict` therefore counts it as HALLUCINATED;
+`identity` does not, since a real document still matches.
 
 ## Constructor Fabric
 

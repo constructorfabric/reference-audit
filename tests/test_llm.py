@@ -72,8 +72,8 @@ def test_strict_schema_all_required_no_additional():
 async def test_adjudicate_promotes_affirmed():
     audit = _audit(_adj_candidate())
     llm = FakeLLM(lambda u: CanCorrespondResult(can_correspond=True, confidence="high", reason="same"))
-    errored = await adjudicate_entry(audit, llm, AuditConfig(model="t"), None)
-    assert errored is False
+    errors = await adjudicate_entry(audit, llm, AuditConfig(model="t"), None)
+    assert errors == []
     assert audit.candidates[0].bucket == "auto_accept"
     assert audit.candidates[0].llm.can_correspond is True
 
@@ -96,8 +96,8 @@ async def test_adjudicate_low_confidence_not_promoted():
 async def test_adjudicate_error_flagged():
     audit = _audit(_adj_candidate())
     llm = FakeLLM(lambda u: "raise")
-    errored = await adjudicate_entry(audit, llm, AuditConfig(model="t"), None)
-    assert errored is True
+    errors = await adjudicate_entry(audit, llm, AuditConfig(model="t"), None)
+    assert len(errors) == 1 and errors[0].startswith("candidate ")
     assert audit.candidates[0].bucket == "adjudicate"
 
 

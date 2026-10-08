@@ -18,7 +18,7 @@ DOC_VERSIONS = discover_document_versions()
 @pytest.mark.parametrize("doc", DOC_VERSIONS, ids=[d.id for d in DOC_VERSIONS])
 def test_every_version_parses(doc):
     """Each version's .tex/.bib parse and assemble into a coherent report."""
-    entries, _ = parse_bib(doc.bib)
+    entries, _, _ = parse_bib(doc.bib)
     assert entries, f"{doc.id}: no bib entries parsed"
 
     report = build_parse_report(doc.tex, doc.bib)

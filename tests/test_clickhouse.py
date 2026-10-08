@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
+from datetime import date, datetime
 
 import pytest
 
@@ -67,7 +68,7 @@ _S2_PAPER = {
 
 def test_s2_search_maps_rows_like_the_api():
     ch = FakeConnection({
-        "hasAllTokens": [{"corpusid": 257834040, "t": TITLE, "c": 512}],
+        "hasAllTokens": [{"id": 257834040, "t": TITLE, "c": 512}],
         "FROM s2ag.papers WHERE corpusid IN": [_S2_PAPER],
         "s2ag.abstracts": [{"corpusid": 257834040, "abstract": "Language models are used..."}],
     })
@@ -84,6 +85,42 @@ def test_s2_search_maps_rows_like_the_api():
     search_sql, params = ch.queries[0]
     assert params["w"] == ["whose", "opinions", "do", "language", "models", "reflect"]
     assert "ORDER BY length(t), c DESC" in search_sql
+    # the all-words hit is the exact title, so there is no leave-one-out retry
+    assert sum("hasAllTokens" in q for q, _ in ch.queries) == 1
+
+
+def test_a_misspelt_title_word_is_retried_with_each_word_left_out():
+    typo = "Whose Opinions Do Language Modles Reflect?"
+    ch = FakeConnection({
+        "{w:Array(String)}": [],  # all words: the typo matches nothing
+        "{w0:Array(String)}": [{"id": 257834040, "t": TITLE, "c": 512}],
+        "FROM s2ag.papers WHERE corpusid IN": [_S2_PAPER],
+    })
+    res = asyncio.run(ClickHouseSemanticScholarAdapter(ch).search_by_metadata(_entry(typo)))
+    assert [r.title for r in res.records] == [TITLE]
+    relaxed_sql, params = ch.queries[1]
+    assert "editDistance(lower(t), {cited:String})" in relaxed_sql
+    assert params["cited"] == typo.lower()
+    assert params["w4"] == ["whose", "opinions", "do", "language", "reflect"]  # "modles" left out
+    assert len([k for k in params if k.startswith("w")]) == 6
+
+
+def test_relaxed_hits_rank_ahead_of_inexact_all_words_hits():
+    ch = FakeConnection({
+        "{w:Array(String)}": [{"key": "a/long", "title": "Whose opinions do language models reflect? "
+                               "A really large survey of polling methods across twenty countries",
+                               "year": 2024, "authors": [], "dois": []}],
+        "{w0:Array(String)}": [{"key": "conf/icml/S23", "title": TITLE, "year": 2023,
+                                "authors": [], "dois": []}],
+    })
+    res = asyncio.run(ClickHouseDblpAdapter(ch).search_by_metadata(_entry(TITLE + " really")))
+    assert [r.source_native_id for r in res.records] == ["conf/icml/S23", "a/long"]
+
+
+def test_a_short_title_is_not_retried():
+    ch = FakeConnection()
+    asyncio.run(ClickHouseOpenAlexAdapter(ch).search_by_metadata(_entry("Deep Lerning")))
+    assert sum("hasAllTokens" in q for q, _ in ch.queries) == 1
 
 
 def test_s2_id_lookup_follows_the_api_precedence_and_lowercases():
@@ -156,6 +193,23 @@ def test_openalex_search_combines_slim_and_full_rows():
     assert rec.version_links == ["https://doi.org/10.1109/cvpr52729.2023.00373"]
 
 
+def test_openalex_best_oa_location_is_a_version_link():
+    ch = FakeConnection({
+        "hasAllTokens": [{"id": _OA_SLIM["id"], "t": _OA_SLIM["title"], "c": 24}],
+        "works_slim WHERE id IN": [_OA_SLIM],
+        "openalex.works WHERE id IN": [{**_OA_FULL,
+                                        "oa_landing_page_url": "https://arxiv.org/abs/2303.17548",
+                                        "oa_pdf_url": "https://arxiv.org/pdf/2303.17548"}],
+    })
+    adapter = ClickHouseOpenAlexAdapter(ch)
+    (rec,) = asyncio.run(adapter.search_by_metadata(_entry(_OA_SLIM["title"]))).records
+    assert rec.version_links == [
+        "https://doi.org/10.1109/cvpr52729.2023.00373",
+        "https://arxiv.org/abs/2303.17548", "https://arxiv.org/pdf/2303.17548",
+    ]
+    assert rec.ids.arxiv_id == "2303.17548"
+
+
 def test_openalex_repository_source_is_a_preprint():
     ch = FakeConnection({
         "WHERE doi =": [{"id": "https://openalex.org/W1"}],
@@ -198,11 +252,12 @@ def test_dblp_dump_rows_map_to_records():
 
 
 class PreflightConnection(FakeConnection):
-    def __init__(self, *, reachable=True, index_type="text", pending=0):
+    def __init__(self, *, reachable=True, index_type="text", pending=0, coverage=date(2026, 9, 19)):
         super().__init__({
             "data_skipping_indices": [{"type": index_type}] if index_type else [],
             "system.mutations": [{"n": pending}],
             "SELECT 1": [{"1": 1}],
+            " AS d FROM": [{"d": coverage}],
         }, fail=None if reachable else "SELECT 1")
 
 
@@ -213,6 +268,7 @@ class PreflightConnection(FakeConnection):
         ({"index_type": None}, "ALTER TABLE s2ag.papers ADD INDEX IF NOT EXISTS idx_title_text"),
         ({"index_type": "tokenbf_v1"}, "has no full-text index"),
         ({"pending": 1}, "still being built"),
+        ({"coverage": datetime(1970, 1, 1)}, "no usable coverage date"),
     ],
 )
 def test_preflight_refuses_an_unusable_mirror(kwargs, message):
@@ -231,6 +287,7 @@ def test_preflight_passes_and_runs_once_per_connection():
 
     asyncio.run(both())
     assert sum("SELECT 1" == q for q, _ in ch.queries) == 1
+    assert [a.coverage_end for a in adapters] == [date(2026, 9, 19)] * 2
 
 
 async def test_pipeline_run_stops_before_auditing_when_the_mirror_is_unusable(tmp_path):
