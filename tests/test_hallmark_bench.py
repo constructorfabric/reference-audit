@@ -300,3 +300,36 @@ def test_score_runs_hallmark_on_a_run_with_a_not_audited_entry(tmp_path):
     summary = (out / "summary.md").read_text(encoding="utf-8")
     assert "HALLMARK relabelled HALLUCINATED → VALID" in summary
     assert f"`{k[4]}`" in summary.split("## Misses")[1]
+
+
+def test_resumed_audit_keeps_its_start_and_adds_up_wall_time(tmp_path, monkeypatch):
+    import json
+
+    def fake_run_audit(tex, bib, **kwargs):
+        return AuditReport(entries=[
+            EntryAudit(entry=BibEntry(key=k, title="A real title"),
+                       verdict=Verdict(kind="none", confidence="high"))
+            for k in ("aaaaaaaaaaaa", "bbbbbbbbbbbb")
+        ])
+
+    monkeypatch.setattr(hb, "run_audit", fake_run_audit)
+    data = tmp_path / "hallmark" / "data" / hb.HALLMARK_VERSION
+    data.mkdir(parents=True)
+    (data / "dev_public_blind.jsonl").write_text(
+        "".join(r.model_dump_json() + "\n" for r in _records()), encoding="utf-8"
+    )
+    out = tmp_path / "run"
+
+    def run():
+        hb.audit(split="dev_public", hallmark_dir=tmp_path / "hallmark", out=out,
+                 cache=tmp_path / "c.db", limit=0, seed=0, chunk_size=200, retry_unresolved=0,
+                 no_llm=True, backend="api")
+        return json.loads((out / "run.json").read_text(encoding="utf-8"))
+
+    first = run()
+    (out / "run.json").write_text(
+        json.dumps(first | {"started_at": "first-start", "wall_seconds": 1800}), encoding="utf-8"
+    )
+    resumed = run()
+    assert resumed["started_at"] == "first-start"
+    assert resumed["wall_seconds"] >= 1800  # the resumed invocation adds to, not replaces, the total

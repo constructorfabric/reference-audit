@@ -363,7 +363,8 @@ work's records as the entry's own by-id result.
 - [x] A source/LLM failure leaves the entry `unresolved`, never `none`, and is not cached.
 - [x] Repeated audits of the same inputs reuse the SQLite cache instead of re-querying.
 - [x] A preprint with a published version (or a book with a later edition) reports the better version.
-- [ ] Verdict accuracy is measured on the HALLMARK `dev_public` split under a fixed, documented
+- [x] Verdict accuracy is measured on the HALLMARK `dev_public` split under a fixed, documented
       verdict-to-label mapping (`benchmarks/hallmark_bench.py`). The harness lives outside
       `src/reference_audit` and is **not** `@cpt`-traced. A record the tool could not audit is
-      reported as not evaluated, never given a guessed label.
+      reported as not evaluated, never given a guessed label. Measured at pipeline 0.21; the
+      result and the gaps it exposed are in README, "Benchmarking on HALLMARK".

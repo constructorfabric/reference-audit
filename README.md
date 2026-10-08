@@ -262,8 +262,9 @@ limit) and arXiv (1) also cap requests in flight, retries included. arXiv's term
 every three seconds, so lookups by arXiv id are the slowest step of a large batch. Without these
 limits, a batch of a few hundred entries turned about a fifth of them into 429s.
 
-There are no rate limits and no third-party outages on this path, so a large batch audits in
-minutes, where the Semantic Scholar API (1 request/s) takes about an hour per thousand references.
+The local sources have no rate limits and no third-party outages. A large batch is then paced by the
+API sources that remain: about 35 minutes per thousand references, mostly Crossref's three requests in
+flight. On the Semantic Scholar API (1 request/s), the same batch takes about an hour.
 The two backends are interchangeable to the rest of the pipeline. The local adapters keep the API
 adapters' source names, and shape their rows like the API's JSON before the same normalizers. Their
 cached responses are kept apart, and the verdict cache is keyed by backend, so neither backend ever
@@ -448,7 +449,7 @@ git -C benchmarks/.hallmark checkout f774fa40675daa83eca6201637a94c4536b7bb3e
 uv venv benchmarks/.hallmark/.venv --python 3.12
 uv pip install --python benchmarks/.hallmark/.venv/bin/python -e benchmarks/.hallmark
 
-uv run python benchmarks/hallmark_bench.py audit --split dev_public   # minutes on --backend clickhouse,
+uv run python benchmarks/hallmark_bench.py audit --split dev_public   # ~35 min on --backend clickhouse,
 uv run python benchmarks/hallmark_bench.py score --split dev_public   #   ~1 h on the APIs
 ```
 
@@ -517,6 +518,29 @@ Both modes exclude `evaluated=false` predictions.
 A cited DOI that belongs to a different paper, or that does not resolve, is an `error` field finding
 on the `doi` field (see [How it works](#how-it-works)). `strict` therefore counts it as HALLUCINATED;
 `identity` does not, since a real document still matches.
+
+#### Result: `dev_public`, pipeline 0.21
+
+This run was on 2026-10-09 with the ClickHouse backend and `gpt-6-luna`, at HALLMARK `f774fa4` and
+reference-audit `b004463`. All 1,119 entries were run:
+- 1,112 were audited; 7 failed the `.bib` round-trip and are not evaluated.
+- 41 HALLUCINATED entries stayed unresolved: 33 on arXiv 429s, while this IP was throttled; 8 at the
+  per-entry LLM candidate cap.
+
+| mapping | mode | DR | FPR | F1 | MCC | Tier-3 F1 | coverage |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `identity` | conservative | 0.391 | 0.002 | 0.561 | 0.481 | 0.648 | 0.954 |
+| `identity` | aggressive | 0.435 | 0.002 | 0.606 | 0.508 | 0.672 | 0.954 |
+| `strict` | conservative | 0.949 | 0.094 | 0.943 | 0.859 | 0.885 | 0.747 |
+| `strict` | aggressive | 0.958 | 0.392 | 0.837 | 0.615 | 0.619 | 0.747 |
+
+`identity` almost never flags a real paper: 1 of 513 VALID entries. It finds only hallucinations with
+no real counterpart, since its verdict is about existence, not metadata.
+
+`strict` gets most of its UNCERTAIN predictions (and so its low coverage and its aggressive FPR) from a
+single gap. A pooled record took the venue `arXiv (Cornell University)` from the OpenAlex preprint copy
+of a work, even when DBLP in the same pool had the conference. That made the venue unverifiable on 168
+of 513 VALID entries.
 
 ## Constructor Fabric
 

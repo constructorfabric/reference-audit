@@ -472,6 +472,7 @@ def audit(
         "llm_enabled": config.llm_enabled(),
         "source_backend": config.source_backend,
     }
+    previous: dict = {}
     if run_meta_path.exists():
         previous = json.loads(run_meta_path.read_text(encoding="utf-8"))
         clash = {k: (previous.get(k), v) for k, v in identity.items() if previous.get(k) != v}
@@ -520,8 +521,9 @@ def audit(
         "cache": str(cache),
         "chunk_size": chunk_size,
         "retry_unresolved": retry_unresolved,
-        "started_at": started_at.isoformat(),
-        "wall_seconds": round(time.monotonic() - started),
+        # A resumed run keeps its first start and adds this invocation's time to the earlier ones.
+        "started_at": previous.get("started_at", started_at.isoformat()),
+        "wall_seconds": previous.get("wall_seconds", 0) + round(time.monotonic() - started),
         "entries": len(audits),
         "counts": _counts(audits),
         "counts_before_retry": counts_before_retry,
