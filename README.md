@@ -256,7 +256,10 @@ Semantic Scholar, OpenAlex and DBLP can be read from a local [ClickHouse](https:
 mirror instead of their public APIs: the S2 Academic Graph dump (database `s2ag`), an OpenAlex
 snapshot (`openalex`) and the DBLP XML dump (`kb.dblp_publication`). Select it with
 `SOURCE_BACKEND=clickhouse` in `.env` or `--backend clickhouse`. The other sources (Crossref, arXiv,
-Open Library, Google Books, publisher and web fetches) always use their APIs.
+Open Library, Google Books, publisher and web fetches) always use their APIs. Those requests stay inside
+each API's published limits: they are spaced per source, and Crossref (3 at a time, its polite-pool
+limit) and arXiv (1, per its API terms) also cap requests in flight, retries included. Without the cap,
+a batch of a few hundred entries turned about a fifth of them into Crossref 429s.
 
 There are no rate limits and no third-party outages on this path, so a large batch audits in
 minutes, where the Semantic Scholar API (1 request/s) takes about an hour per thousand references.

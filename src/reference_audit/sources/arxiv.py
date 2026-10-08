@@ -53,6 +53,7 @@ class ArxivAdapter(SourceAdapter):
     name = "arxiv"
     handles = {EntryType.MISC, EntryType.ARTICLE, EntryType.INPROCEEDINGS}
     rate_per_sec = 3.0
+    max_in_flight = 1  # the arXiv API terms allow a single connection at a time
 
     async def _query(self, params: dict, query_kind: str) -> SourceQueryResult:
         try:

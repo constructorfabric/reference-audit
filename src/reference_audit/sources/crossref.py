@@ -29,6 +29,9 @@ class CrossrefAdapter(SourceAdapter):
         EntryType.INCOLLECTION,
     }
     rate_per_sec = 10.0
+    # The polite pool's concurrency limit (crossref.org, REST API "Access and authentication").
+    # Without it a batch of metadata searches, each taking seconds, is answered with 429s.
+    max_in_flight = 3
 
     def __init__(self, mailto: str = "reference-audit@example.org", **kw):
         super().__init__(**kw)

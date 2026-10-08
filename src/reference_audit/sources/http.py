@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 
 import httpx
 from curl_cffi.requests import AsyncSession
@@ -36,12 +37,20 @@ class TransientHTTPError(Exception):
 
 
 class MonotonicRateLimiter:
-    """Token-free min-interval limiter shared across coroutines (monotonic clock)."""
+    """Token-free min-interval limiter shared across coroutines (monotonic clock), with an optional
+    cap on requests in flight.
 
-    def __init__(self, rate_per_sec: float):
+    The interval spaces request *starts*, which alone does not bound concurrency: a source whose
+    searches take seconds (Crossref) piles up dozens of open requests at 10 starts/s and answers 429.
+    `max_in_flight` caps them; a slot is held for a whole request, retries and backoff included.
+    """
+
+    def __init__(self, rate_per_sec: float, max_in_flight: int | None = None):
         self._min_interval = 1.0 / rate_per_sec if rate_per_sec > 0 else 0.0
         self._last = 0.0
         self._lock = asyncio.Lock()
+        self.max_in_flight = max_in_flight
+        self._slots = asyncio.Semaphore(max_in_flight) if max_in_flight else None
 
     async def acquire(self) -> None:
         if self._min_interval <= 0:
@@ -52,6 +61,15 @@ class MonotonicRateLimiter:
             if wait > 0:
                 await asyncio.sleep(wait)
             self._last = time.monotonic()
+
+    @asynccontextmanager
+    async def slot(self) -> AsyncIterator[None]:
+        """Hold one in-flight slot for the duration of a request (a no-op without a cap)."""
+        if self._slots is None:
+            yield
+            return
+        async with self._slots:
+            yield
 
 
 def new_client(user_agent: str = DEFAULT_USER_AGENT, timeout: float = DEFAULT_TIMEOUT) -> httpx.AsyncClient:
@@ -89,9 +107,21 @@ async def _send_with_retry(
 
 
 async def _request_with_retry(
-    client: httpx.AsyncClient, url: str, params: dict | None, headers: dict | None
+    client: httpx.AsyncClient,
+    limiter: MonotonicRateLimiter,
+    url: str,
+    params: dict | None,
+    headers: dict | None,
 ) -> httpx.Response:
-    return await _send_with_retry(lambda: client.get(url, params=params, headers=headers))
+    """Every attempt, retries included, waits its turn at the limiter. The in-flight slot is held
+    across the backoff, so a source that answered 429 is not handed the next request meanwhile."""
+
+    async def send() -> httpx.Response:
+        await limiter.acquire()
+        return await client.get(url, params=params, headers=headers)
+
+    async with limiter.slot():
+        return await _send_with_retry(send)
 
 
 async def post_multipart(
@@ -128,8 +158,7 @@ async def get_json(
     Raises TransientHTTPError after exhausting retries (caller maps to SourceQueryResult.error).
     A 404 returns (404, None) — a genuine 'absent', distinct from an error.
     """
-    await limiter.acquire()
-    resp = await _request_with_retry(client, url, params, headers)
+    resp = await _request_with_retry(client, limiter, url, params, headers)
     if resp.status_code == 404:
         return 404, None
     if resp.status_code >= 400:
@@ -154,8 +183,7 @@ async def get_text(
     Mirrors `get_json`: exponential backoff on 429/5xx via `_request_with_retry`, then raises
     TransientHTTPError after exhausting retries. A 404 returns (404, "").
     """
-    await limiter.acquire()
-    resp = await _request_with_retry(client, url, params, headers)
+    resp = await _request_with_retry(client, limiter, url, params, headers)
     if resp.status_code == 404:
         return 404, ""
     if resp.status_code >= 400:
@@ -179,8 +207,7 @@ async def get_html(
     other 4xx (e.g. a 403 bot-wall) raises TransientHTTPError so it is reported as a block, never a
     false 'page absent'.
     """
-    await limiter.acquire()
-    resp = await _request_with_retry(client, url, None, headers)
+    resp = await _request_with_retry(client, limiter, url, None, headers)
     if resp.status_code in (404, 410):
         return resp.status_code, str(resp.url), ""
     if resp.status_code >= 400:
@@ -201,7 +228,10 @@ def new_impersonate_session(timeout: float = DEFAULT_TIMEOUT) -> AsyncSession:
     retry=retry_if_exception_type(TransientHTTPError),
     reraise=True,
 )
-async def _impersonate_get_with_retry(session: AsyncSession, url: str):
+async def _impersonate_get_with_retry(
+    session: AsyncSession, limiter: MonotonicRateLimiter, url: str
+):
+    await limiter.acquire()  # per attempt, as in `_request_with_retry`
     try:
         resp = await session.get(url)
     except ImpersonateRequestError as exc:  # network/DNS/timeout/TLS
@@ -221,8 +251,8 @@ async def get_text_impersonate(
     TransientHTTPError after exhausting retries; a 404 returns (404, ""); any other 4xx (e.g. a 403
     bot-wall) raises TransientHTTPError so the caller reports a block rather than a false 'absent'.
     """
-    await limiter.acquire()
-    resp = await _impersonate_get_with_retry(session, url)
+    async with limiter.slot():
+        resp = await _impersonate_get_with_retry(session, limiter, url)
     if resp.status_code == 404:
         return 404, ""
     if resp.status_code >= 400:

@@ -473,6 +473,11 @@ External libraries and services this module interacts with.
 **Dependency Rules** (per project conventions):
 - Only the `sources` and `llm` components talk to external network services.
 - The parse path has no external network dependencies.
+- Each API adapter stays inside its source's published limits. Its limiter spaces request starts
+  (`rate_per_sec`), and where the source also caps concurrent requests it bounds requests in flight
+  (`max_in_flight`): Crossref 3 (its polite-pool limit), arXiv 1 (a single connection, per its API
+  terms). Every retry attempt passes the limiter again, and an in-flight slot is held across a retry's
+  backoff.
 
 ### 3.6 Interactions & Sequences
 

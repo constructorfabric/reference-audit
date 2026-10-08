@@ -21,6 +21,9 @@ class SourceAdapter(ABC):
     name: str = "source"
     handles: set[EntryType] = set()
     rate_per_sec: float = 5.0
+    # Requests the source allows in flight at once, when it documents a cap (None = no cap). A slot
+    # is held for a whole request, retries included (`MonotonicRateLimiter`).
+    max_in_flight: int | None = None
     # Where the data comes from: the public API ("api"), or a local mirror of the same database
     # ("clickhouse"). Two backends of one source share `name` (routing, field priorities and reports
     # are about the database, not the transport), so cached responses are keyed by `cache_source`.
@@ -31,7 +34,7 @@ class SourceAdapter(ABC):
 
     def __init__(self, *, client=None, limiter: MonotonicRateLimiter | None = None):
         self.client = client or new_client()
-        self.rate_limiter = limiter or MonotonicRateLimiter(self.rate_per_sec)
+        self.rate_limiter = limiter or MonotonicRateLimiter(self.rate_per_sec, self.max_in_flight)
 
     @property
     def cache_source(self) -> str:
