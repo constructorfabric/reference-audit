@@ -102,6 +102,8 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
 - **Scope**:
   - Modular source adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open Library, Google
     Books, publisher citation export, web page fetch) and SQLite caching
+  - A local ClickHouse backend for Semantic Scholar, OpenAlex and DBLP, selected per run
+    (`source_backend`), with backend-scoped caching
   - Feature scoring and the SAME-OBJECT clustering rule (formal + LLM tie-break)
   - 3-way verdict, hallucination screening, URL-only `@misc` web verification, Open Library book /
     edition resolution, DOI/ISBN backfill, best-version + canonical field output

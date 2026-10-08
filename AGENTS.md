@@ -4,7 +4,7 @@ The ovreall goal of the project is to provide the level of reliability suitable 
 
 When querying the LLMs for structured output, always use pydantic models
 
-The whole-entry verdict cache (`entry_verdict_cache`) is gated only on `(pipeline_version, model)`.
+The whole-entry verdict cache (`entry_verdict_cache`) is gated only on `(pipeline_version, model)` (and kept per source backend, `api` / `clickhouse`).
 Any change that can alter a verdict — thresholds, prompts, matching/scoring rules, or a *new
 verdict-producing path* (e.g. a new source or override step) — MUST bump
 `AuditConfig.pipeline_version` in the same change. Forgetting this serves stale verdicts from before

@@ -8,8 +8,9 @@ the README but is configurable.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,6 +45,28 @@ class AuditConfig(BaseSettings):
     )
     openlibrary_email: str | None = Field(default=None, alias="OPENLIBRARY_EMAIL")
     google_books_api_key: str | None = Field(default=None, alias="GOOGLE_BOOKS_API_KEY")
+
+    # --- Source backend: where Semantic Scholar, OpenAlex and DBLP are read from ---
+    # "api": their public APIs (rate-limited; needs no setup). "clickhouse": a local ClickHouse mirror
+    # of the three databases (no rate limits; must carry the full-text title indexes, see README).
+    # Crossref, arXiv, Open Library, Google Books and the web/publisher fetches are API-only.
+    source_backend: Literal["api", "clickhouse"] = Field(
+        default="api", validation_alias=AliasChoices("SOURCE_BACKEND", "source_backend")
+    )
+    clickhouse_host: str = Field(default="127.0.0.1", alias="CLICKHOUSE_HOST")
+    clickhouse_port: int = Field(default=8123, alias="CLICKHOUSE_PORT")
+    clickhouse_user: str = Field(default="default", alias="CLICKHOUSE_USER")
+    clickhouse_password: str = Field(
+        default="",
+        validation_alias=AliasChoices("CLICKHOUSE_DEFAULT_USER_PASSWORD", "CLICKHOUSE_PASSWORD"),
+    )
+    clickhouse_s2_db: str = Field(
+        default="s2ag", validation_alias=AliasChoices("CLICKHOUSE_S2_DB", "CLICKHOUSE_DB")
+    )
+    clickhouse_openalex_db: str = Field(default="openalex", alias="CLICKHOUSE_OPENALEX_DB")
+    clickhouse_dblp_db: str = Field(default="kb", alias="CLICKHOUSE_DBLP_DB")
+    clickhouse_concurrency: int = 8         # queries in flight against the local server
+    clickhouse_query_timeout: float = 60.0  # seconds; a slower query is an error, never "not found"
 
     # --- Matching thresholds (calibrated against the pilot; see plan risk #3) ---
     title_accept: float = 0.92            # auto_accept title floor (entry has an identifier)
@@ -92,7 +115,14 @@ class AuditConfig(BaseSettings):
     #       (a title-less query could previously score an arbitrary paper as a match).
     # 0.17: default LLM model gpt-5.4-mini → gpt-6-luna, and temperature is no longer pinned to 0.0
     #       (model default unless LLM_TEMPERATURE is set) — adjudication behavior changes.
-    pipeline_version: str = "0.17"
+    # 0.18: DBLP is queried through its SPARQL endpoint (QLever word search, shortest title first)
+    #       instead of the search API, which now serves automated clients a bot-challenge page. DBLP's
+    #       candidates and their ranking change, and DBLP no longer errors on every query, so entries
+    #       that were left unresolved can now reach a verdict.
+    # 0.19: a second source backend — Semantic Scholar, OpenAlex and DBLP read from a local ClickHouse
+    #       mirror (full-text title index, all title words required, shortest title first). The
+    #       verdict cache is now also keyed by backend.
+    pipeline_version: str = "0.19"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

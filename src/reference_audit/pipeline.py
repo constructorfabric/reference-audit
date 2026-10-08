@@ -386,10 +386,22 @@ class AuditPipeline:
         if self._owns_grobid and self._grobid_client is not None:
             await self._grobid_client.aclose()
 
+    async def preflight(self) -> None:
+        """Fail the whole run up front when a configured source cannot be queried at all.
+
+        A local ClickHouse mirror that is down, or that lacks the title index the search relies on,
+        would otherwise turn every entry into a per-entry error (or a minutes-long scan); one named
+        error with the fix is the useful report. The public-API adapters have nothing to check here —
+        their outages are transient and per query, and are reported per entry.
+        """
+        for adapter in self.adapters:
+            await adapter.preflight()
+
     async def run(
         self, tex_path: str | Path | None, bib_path: str | Path, *, progress: bool = False
     ) -> AuditReport:
         report = build_parse_report(tex_path, bib_path)
+        await self.preflight()
         # Citation-alignment (opt-in) needs the citing context from the .tex; extract it once, offline,
         # up front. Without a manuscript there is no context, so the check simply produces nothing.
         if self.config.check_alignment and tex_path is not None:
@@ -404,6 +416,7 @@ class AuditPipeline:
         call site ambiguous for no gain.
         """
         parsed = await build_pdf_parse_report(pdf_path, client=self._grobid())
+        await self.preflight()
         # Contexts come free from the same TEI we already had to fetch, so they are always kept; the
         # alignment check itself still gates on `config.check_alignment`.
         self._citation_contexts = parsed.contexts
@@ -423,6 +436,7 @@ class AuditPipeline:
         ):
             await task
         report.summary["verdicts"] = _verdict_summary(report)
+        report.summary["source_backend"] = self.config.source_backend
         return report
 
     async def _audit_entry(self, audit: EntryAudit) -> None:
@@ -578,7 +592,7 @@ class AuditPipeline:
     async def _gather_candidates(self, entry, route) -> tuple[list[SourceRecord], bool]:
         async def one(adapter: SourceAdapter, kind: str) -> SourceQueryResult:
             cached = (
-                self.cache.get_source_query(entry.content_hash, adapter.name, kind)
+                self.cache.get_source_query(entry.content_hash, adapter.cache_source, kind)
                 if self.cache is not None
                 else None
             )
@@ -590,7 +604,7 @@ class AuditPipeline:
                 else await adapter.search_by_metadata(entry)
             )
             if self.cache is not None:
-                self.cache.put_source_query(entry.content_hash, result)
+                self.cache.put_source_query(entry.content_hash, result, source=adapter.cache_source)
             return result
 
         tasks = [one(a, "id") for a in route.id_adapters]
@@ -611,7 +625,7 @@ class AuditPipeline:
 
         async def one(adapter: SourceAdapter) -> SourceQueryResult:
             cached = (
-                self.cache.get_source_query(entry.content_hash, adapter.name, "id")
+                self.cache.get_source_query(entry.content_hash, adapter.cache_source, "id")
                 if self.cache is not None
                 else None
             )
@@ -619,7 +633,7 @@ class AuditPipeline:
                 return cached
             result = await adapter.lookup_by_id(ids)
             if self.cache is not None:
-                self.cache.put_source_query(entry.content_hash, result)
+                self.cache.put_source_query(entry.content_hash, result, source=adapter.cache_source)
             return result
 
         results = await asyncio.gather(*(one(a) for a in adapters))
@@ -1205,7 +1219,10 @@ def _run_sync(
     cache: AuditCache | None = None
     if cache_path is not None:
         cache = AuditCache(
-            cache_path, pipeline_version=config.pipeline_version, model=config.model
+            cache_path,
+            pipeline_version=config.pipeline_version,
+            model=config.model,
+            backend=config.source_backend,
         )
         if fresh:
             cache.clear()

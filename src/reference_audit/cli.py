@@ -22,6 +22,7 @@ from reference_audit.pipeline import (
     run_pdf_audit,
 )
 from reference_audit.report import render_json, render_text
+from reference_audit.sources.clickhouse import ClickHouseUnavailableError
 
 app = typer.Typer(
     add_completion=False,
@@ -64,6 +65,11 @@ def audit(
         None, "--cache", help="Cache DB path (default: <bib_dir>/.reference_audit/cache.db)."
     ),
     model: str | None = typer.Option(None, "--model", help="LLM model override."),
+    backend: str | None = typer.Option(
+        None, "--backend",
+        help="Where Semantic Scholar, OpenAlex and DBLP are read from: api | clickhouse "
+             "(default: SOURCE_BACKEND, else api).",
+    ),
     grobid: str | None = typer.Option(
         None, "--grobid", help="GROBID base URL for PDF input (default http://localhost:8070)."
     ),
@@ -78,6 +84,8 @@ def audit(
     """
     if fmt not in ("text", "json", "both"):
         raise typer.BadParameter("format must be one of: text, json, both")
+    if backend not in (None, "api", "clickhouse"):
+        raise typer.BadParameter("--backend must be 'api' or 'clickhouse'")
 
     try:
         source = resolve_input(document, bib)
@@ -107,6 +115,8 @@ def audit(
                 updates["check_alignment"] = True
             if grobid:
                 updates["grobid_url"] = grobid
+            if backend:
+                updates["source_backend"] = backend
             config = AuditConfig().model_copy(update=updates)
             cache_path = cache or default_cache_path(source)
             common = {
@@ -119,7 +129,7 @@ def audit(
                 report = run_pdf_audit(source.pdf_path, **common)
             else:
                 report = run_audit(source.tex_path, source.bib_path, **common)
-    except (EmptyBibliographyError, GrobidError) as exc:
+    except (EmptyBibliographyError, GrobidError, ClickHouseUnavailableError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 

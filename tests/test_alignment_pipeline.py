@@ -114,10 +114,14 @@ class _StubAdapter:
     """Returns one matching record (with an abstract) for both id and metadata lookups."""
 
     name = "openalex"
+    cache_source = "openalex"
     handles = {EntryType.ARTICLE}
 
     def __init__(self, rec):
         self.rec = rec
+
+    async def preflight(self):
+        pass
 
     async def lookup_by_id(self, ids):
         return SourceQueryResult(source=self.name, query_kind="id", records=[self.rec])

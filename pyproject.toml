@@ -8,6 +8,7 @@ dependencies = [
     "anyascii>=0.3.3",
     "beautifulsoup4>=4.15.0",
     "bibtexparser>=1.4,<2",
+    "clickhouse-connect>=0.8",
     "constructor-studio",
     "curl-cffi>=0.7",
     "httpx>=0.28.1",
@@ -45,11 +46,14 @@ dev = [
 asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+# benchmarks/ holds runnable harnesses (not part of the package); their tests import them by name.
+pythonpath = ["benchmarks"]
 # --strict-markers: an unregistered marker is an error, not a silently-never-selected test.
 addopts = "--strict-markers"
 markers = [
     "pdf_build: compiles a test document to PDF; needs a local TeX Live (pdflatex/xelatex + bibtex).",
     "grobid: needs a reachable GROBID service (GROBID_URL, default http://localhost:8070).",
+    "clickhouse: needs the local ClickHouse mirror (CLICKHOUSE_* in .env) with its title indexes.",
 ]
 
 [tool.reference-audit]

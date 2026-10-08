@@ -69,6 +69,8 @@ the SQLite cache (`cache/`). Each entry is audited in isolation; only successful
 - **PRD**: [PRD.md](../PRD.md)
 - **Design**: [DESIGN.md](../DESIGN.md)
 - **Dependencies**: `cpt-referenceaudit-feature-parsing`
+- **External benchmark**: [HALLMARK](https://github.com/rpatrik96/hallmark), driven by
+  `benchmarks/hallmark_bench.py` (see README, "Benchmarking on HALLMARK")
 
 ## 2. Actor Flows (CDSL)
 
@@ -183,6 +185,38 @@ proceedings or OpenReview URL would otherwise be "unable to verify". For scoring
 URL-only entry takes the strict title+author backfill path: a DBLP record with the exact title, full
 author list, and year confirms it deterministically (no LLM required).
 
+DBLP is read through its **SPARQL endpoint** (`sparql.dblp.org`). Its search API and mirrors now
+answer automated clients with a bot-challenge HTML page, which made every DBLP query an error and so
+left every unmatched entry unresolved. Each lookup makes two requests:
+1. A word search over titles: every searchable word of the cited title must match, ASCII words only,
+   with LaTeX math dropped. Results come shortest title first, so the exact title ranks ahead of
+   longer titles that quote it.
+2. A lookup of those publications' properties and ordered author signatures.
+
+A non-JSON page, an error status, or a title with no searchable word is a source **error**, never
+"not found".
+
+Semantic Scholar, OpenAlex and DBLP have a second **source backend**, selected per run
+(`source_backend`: `api` by default, or `clickhouse`). It is a local ClickHouse mirror of the same three
+databases (`sources/clickhouse.py`).
+- **Interchangeable:** the local adapters keep the API adapters' names, and pass their rows through
+  the API normalizers wherever one exists, so routing, field priorities, identity pinning and reports
+  are unchanged.
+- **Title search:** a full-text title index with every searchable word required, shortest title
+  first, then most-cited (the DBLP word-search contract).
+- **Preflight:** before any entry is audited, the run checks that the server answers and that every
+  title index exists and is fully built. Otherwise it stops with the statements that build them,
+  never degrading into per-entry scans.
+- **Failures:** a query failure or timeout is a source **error**.
+- **Caching:** cached source responses are keyed per backend (`cache_source`), and the verdict cache
+  is keyed by `(entry_hash, backend)`, so one backend's snapshot never answers for the other's.
+- **Known limits:** coverage ends at each snapshot's ingest date, OpenAlex has no `locations`
+  locally (version links are the primary location only), and the DBLP dump has no landing page or
+  pages.
+
+This backend is implemented and unit-tested (`tests/test_clickhouse.py`, plus a live check gated on
+`REFERENCE_AUDIT_LIVE`). It is not yet `@cpt`-traced to its own flow or algorithm.
+
 A **truncated author list** — the BibTeX `and others` convention (and a written-out "et al.") —
 is treated as a truncation marker, not a literal author (`matching/names.py`). Left in, the phantom
 surname "others" would drag author overlap down and break the subset check (an intentionally
@@ -293,3 +327,7 @@ so repeated audits reuse them, and **MUST NOT** cache transient errors.
 - [x] A source/LLM failure leaves the entry `unresolved`, never `none`, and is not cached.
 - [x] Repeated audits of the same inputs reuse the SQLite cache instead of re-querying.
 - [x] A preprint with a published version (or a book with a later edition) reports the better version.
+- [ ] Verdict accuracy is measured on the HALLMARK `dev_public` split under a fixed, documented
+      verdict-to-label mapping (`benchmarks/hallmark_bench.py`). The harness lives outside
+      `src/reference_audit` and is **not** `@cpt`-traced. A record the tool could not audit is
+      reported as not evaluated, never given a guessed label.

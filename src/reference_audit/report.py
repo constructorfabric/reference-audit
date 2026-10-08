@@ -172,6 +172,8 @@ def render_text(report: AuditReport) -> str:
             f"  ·  {verdicts.get('multiple', 0)} ambiguous"
             f"  ·  {verdicts.get('unresolved', 0)} unresolved"
         )
+        if s.get("source_backend") == "clickhouse":
+            lines.append("  sources: Semantic Scholar, OpenAlex and DBLP read from local ClickHouse")
     align = [f for a in report.entries for f in a.alignment_findings]
     if align:
         by_status: dict[str, int] = {}

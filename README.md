@@ -35,7 +35,9 @@ to an LLM when needed:
    (NeurIPS, ICLR, ICML/PMLR, TMLR), which mint no DOI and are thinly covered by the article-centric
    sources — a paper cited only by its proceedings or OpenReview URL is confirmed against DBLP's
    exact title/author/year record (a bare URL is not treated as a matching anchor, so such an entry
-   takes the same strict title+author path as one with no identifier at all). A truncated author
+   takes the same strict title+author path as one with no identifier at all). DBLP is queried through
+   its SPARQL endpoint (`sparql.dblp.org`), because its search API now serves automated clients a
+   bot-challenge page, never JSON. A truncated author
    list (the BibTeX `and others` / "et al." convention) is recognized as such, so its named authors
    matching a prefix of the full record's author list confirms the entry rather than reading the
    omitted names as a different work.
@@ -141,6 +143,15 @@ GOOGLE_BOOKS_API_KEY=...            # Google Books per-project quota (the keyles
 
 # Optional — only used for PDF input; overridable per-run with --grobid
 GROBID_URL=http://localhost:8070
+
+# Optional — read Semantic Scholar, OpenAlex and DBLP from a local ClickHouse mirror instead of their
+# APIs (see "Local ClickHouse backend"); overridable per-run with --backend
+SOURCE_BACKEND=clickhouse          # default: api
+CLICKHOUSE_HOST=127.0.0.1
+CLICKHOUSE_PORT=8123
+CLICKHOUSE_USER=default
+CLICKHOUSE_DEFAULT_USER_PASSWORD=...   # or CLICKHOUSE_PASSWORD
+# CLICKHOUSE_S2_DB=s2ag  CLICKHOUSE_OPENALEX_DB=openalex  CLICKHOUSE_DBLP_DB=kb   (the defaults)
 ```
 
 Only `OPENAI_API_KEY` is needed to run the full pipeline; the data sources used by default
@@ -218,6 +229,7 @@ NO ISSUES (18) — verified, nothing to fix:
 | `--cache PATH` | Cache DB location. Default: `<bib_dir>/.reference_audit/cache.db`. |
 | `--model NAME` | Override the LLM model (default `gpt-6-luna`). |
 | `--grobid URL` | GROBID base URL for PDF input. Default `http://localhost:8070` (or `GROBID_URL`). |
+| `--backend api\|clickhouse` | Where Semantic Scholar, OpenAlex and DBLP are read from: their public APIs, or a local ClickHouse mirror. Default `SOURCE_BACKEND`, else `api`. See [Local ClickHouse backend](#local-clickhouse-backend). |
 | `--fail-on hallucinated\|multiple` | Exit non-zero if any entry gets that verdict — for gating submissions in CI. |
 
 `--no-network` applies to `.tex` + `.bib` input only. A PDF's reference list comes from an HTTP call to
@@ -229,6 +241,52 @@ Example — fail a CI check if any reference looks hallucinated, as JSON:
 ```bash
 uv run reference-audit audit paper.tex refs.bib --format json --fail-on hallucinated
 ```
+
+### Local ClickHouse backend
+
+Semantic Scholar, OpenAlex and DBLP can be read from a local [ClickHouse](https://clickhouse.com)
+mirror instead of their public APIs: the S2 Academic Graph dump (database `s2ag`), an OpenAlex
+snapshot (`openalex`) and the DBLP XML dump (`kb.dblp_publication`). Select it with
+`SOURCE_BACKEND=clickhouse` in `.env` or `--backend clickhouse`. The other sources (Crossref, arXiv,
+Open Library, Google Books, publisher and web fetches) always use their APIs.
+
+There are no rate limits and no third-party outages on this path, so a large batch audits in
+minutes, where the Semantic Scholar API (1 request/s) takes about an hour per thousand references.
+The two backends are interchangeable to the rest of the pipeline. The local adapters keep the API
+adapters' source names, and shape their rows like the API's JSON before the same normalizers. Their
+cached responses are kept apart, and the verdict cache is keyed by backend, so neither backend ever
+serves the other's result.
+
+**Title search** needs a full-text index on each searched table. It matches titles that contain
+every searchable word of the cited title, shortest title first, then most-cited first. Before any
+entry is audited, the run checks that the server answers and that each index exists and is fully
+built. If not, it exits with the statements below rather than scanning hundreds of millions of rows
+per reference:
+
+```sql
+ALTER TABLE s2ag.papers           ADD INDEX IF NOT EXISTS idx_title_text title TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(title));
+ALTER TABLE openalex.works_slim   ADD INDEX IF NOT EXISTS idx_title_text title TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(title));
+ALTER TABLE kb.dblp_publication   ADD INDEX IF NOT EXISTS idx_title_text title TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(title));
+ALTER TABLE <each of the above>   MATERIALIZE INDEX idx_title_text;   -- runs in the background; see system.mutations
+```
+
+On the reference machine these built in about 6 minutes and take 7.1 GiB (S2), 13.6 GiB (OpenAlex)
+and 181 MiB (DBLP). A title lookup then takes 0.1–2 s and an identifier lookup 20–90 ms. A
+40-reference HALLMARK sample audits in about 30 s. Identifier
+lookups use `s2ag.paper_external_ids` and `openalex.works_slim.doi`, which need no extra index.
+
+What the local data cannot supply, compared with the APIs:
+
+- **Coverage ends at the snapshot.** On the reference machine: OpenAlex 2026-06-26, DBLP dump
+  2026-09-19, S2 with papers dated into 2026. A work newer than its snapshot is simply not there,
+  so audit very recent papers with the API backend.
+- **OpenAlex has no `locations` locally**, so a Work's version links are its primary location only.
+  The preprint↔published merge then rests on the identifier links the other sources supply. Pages
+  and the abstract come from the full `openalex.works` table (on disk, about 1 s per batch).
+- **The DBLP dump table has no landing-page URL and no pages.**
+- Title search requires *all* searchable words, like DBLP's own search, and the API searches are
+  more forgiving. A cited title with an extra or misspelt word finds nothing locally, though the
+  API might return the real paper.
 
 ### Reading the output
 
@@ -308,6 +366,7 @@ reason (and, for an unreachable service, the command to start one).
 
 ```bash
 uv run pytest          # unit + integration tests (databases & LLM are mocked; no network)
+REFERENCE_AUDIT_LIVE=1 uv run pytest -m clickhouse   # the live check of the local ClickHouse mirror
 uv run cfs validate    # validate the governance artifacts and code traceability
 ```
 
@@ -350,6 +409,83 @@ Two deliberate behaviors of the harness:
 The pinned numbers are a **regression floor for the recorded GROBID image and bibliography styles, not
 a fidelity claim for arbitrary PDFs**: these bibliographies were typeset by BibTeX from clean data,
 which is materially easier than what real-world PDFs contain.
+
+### Benchmarking on HALLMARK
+
+[HALLMARK](https://github.com/rpatrik96/hallmark) is a citation-hallucination benchmark. Each split is a
+set of standalone BibTeX entries labelled `VALID` or `HALLUCINATED`, spanning 14 hallucination types in
+3 difficulty tiers. `benchmarks/hallmark_bench.py` runs the full pipeline (network + LLM) on a split and
+scores it with HALLMARK's own evaluator.
+
+HALLMARK pins `bibtexparser>=2` and this project pins `<2`, so HALLMARK gets its own checkout and venv.
+Pin the commit so results stay reproducible:
+
+```bash
+git clone https://github.com/rpatrik96/hallmark benchmarks/.hallmark
+git -C benchmarks/.hallmark checkout f774fa40675daa83eca6201637a94c4536b7bb3e
+uv venv benchmarks/.hallmark/.venv --python 3.12
+uv pip install --python benchmarks/.hallmark/.venv/bin/python -e benchmarks/.hallmark
+
+uv run python benchmarks/hallmark_bench.py audit --split dev_public   # minutes on --backend clickhouse,
+uv run python benchmarks/hallmark_bench.py score --split dev_public   #   ~1 h on the APIs
+```
+
+**`audit`** reads only the *blind* split (`<split>_blind.jsonl`), so labels never reach the tool.
+- It writes the entries to `.bib` chunks and audits each with `run_audit`.
+- Every chunk shares one cache (`benchmarks/runs/hallmark/.cache/cache.db`).
+- It keeps one compact record per entry in `benchmarks/runs/hallmark/<split>/audits.jsonl`.
+- It refuses to run when no LLM key is configured, rather than silently measuring the formal-only
+  pipeline. Pass `--no-llm` to measure that on purpose.
+- The run is resumable chunk by chunk. Entries left unresolved are re-audited once
+  (`--retry-unresolved`), since errors are never cached. `--limit N --seed S` audits a random sample.
+- `--backend api|clickhouse` overrides `SOURCE_BACKEND` (see
+  [Local ClickHouse backend](#local-clickhouse-backend)). The backend is recorded in `run.json`, and a
+  run directory refuses to resume under a different backend, model or `pipeline_version`.
+- `run.json` records:
+  - both commits, `pipeline_version` and the model;
+  - the outcome counts before and after the retry;
+  - the wall time.
+
+Before anything is audited, every record goes through a `.bib` write → `parse_bib` round-trip. A record
+that does not survive it is reported, never audited as something else. In HALLMARK v1.2 these are
+values truncated inside a brace, such as `Man{\'e`. They become a not-evaluated prediction with the
+reason, never a guessed label.
+
+**`score`** writes `predictions.identity.jsonl` and `predictions.strict.jsonl`. It runs
+`hallmark evaluate --eval-mode both --strict` on each, restricted to the audited entries, and writes
+`summary.md` with:
+- the metrics;
+- per-type label counts;
+- every false positive;
+- the misses by type.
+
+The two mappings exist because the two tools ask different questions. reference-audit's verdict asks
+whether *any real document* corresponds to the entry. HALLMARK's `HALLUCINATED` also covers real papers
+cited with wrong metadata (wrong venue, swapped or partial authors, a preprint cited as published, …),
+which reference-audit reports as field findings rather than through the verdict.
+
+| audit outcome | `identity` | `strict` |
+| --- | --- | --- |
+| `none` (high / medium confidence) | HALLUCINATED 0.9 / 0.75 | same |
+| `exactly_one`, clean (high / medium) | VALID 0.9 / 0.75 | same |
+| `exactly_one` + an `uncertain` field finding | VALID 0.6 | VALID 0.6 |
+| `exactly_one` + an `unverifiable` field (e.g. a venue only an arXiv record was found for) | VALID 0.6 | UNCERTAIN 0.5 |
+| `exactly_one` + an `error` field finding, or a cited author missing from the matched record | VALID 0.6 | HALLUCINATED 0.7 |
+| `multiple`, or unresolved | UNCERTAIN 0.5 | same |
+| not audited (round-trip failure, or the audit raised) | UNCERTAIN 0.5, `evaluated=false` | same |
+
+The numbers are HALLMARK's confidence, i.e. P(label is correct). They are a fixed table, not fitted to
+the labels.
+
+HALLMARK's two scoring modes treat UNCERTAIN differently:
+- **Conservative** drops UNCERTAIN from the classification metrics.
+- **Aggressive** counts UNCERTAIN as HALLUCINATED.
+
+Both modes exclude `evaluated=false` predictions.
+
+Known gap: a cited DOI that does not resolve, or that belongs to a different paper, is not reported
+when the title and authors match a real work. `fabricated_doi` and `hybrid_fabrication` are therefore
+caught only when the rest of the entry fails to match.
 
 ## Constructor Fabric
 
@@ -442,7 +578,9 @@ src/reference_audit/
                #   failure mode) + tei.py (pure TEI -> BibEntry / CitationContext mapping)
   sources/     # modular adapters: Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open Library,
                #   Google Books, publisher (DOI landing-page citation export), web (cited-page fetch),
-               #   render (headless-browser rendering of JS single-page-app pages); + routing
+               #   render (headless-browser rendering of JS single-page-app pages); + routing;
+               #   clickhouse.py = the local-mirror backend for S2/OpenAlex/DBLP; titlewords.py = the
+               #   searchable words of a title (shared by every all-words title search)
   matching/    # candidate pooling, feature scoring, SAME-OBJECT clustering, verdicts, web check
   llm/         # OpenAI structured-output adjudication (pydantic schemas)
   cache/       # SQLite memoization of DB/LLM calls (errors never cached)
@@ -456,6 +594,9 @@ src/reference_audit/
   inputs.py    # which input shape the CLI arguments name (.tex + .bib, or a .pdf)
   cli.py       # command-line entry point (Typer)
 architecture/  # governed specification & design (SPEC, PRD, DESIGN, DECOMPOSITION, features)
+benchmarks/
+  hallmark_bench.py # HALLMARK harness: audit a blind split, map verdicts to labels, run HALLMARK's
+                    #   evaluator (needs the pinned checkout in benchmarks/.hallmark — see above)
 tests/
   documents/   # test papers: <paper-title-slug>/<version>.{tex,bib} (initial, polished, …),
                #   plus the auxiliary LaTeX sources needed to compile them (see each SOURCES.md)

@@ -19,12 +19,21 @@ def prompt_hash(text: str) -> str:
 
 
 class AuditCache:
-    """Backed by SQLite. `model`/`pipeline_version` scope the whole-entry verdict fast path."""
+    """Backed by SQLite. `model`/`pipeline_version` gate the whole-entry verdict fast path, and
+    `backend` (the source backend, `api` or `clickhouse`) keys it."""
 
-    def __init__(self, path: str | Path, *, pipeline_version: str = "0.1", model: str = ""):
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        pipeline_version: str = "0.1",
+        model: str = "",
+        backend: str = "api",
+    ):
         self.conn = _db.connect(path)
         self.pipeline_version = pipeline_version
         self.model = model
+        self.backend = backend
 
     # --- source query cache (only successful results are stored) ---
     def get_source_query(
@@ -37,13 +46,17 @@ class AuditCache:
         ).fetchone()
         return SourceQueryResult.model_validate_json(row["result_json"]) if row else None
 
-    def put_source_query(self, entry_hash: str, result: SourceQueryResult) -> None:
+    def put_source_query(
+        self, entry_hash: str, result: SourceQueryResult, *, source: str | None = None
+    ) -> None:
+        """Store a successful result under `source` (default `result.source`). An adapter passes its
+        `cache_source`, so a local-mirror response never answers for the public API or vice versa."""
         if result.error is not None:
             return  # never cache errors — they must retry (error ≠ not-found)
         self.conn.execute(
             "INSERT OR REPLACE INTO source_query_cache "
             "(entry_hash, source, query_kind, result_json, fetched_at, ok) VALUES (?,?,?,?,?,1)",
-            (entry_hash, result.source, result.query_kind, result.model_dump_json(), _now()),
+            (entry_hash, source or result.source, result.query_kind, result.model_dump_json(), _now()),
         )
         self.conn.commit()
 
@@ -51,8 +64,8 @@ class AuditCache:
     def get_entry_verdict(self, entry_hash: str) -> Verdict | None:
         row = self.conn.execute(
             "SELECT verdict_json FROM entry_verdict_cache "
-            "WHERE entry_hash=? AND pipeline_version=? AND model=?",
-            (entry_hash, self.pipeline_version, self.model),
+            "WHERE entry_hash=? AND backend=? AND pipeline_version=? AND model=?",
+            (entry_hash, self.backend, self.pipeline_version, self.model),
         ).fetchone()
         return Verdict.model_validate_json(row["verdict_json"]) if row else None
 
@@ -60,8 +73,12 @@ class AuditCache:
     def put_entry_verdict(self, entry_hash: str, verdict: Verdict) -> None:
         self.conn.execute(
             "INSERT OR REPLACE INTO entry_verdict_cache "
-            "(entry_hash, verdict_json, pipeline_version, model, created_at) VALUES (?,?,?,?,?)",
-            (entry_hash, verdict.model_dump_json(), self.pipeline_version, self.model, _now()),
+            "(entry_hash, backend, verdict_json, pipeline_version, model, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (
+                entry_hash, self.backend, verdict.model_dump_json(), self.pipeline_version,
+                self.model, _now(),
+            ),
         )
         self.conn.commit()
 

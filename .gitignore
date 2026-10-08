@@ -20,6 +20,11 @@ __pycache__/
 # never a PDF, and never the placeholder figures the harness generates.
 tests/documents/*/.build/
 
+# HALLMARK benchmark: the pinned upstream checkout (with its own venv) and run outputs + cache.
+# Regenerable — see "Benchmarking on HALLMARK" in README.md.
+benchmarks/.hallmark/
+benchmarks/runs/
+
 # Studio generated runtime (config/ is tracked; these are generated)
 .cf-studio/.core/
 .cf-studio/.gen/

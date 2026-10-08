@@ -13,6 +13,7 @@ from reference_audit.config import AuditConfig
 from reference_audit.models import BibEntry, EntryType
 from reference_audit.sources.arxiv import ArxivAdapter
 from reference_audit.sources.base import SourceAdapter
+from reference_audit.sources.clickhouse import build_clickhouse_adapters
 from reference_audit.sources.crossref import CrossrefAdapter
 from reference_audit.sources.dblp import DblpAdapter
 from reference_audit.sources.google_books import GoogleBooksAdapter
@@ -42,11 +43,19 @@ def build_web_renderer(config: AuditConfig) -> ChromiumRenderer | None:
 
 def build_default_adapters(config: AuditConfig) -> list[SourceAdapter]:
     mailto = config.resolved_mailto()
+    # Semantic Scholar, OpenAlex and DBLP come from their public APIs, or — with
+    # source_backend="clickhouse" — from a local ClickHouse mirror of the same databases.
+    if config.source_backend == "clickhouse":
+        mirrored: list[SourceAdapter] = build_clickhouse_adapters(config)
+    else:
+        mirrored = [
+            OpenAlexAdapter(mailto=mailto),
+            SemanticScholarAdapter(api_key=config.s2_api_key),
+            DblpAdapter(),
+        ]
     return [
         CrossrefAdapter(mailto=mailto),
-        OpenAlexAdapter(mailto=mailto),
-        SemanticScholarAdapter(api_key=config.s2_api_key),
-        DblpAdapter(),
+        *mirrored,
         ArxivAdapter(),
         OpenLibraryAdapter(email=config.openlibrary_email),
         GoogleBooksAdapter(api_key=config.google_books_api_key),

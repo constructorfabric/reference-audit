@@ -247,6 +247,15 @@ detects JavaScript single-page-app shells (a served page with no readable conten
 them through a headless browser (`render`) so the rendered page can be read; when no browser is
 available the page is marked unrenderable rather than read as empty. **IMPLEMENTED.**
 
+Semantic Scholar, OpenAlex and DBLP have two interchangeable backends, selected per run by
+`source_backend`:
+- their public APIs (DBLP through its SPARQL endpoint);
+- a local ClickHouse mirror of the same databases (`sources/clickhouse.py`).
+
+The local adapters keep the API adapters' names and normalizers. Title search uses a full-text index
+on each table; a preflight refuses a mirror that is unreachable or lacks a fully built index; and
+cached responses are keyed per backend (`cache_source`). **IMPLEMENTED** (not yet `@cpt`-traced).
+
 ##### Responsibility boundaries
 
 Performs no scoring or verdict logic; returns raw candidates only. The publisher adapter is advisory
@@ -453,7 +462,9 @@ External libraries and services this module interacts with.
 | beautifulsoup4 | HTML parsing | Web/publisher page metadata extraction |
 | openai | structured-output chat | LLM adjudication |
 | rapidfuzz / anyascii | fuzzy string / transliteration | Title/author similarity features |
-| Crossref / OpenAlex / S2 / arXiv / DBLP / Open Library / Google Books | HTTPS JSON APIs | Candidate identification |
+| Crossref / OpenAlex / S2 / arXiv / Open Library / Google Books | HTTPS JSON APIs | Candidate identification |
+| DBLP (`sparql.dblp.org`, QLever) | SPARQL 1.1 over HTTPS, JSON results | Candidate identification for CS/ML venues (the search API is behind a bot challenge) |
+| Local ClickHouse (`s2ag`, `openalex`, `kb`) via `clickhouse-connect` | SQL over HTTP, full-text title indexes | `source_backend=clickhouse`: Semantic Scholar, OpenAlex and DBLP without rate limits |
 
 **Dependency Rules** (per project conventions):
 - Only the `sources` and `llm` components talk to external network services.
@@ -593,7 +604,7 @@ successful results are stored; errors are never cached, so an outage retries.
 |-------|-------------|--------|
 | `source_query_cache` | `(entry_hash, source, query_kind)` | Raw adapter responses (id / metadata / editions / web). |
 | `llm_decision_cache` | `(prompt_hash, kind, model)` | LLM judgments — model in the key, so a model switch re-runs. |
-| `entry_verdict_cache` | `entry_hash` | Whole-entry verdict fast path, gated by `pipeline_version` + `model`. |
+| `entry_verdict_cache` | `entry_hash`, `backend` | Whole-entry verdict fast path, gated by `pipeline_version` + `model`; one verdict per source backend (`api` / `clickhouse`). |
 | `doi_resolution_cache` | `doi` | doi.org's verdict on a DOI (a world-fact; model/version-independent). |
 | `db_quirks` | — | Notes on database quirks encountered (design principle 2). |
 
@@ -610,6 +621,17 @@ transient errors are never cached, preserving the error ≠ not-found invariant.
 
 - PRD: [PRD.md](./PRD.md)
 - Decomposition: [DECOMPOSITION.md](./DECOMPOSITION.md)
+- **Measured accuracy (HALLMARK).** Verdict accuracy is measured on the external
+  [HALLMARK](https://github.com/rpatrik96/hallmark) citation-hallucination benchmark by
+  `benchmarks/hallmark_bench.py`. The harness feeds each blind record through the public `run_audit`
+  entry point and maps the verdict and field findings to HALLMARK's labels with a fixed table.
+  - `identity` scores the verdict alone.
+  - `strict` also counts a confirmed metadata error on an `exactly_one` match as a hallucination.
+
+  The harness is a consumer only. It changes no verdict-producing code, so it does not bump
+  `pipeline_version`. It sits outside the traced codebase (`src/reference_audit`), so it is **not**
+  `@cpt`-traced. HALLMARK runs from its own environment, because its `bibtexparser>=2` pin conflicts
+  with this project's `<2`.
 
 ## 5. Traceability
 

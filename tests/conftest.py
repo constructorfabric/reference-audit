@@ -88,11 +88,11 @@ def live_required() -> bool:
     return os.environ.get(LIVE_ENV_VAR, "") not in ("", "0", "false", "False")
 
 
-def _unavailable(reason: str) -> None:
+def _unavailable(reason: str, hint: str = _ENABLE_HINT) -> None:
     """Skip when live tests are optional; fail when they were explicitly requested."""
     if live_required():
         pytest.fail(f"{LIVE_ENV_VAR}=1 requires this test, but {reason}")
-    pytest.skip(f"{reason}. {_ENABLE_HINT}")
+    pytest.skip(f"{reason}. {hint}")
 
 
 @pytest.fixture(scope="session")
@@ -115,3 +115,41 @@ def require_grobid(grobid_url: str) -> None:
                 _unavailable(f"GROBID at {grobid_url} answered HTTP {resp.status}")
     except (OSError, ValueError) as exc:
         _unavailable(f"GROBID is not reachable at {grobid_url} ({type(exc).__name__})")
+
+
+_CLICKHOUSE_HINT = (
+    f"set {LIVE_ENV_VAR}=1 to require these tests; they read the local ClickHouse mirror configured by "
+    "CLICKHOUSE_* in .env (see README, Local ClickHouse backend)"
+)
+
+
+@pytest.fixture
+def require_clickhouse():
+    """An AuditConfig whose local ClickHouse mirror passes the backend's own preflight."""
+    import asyncio
+
+    from reference_audit.config import AuditConfig
+    from reference_audit.sources.clickhouse import (
+        ClickHouseConnection,
+        ClickHouseUnavailableError,
+    )
+
+    config = AuditConfig(_env_file=TESTS_DIR.parent / ".env", source_backend="clickhouse")
+
+    async def check() -> None:
+        connection = ClickHouseConnection(config)
+        try:
+            await connection.ensure_ready([
+                f"{config.clickhouse_s2_db}.papers",
+                f"{config.clickhouse_openalex_db}.works_slim",
+                f"{config.clickhouse_dblp_db}.dblp_publication",
+            ])
+        finally:
+            await connection.aclose()
+
+    try:
+        asyncio.run(check())
+    except ClickHouseUnavailableError as exc:
+        _unavailable(f"the local ClickHouse mirror is not usable ({exc})", _CLICKHOUSE_HINT)
+    return config
+

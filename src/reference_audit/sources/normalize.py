@@ -204,60 +204,96 @@ def openalex_work_to_record(work: dict) -> SourceRecord:
 # DBLP appends a 4-digit homonym-disambiguation number to non-unique names ("Bowen Baker 0001");
 # it is not part of the name and must be stripped before author comparison.
 _DBLP_HOMONYM_RE = re.compile(r"\s+\d{4}$")
+_DBLP_REC_PREFIX = "https://dblp.org/rec/"
+_DBLP_SCHEMA = "https://dblp.org/rdf/schema#"
 
 
-def _dblp_authors(info: dict) -> list[str]:
-    """DBLP collapses a single-element array to a bare object, so `authors.author` may be a list of
-    `{text, @pid}` dicts, one such dict, or absent. Normalize all shapes to a list of names."""
-    block = info.get("authors") or {}
-    raw = block.get("author")
-    if raw is None:
-        return []
-    items = raw if isinstance(raw, list) else [raw]
-    out: list[str] = []
-    for a in items:
-        name = (a.get("text") if isinstance(a, dict) else str(a)) or ""
-        name = _DBLP_HOMONYM_RE.sub("", name.strip())
-        if name:
-            out.append(name)
-    return out
+def _sparql_value(row: dict, var: str) -> str:
+    return ((row.get(var) or {}).get("value") or "").strip()
 
 
-def _dblp_venue(info: dict) -> str:
-    """`venue` is a string, or a list when the record spans several streams — take the first."""
-    venue = info.get("venue")
-    if isinstance(venue, list):
-        return (venue[0] if venue else "").strip()
-    return (venue or "").strip()
+def dblp_sparql_to_records(bindings: list[dict]) -> list[SourceRecord]:
+    """DBLP SPARQL result rows → one SourceRecord per publication, shortest title first.
 
-
-def dblp_hit_to_record(hit: dict) -> SourceRecord:
-    """One DBLP publ-search `hit` → SourceRecord.
+    The adapter's two queries (title search, then per-publication properties and author signatures)
+    return a publication's data spread over several rows, each carrying some of its variables. Rows
+    are folded per publication IRI. Authors are ordered by `signatureOrdinal`, never by row order, which SPARQL does
+    not define; multi-valued properties take their sorted-first value, and records are ordered by
+    (title length, DBLP key), so the result is the same on every run.
 
     DBLP authoritatively indexes the premier CS/ML venues (NeurIPS, ICLR, ICML/PMLR), which mint no
-    DOI and are thinly/ambiguously covered by the article-centric aggregators. The `ee` field is the
-    electronic-edition landing page — typically the very proceedings URL the `.bib` cites — so it is
-    kept as `ids.url`; a DOI is captured when present, and an arXiv id is recovered from an `ee`
-    pointing at arxiv.org (DBLP's "Informal and Other Publications" preprint records).
+    DOI and are thinly/ambiguously covered by the article-centric aggregators. The primary document
+    page is the electronic-edition landing page (the search API's `ee`), typically the very
+    proceedings URL the `.bib` cites, so it is kept as `ids.url`. A DOI is taken from `dblp:doi`, or
+    from that page when it is a doi.org link, and an arXiv id is recovered from a page pointing at
+    arxiv.org. `dblp:Informal` records ("Informal and Other Publications", e.g. CoRR) are preprints.
     """
-    info = hit.get("info") or {}
-    title = (info.get("title") or "").strip().rstrip(".")
-    ee = (info.get("ee") or "").strip()
-    doi = normalize_doi(info.get("doi")) or normalize_doi(ee)
-    arxiv = extract_arxiv_id(None, None, fallback_text=ee)
-    year = info.get("year")
-    rec_type = (info.get("type") or "")
+    pubs: dict[str, dict] = {}
+    for row in bindings:
+        iri = _sparql_value(row, "publ")
+        if not iri:
+            continue
+        pub = pubs.setdefault(iri, {"title": "", "authors": {}, "multi": {}})
+        pub["title"] = pub["title"] or _sparql_value(row, "title")
+        for var in ("type", "year", "venue", "pages", "doi", "ee"):
+            if v := _sparql_value(row, var):
+                pub["multi"].setdefault(var, set()).add(v)
+        ordinal, name = _sparql_value(row, "ordinal"), _sparql_value(row, "name")
+        if ordinal.isdigit() and name:
+            pub["authors"][int(ordinal)] = _DBLP_HOMONYM_RE.sub("", name)
+
+    records = []
+    for iri, pub in pubs.items():
+        first = {k: sorted(v)[0] for k, v in pub["multi"].items()}
+        types = {t.removeprefix(_DBLP_SCHEMA) for t in pub["multi"].get("type", ())}
+        ee = first.get("ee", "")
+        doi = normalize_doi(first.get("doi")) or normalize_doi(ee)
+        year = first.get("year", "")
+        authors = [pub["authors"][n] for n in sorted(pub["authors"])]
+        raw = {
+            "publ": iri, "title": pub["title"], "authors": authors,
+            **{k: sorted(v) for k, v in pub["multi"].items()},
+        }
+        records.append(
+            SourceRecord(
+                source="dblp",
+                source_native_id=iri.removeprefix(_DBLP_REC_PREFIX),
+                title=pub["title"].rstrip("."),
+                authors=authors,
+                year=int(year) if year.isdigit() else None,
+                venue=first.get("venue", ""),
+                pages=first.get("pages", ""),
+                ids=Identifiers(
+                    doi=doi, arxiv_id=extract_arxiv_id(None, None, fallback_text=ee), url=ee or None
+                ),
+                is_preprint="Informal" in types,
+                raw=raw,
+            )
+        )
+    return sorted(records, key=lambda r: (len(r.title), r.source_native_id))
+
+
+def dblp_dump_row_to_record(row: dict) -> SourceRecord:
+    """One row of the DBLP XML dump as loaded into ClickHouse (`dblp_publication`) → SourceRecord.
+
+    The dump keeps the author list in byline order and every DOI of the record. It has no landing-page
+    URL and no pages. `publtype = 'informal'` marks DBLP's "Informal and Other Publications" (CoRR and
+    the like), i.e. preprints.
+    """
+    dois = [d for d in (normalize_doi(d) for d in row.get("dois") or []) if d]
+    doi = sorted(dois)[0] if dois else None
     return SourceRecord(
         source="dblp",
-        source_native_id=(info.get("key") or "").strip(),
-        title=title,
-        authors=_dblp_authors(info),
-        year=int(year) if year and str(year).isdigit() else None,
-        venue=_dblp_venue(info),
-        pages=(info.get("pages") or "").strip(),
-        ids=Identifiers(doi=doi, arxiv_id=arxiv, url=ee or None),
-        is_preprint="informal" in rec_type.lower(),
-        raw=hit,
+        source_native_id=(row.get("key") or "").strip(),
+        title=(row.get("title") or "").strip().rstrip("."),
+        authors=[
+            name for a in row.get("authors") or [] if (name := _DBLP_HOMONYM_RE.sub("", a.strip()))
+        ],
+        year=int(row["year"]) if row.get("year") else None,
+        venue=(row.get("venue") or "").strip(),
+        ids=Identifiers(doi=doi, arxiv_id=extract_arxiv_id(None, None, fallback_text=doi or "")),
+        is_preprint=(row.get("publtype") or "") == "informal",
+        raw={k: (list(v) if isinstance(v, tuple) else v) for k, v in row.items()},
     )
 
 

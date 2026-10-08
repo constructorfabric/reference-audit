@@ -1,155 +1,202 @@
-"""DBLP: hit normalization + the adapter + an end-to-end verify (mocked HTTP).
+"""DBLP: SPARQL row folding + the adapter + an end-to-end verify (mocked HTTP).
 
 Regression anchors: the premier ML venues mint no DOI and are cited only by a proceedings URL —
 `pmlr-v202-santurkar23a` ("Whose Opinions Do Language Models Reflect?", ICML/PMLR), with siblings at
 NeurIPS and ICLR. The article-centric aggregators cover them thinly; DBLP indexes them exactly, so a
 URL-only @inproceedings reaches a deterministic verdict.
+
+DBLP is read through its SPARQL endpoint because the search API answers automated clients with a
+bot-challenge HTML page; `tests/fixtures/dblp/` holds a recorded search + details response.
 """
 
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 import httpx
 import respx
 
 from reference_audit.models import BibEntry, EntryType
-from reference_audit.sources.dblp import DblpAdapter
-from reference_audit.sources.normalize import dblp_hit_to_record
+from reference_audit.sources.dblp import DblpAdapter, title_search_words
+from reference_audit.sources.normalize import dblp_sparql_to_records
 
-# Trimmed shape of GET /search/publ/api?q=…&format=json — a real ICML/PMLR hit.
-_HIT = {
-    "info": {
-        "authors": {
-            "author": [
-                {"@pid": "153/2146", "text": "Shibani Santurkar"},
-                {"@pid": "219/6227", "text": "Esin Durmus"},
-                {"@pid": "194/1214", "text": "Faisal Ladhak"},
-                {"@pid": "344/3500", "text": "Cinoo Lee"},
-                {"@pid": "04/1701", "text": "Percy Liang"},
-                {"@pid": "66/7232", "text": "Tatsunori Hashimoto"},
-            ]
-        },
-        "title": "Whose Opinions Do Language Models Reflect?",
-        "venue": "ICML",
-        "pages": "29971-30004",
-        "year": "2023",
-        "type": "Conference and Workshop Papers",
-        "key": "conf/icml/SanturkarDLLLH23",
-        "ee": "https://proceedings.mlr.press/v202/santurkar23a.html",
-        "url": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23",
-    }
-}
+_ENDPOINT = "https://sparql.dblp.org/sparql"
+_RECORDED = json.loads(
+    (Path(__file__).parent / "fixtures" / "dblp" / "santurkar23.sparql.json").read_text("utf-8")
+)
+_SEARCH, _DETAILS = _RECORDED["search"], _RECORDED["details"]
+_TITLE = "Whose Opinions Do Language Models Reflect?"
+_ICML = "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
 
 
-# ── normalization ─────────────────────────────────────────────────────────────
+def _rows(*rows: dict) -> list[dict]:
+    """SPARQL JSON bindings from plain {var: value} dicts."""
+    return [{k: {"type": "literal", "value": v} for k, v in r.items()} for r in rows]
 
 
-def test_normalize_keeps_proceedings_url_and_strips_title_period():
-    rec = dblp_hit_to_record(_HIT)
-    assert rec.source == "dblp"
-    assert rec.title == "Whose Opinions Do Language Models Reflect?"
-    assert rec.year == 2023
-    assert rec.venue == "ICML"
-    assert rec.pages == "29971-30004"
-    assert len(rec.authors) == 6 and rec.authors[0] == "Shibani Santurkar"
-    # the `ee` proceedings page (the very URL the .bib cites) is kept as the record URL
-    assert rec.ids.url == "https://proceedings.mlr.press/v202/santurkar23a.html"
-    assert rec.ids.doi is None
-    assert rec.is_preprint is False
+def _entry(title: str = _TITLE) -> BibEntry:
+    return BibEntry(key="k", entry_type=EntryType.INPROCEEDINGS, title=title)
 
 
-def test_normalize_single_author_object_and_homonym_number():
-    # DBLP collapses a 1-element array to a bare object, and appends a 4-digit homonym number.
-    hit = {"info": {"authors": {"author": {"text": "Bowen Baker 0001"}}, "title": "X.", "year": "2024"}}
-    rec = dblp_hit_to_record(hit)
+def _recorded_endpoint(request: httpx.Request) -> httpx.Response:
+    query = request.url.params.get("query", "")
+    return httpx.Response(200, json=_DETAILS if "VALUES" in query else _SEARCH)
+
+
+# ── folding SPARQL rows into records ──────────────────────────────────────────
+
+
+def test_recorded_rows_fold_into_the_icml_paper_and_its_corr_preprint():
+    records = dblp_sparql_to_records(
+        _SEARCH["results"]["bindings"] + _DETAILS["results"]["bindings"]
+    )
+    assert [r.source_native_id for r in records] == [
+        "conf/icml/SanturkarDLLLH23",
+        "journals/corr/abs-2303-17548",
+    ]
+    icml, corr = records
+    assert icml.source == "dblp"
+    assert icml.title == _TITLE
+    assert (icml.year, icml.venue, icml.pages) == (2023, "ICML", "29971-30004")
+    # signatures arrive out of order in the recorded response; the record follows signatureOrdinal
+    assert icml.authors == [
+        "Shibani Santurkar", "Esin Durmus", "Faisal Ladhak",
+        "Cinoo Lee", "Percy Liang", "Tatsunori Hashimoto",
+    ]
+    # the primary document page (the very URL the .bib cites) is kept as the record URL
+    assert icml.ids.url == "https://proceedings.mlr.press/v202/santurkar23a.html"
+    assert icml.ids.doi is None and icml.is_preprint is False
+    # dblp:Informal (CoRR) is a preprint; its DOI and arXiv id are recovered
+    assert corr.is_preprint is True
+    assert corr.ids.doi == "10.48550/arxiv.2303.17548"
+    assert corr.ids.arxiv_id == "2303.17548"
+
+
+def test_homonym_number_and_title_period_are_stripped():
+    rows = _rows(
+        {"publ": "https://dblp.org/rec/x/1", "title": "X."},
+        {"publ": "https://dblp.org/rec/x/1", "ordinal": "1", "name": "Bowen Baker 0001"},
+        {"publ": "https://dblp.org/rec/x/1", "year": "2024"},
+    )
+    (rec,) = dblp_sparql_to_records(rows)
     assert rec.authors == ["Bowen Baker"]
     assert rec.title == "X"
+    assert rec.year == 2024
 
 
-def test_normalize_informal_publication_is_preprint_with_arxiv():
-    hit = {
-        "info": {
-            "title": "Some Preprint",
-            "year": "2024",
-            "type": "Informal and Other Publications",
-            "ee": "https://arxiv.org/abs/2406.04235",
-        }
-    }
-    rec = dblp_hit_to_record(hit)
-    assert rec.is_preprint is True
-    assert rec.ids.arxiv_id == "2406.04235"
+def test_multi_valued_property_is_the_same_whatever_the_row_order():
+    base = {"publ": "https://dblp.org/rec/x/1", "title": "T"}
+    a = _rows(base, {"publ": base["publ"], "venue": "NeurIPS"}, {"publ": base["publ"], "venue": "CoRR"})
+    b = [a[0], a[2], a[1]]
+    assert dblp_sparql_to_records(a)[0].venue == dblp_sparql_to_records(b)[0].venue == "CoRR"
 
 
-def test_normalize_venue_list_takes_first():
-    hit = {"info": {"title": "T", "venue": ["NeurIPS", "CoRR"], "year": "2025"}}
-    assert dblp_hit_to_record(hit).venue == "NeurIPS"
+def test_doi_comes_from_the_document_page_when_dblp_doi_is_absent():
+    rows = _rows(
+        {"publ": "https://dblp.org/rec/x/1", "title": "T"},
+        {"publ": "https://dblp.org/rec/x/1", "ee": "https://doi.org/10.1109/CVPR52729.2023.00373"},
+    )
+    assert dblp_sparql_to_records(rows)[0].ids.doi == "10.1109/cvpr52729.2023.00373"
+
+
+# ── the words sent to DBLP's word index ───────────────────────────────────────
+
+
+def test_search_words_drop_latex_and_non_ascii_words():
+    assert title_search_words(
+        "Understanding Deep Neural Function Approximation via $\\epsilon$-Greedy Exploration"
+    ) == ["understanding", "deep", "neural", "function", "approximation", "via", "greedy",
+          "exploration"]
+    assert title_search_words("Sparks of AGI: Early experiments with GPT-4") == [
+        "sparks", "of", "agi", "early", "experiments", "with", "gpt", "4"
+    ]
+    # A non-ASCII word ("Kübler", as parse_bib decodes K{\"u}bler) may be indexed differently from
+    # how the .bib spells it, and every word must match, so it is left out of the search.
+    assert title_search_words("The Kübler method_2") == ["the", "method", "2"]
 
 
 # ── adapter ───────────────────────────────────────────────────────────────────
 
 
 @respx.mock
-async def test_search_by_metadata():
-    captured = {}
+async def test_search_by_metadata_runs_search_then_details():
+    queries: list[str] = []
 
-    def _capture(request):
-        captured["q"] = request.url.params.get("q")
-        captured["format"] = request.url.params.get("format")
-        return httpx.Response(200, json={"result": {"hits": {"hit": [_HIT]}}})
+    def _capture(request: httpx.Request) -> httpx.Response:
+        queries.append(request.url.params.get("query", ""))
+        assert request.headers["accept"] == "application/sparql-results+json"
+        return _recorded_endpoint(request)
 
-    respx.get(url__startswith="https://dblp.org/search/publ/api").mock(side_effect=_capture)
+    respx.get(url__startswith=_ENDPOINT).mock(side_effect=_capture)
     a = DblpAdapter(client=httpx.AsyncClient())
-    entry = BibEntry(
-        key="k",
-        entry_type=EntryType.INPROCEEDINGS,
-        title="Whose Opinions Do Language Models Reflect?",
-    )
-    res = await a.search_by_metadata(entry)
+    res = await a.search_by_metadata(_entry())
     await a.aclose()
-    assert captured["q"] == "Whose Opinions Do Language Models Reflect?"
-    assert captured["format"] == "json"
     assert res.error is None
-    assert res.records[0].source_native_id == "conf/icml/SanturkarDLLLH23"
+    assert [r.source_native_id for r in res.records][0] == "conf/icml/SanturkarDLLLH23"
+    search, details = queries
+    assert 'ql:contains-word "whose opinions do language models reflect"' in search
+    assert "ORDER BY STRLEN(?title) LIMIT 10" in search
+    assert f"<{_ICML}>" in details
 
 
 @respx.mock
-async def test_single_hit_object_handled():
-    # one result → DBLP returns `hit` as a bare object, not a list
-    respx.get(url__startswith="https://dblp.org/search/publ/api").mock(
-        return_value=httpx.Response(200, json={"result": {"hits": {"hit": _HIT}}})
+async def test_no_hits_is_empty_not_error_and_skips_details():
+    route = respx.get(url__startswith=_ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"head": {"vars": []}, "results": {"bindings": []}})
     )
     a = DblpAdapter(client=httpx.AsyncClient())
-    res = await a.search_by_metadata(
-        BibEntry(key="k", entry_type=EntryType.INPROCEEDINGS, title="Whose Opinions…")
-    )
-    await a.aclose()
-    assert len(res.records) == 1
-
-
-@respx.mock
-async def test_no_hits_is_empty_not_error():
-    respx.get(url__startswith="https://dblp.org/search/publ/api").mock(
-        return_value=httpx.Response(200, json={"result": {"hits": {"@total": "0"}}})
-    )
-    a = DblpAdapter(client=httpx.AsyncClient())
-    res = await a.search_by_metadata(
-        BibEntry(key="k", entry_type=EntryType.INPROCEEDINGS, title="Nonexistent")
-    )
+    res = await a.search_by_metadata(_entry("Nonexistent"))
     await a.aclose()
     assert res.records == [] and res.error is None
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_bot_challenge_page_is_an_error_not_absent():
+    """Regression: dblp.org served an Anubis 'Making sure you're not a bot!' HTML page (HTTP 200)
+    to automated clients. Such a page must surface as an error (retried), never as 'no hits'."""
+    respx.get(url__startswith=_ENDPOINT).mock(
+        return_value=httpx.Response(
+            200, text="<!doctype html><title>Making sure you're not a bot!</title>",
+            headers={"content-type": "text/html"},
+        )
+    )
+    a = DblpAdapter(client=httpx.AsyncClient())
+    res = await a.search_by_metadata(_entry())
+    await a.aclose()
+    assert res.records == [] and res.error is not None
 
 
 @respx.mock
 async def test_rate_limit_surfaces_as_error_not_absent():
     # 429 must be reported (retry next run), never read as "not found" — reliability contract.
-    respx.get(url__startswith="https://dblp.org/search/publ/api").mock(
-        return_value=httpx.Response(429, json={})
-    )
+    respx.get(url__startswith=_ENDPOINT).mock(return_value=httpx.Response(429, json={}))
     a = DblpAdapter(client=httpx.AsyncClient())
-    res = await a.search_by_metadata(
-        BibEntry(key="k", entry_type=EntryType.INPROCEEDINGS, title="Whose Opinions…")
-    )
+    res = await a.search_by_metadata(_entry())
     await a.aclose()
     assert res.error is not None and res.records == []
+
+
+@respx.mock
+async def test_unexpected_json_shape_is_an_error():
+    respx.get(url__startswith=_ENDPOINT).mock(
+        return_value=httpx.Response(200, json={"exception": "query timed out"})
+    )
+    a = DblpAdapter(client=httpx.AsyncClient())
+    res = await a.search_by_metadata(_entry())
+    await a.aclose()
+    assert res.records == [] and "unexpected SPARQL response" in res.error
+
+
+@respx.mock
+async def test_title_without_searchable_words_is_an_error_without_a_request():
+    route = respx.get(url__startswith=_ENDPOINT)
+    a = DblpAdapter(client=httpx.AsyncClient())
+    res = await a.search_by_metadata(_entry("$\\mathcal{X}$ — 学习"))
+    await a.aclose()
+    assert res.records == [] and "no searchable word" in res.error
+    assert route.call_count == 0
 
 
 # ── end-to-end: a URL-only conference paper verifies deterministically (no LLM) ─
@@ -158,8 +205,8 @@ async def test_rate_limit_surfaces_as_error_not_absent():
 @respx.mock
 async def test_url_only_inproceedings_verified_via_dblp(tmp_path):
     """pmlr-v202-santurkar23a regression: cited only by its mlr.press proceedings URL (no DOI).
-    Crossref/OpenAlex/S2 return nothing; DBLP returns the exact record, and because a bare URL is not
-    a scoring anchor the entry takes the strict backfill path and auto-accepts — no LLM needed."""
+    Crossref returns nothing; DBLP returns the exact record, and because a bare URL is not a scoring
+    anchor the entry takes the strict backfill path and auto-accepts — no LLM needed."""
     from reference_audit.cache.store import AuditCache
     from reference_audit.config import AuditConfig
     from reference_audit.pipeline import AuditPipeline
@@ -168,9 +215,7 @@ async def test_url_only_inproceedings_verified_via_dblp(tmp_path):
     respx.get(url__regex=r"api\.crossref\.org/works\?").mock(
         return_value=httpx.Response(200, json={"message": {"items": []}})
     )
-    respx.get(url__startswith="https://dblp.org/search/publ/api").mock(
-        return_value=httpx.Response(200, json={"result": {"hits": {"hit": [_HIT]}}})
-    )
+    respx.get(url__startswith=_ENDPOINT).mock(side_effect=_recorded_endpoint)
 
     bib = (
         "@inproceedings{pmlr-v202-santurkar23a,\n"

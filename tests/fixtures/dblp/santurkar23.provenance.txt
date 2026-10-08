@@ -1,0 +1,10 @@
+RECORDED — provenance for santurkar23.sparql.json. Do not edit either file by hand.
+
+  endpoint  : https://sparql.dblp.org/sparql (QLever), Accept: application/sparql-results+json
+  recorded  : 2026-10-09
+  title     : "Whose Opinions Do Language Models Reflect?" (pmlr-v202-santurkar23a)
+  search    : reference_audit.sources.dblp.build_search_query(title_search_words(title), 10)
+  details   : reference_audit.sources.dblp.build_details_query(<the 2 publication IRIs found>)
+
+The details rows arrive with author signatures out of ordinal order; that is the server's real
+behavior and what the ordering test relies on.

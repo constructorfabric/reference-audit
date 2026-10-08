@@ -1,0 +1,363 @@
+{
+ "search": {
+  "head": {
+   "vars": [
+    "publ",
+    "title"
+   ]
+  },
+  "results": {
+   "bindings": [
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
+     },
+     "title": {
+      "type": "literal",
+      "value": "Whose Opinions Do Language Models Reflect?"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/journals/corr/abs-2303-17548"
+     },
+     "title": {
+      "type": "literal",
+      "value": "Whose Opinions Do Language Models Reflect?"
+     }
+    }
+   ]
+  },
+  "meta": {
+   "query-time-ms": 80,
+   "result-size-total": 2
+  }
+ },
+ "details": {
+  "head": {
+   "vars": [
+    "publ",
+    "type",
+    "year",
+    "venue",
+    "pages",
+    "doi",
+    "ee",
+    "ordinal",
+    "name"
+   ]
+  },
+  "results": {
+   "bindings": [
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
+     },
+     "type": {
+      "type": "uri",
+      "value": "https://dblp.org/rdf/schema#Inproceedings"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
+     },
+     "type": {
+      "type": "uri",
+      "value": "https://dblp.org/rdf/schema#Publication"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/journals/corr/abs-2303-17548"
+     },
+     "type": {
+      "type": "uri",
+      "value": "https://dblp.org/rdf/schema#Informal"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/journals/corr/abs-2303-17548"
+     },
+     "type": {
+      "type": "uri",
+      "value": "https://dblp.org/rdf/schema#Publication"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
+     },
+     "year": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#gYear",
+      "type": "literal",
+      "value": "2023"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/journals/corr/abs-2303-17548"
+     },
+     "year": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#gYear",
+      "type": "literal",
+      "value": "2023"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
+     },
+     "venue": {
+      "type": "literal",
+      "value": "ICML"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/journals/corr/abs-2303-17548"
+     },
+     "venue": {
+      "type": "literal",
+      "value": "CoRR"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
+     },
+     "pages": {
+      "type": "literal",
+      "value": "29971-30004"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/journals/corr/abs-2303-17548"
+     },
+     "doi": {
+      "type": "uri",
+      "value": "https://doi.org/10.48550/ARXIV.2303.17548"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
+     },
+     "ee": {
+      "type": "uri",
+      "value": "https://proceedings.mlr.press/v202/santurkar23a.html"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/journals/corr/abs-2303-17548"
+     },
+     "ee": {
+      "type": "uri",
+      "value": "https://doi.org/10.48550/ARXIV.2303.17548"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
+     },
+     "ordinal": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#int",
+      "type": "literal",
+      "value": "5"
+     },
+     "name": {
+      "type": "literal",
+      "value": "Percy Liang"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
+     },
+     "ordinal": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#int",
+      "type": "literal",
+      "value": "1"
+     },
+     "name": {
+      "type": "literal",
+      "value": "Shibani Santurkar"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
+     },
+     "ordinal": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#int",
+      "type": "literal",
+      "value": "4"
+     },
+     "name": {
+      "type": "literal",
+      "value": "Cinoo Lee"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
+     },
+     "ordinal": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#int",
+      "type": "literal",
+      "value": "2"
+     },
+     "name": {
+      "type": "literal",
+      "value": "Esin Durmus"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
+     },
+     "ordinal": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#int",
+      "type": "literal",
+      "value": "6"
+     },
+     "name": {
+      "type": "literal",
+      "value": "Tatsunori Hashimoto"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/conf/icml/SanturkarDLLLH23"
+     },
+     "ordinal": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#int",
+      "type": "literal",
+      "value": "3"
+     },
+     "name": {
+      "type": "literal",
+      "value": "Faisal Ladhak"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/journals/corr/abs-2303-17548"
+     },
+     "ordinal": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#int",
+      "type": "literal",
+      "value": "6"
+     },
+     "name": {
+      "type": "literal",
+      "value": "Tatsunori Hashimoto"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/journals/corr/abs-2303-17548"
+     },
+     "ordinal": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#int",
+      "type": "literal",
+      "value": "3"
+     },
+     "name": {
+      "type": "literal",
+      "value": "Faisal Ladhak"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/journals/corr/abs-2303-17548"
+     },
+     "ordinal": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#int",
+      "type": "literal",
+      "value": "5"
+     },
+     "name": {
+      "type": "literal",
+      "value": "Percy Liang"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/journals/corr/abs-2303-17548"
+     },
+     "ordinal": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#int",
+      "type": "literal",
+      "value": "4"
+     },
+     "name": {
+      "type": "literal",
+      "value": "Cinoo Lee"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/journals/corr/abs-2303-17548"
+     },
+     "ordinal": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#int",
+      "type": "literal",
+      "value": "2"
+     },
+     "name": {
+      "type": "literal",
+      "value": "Esin Durmus"
+     }
+    },
+    {
+     "publ": {
+      "type": "uri",
+      "value": "https://dblp.org/rec/journals/corr/abs-2303-17548"
+     },
+     "ordinal": {
+      "datatype": "http://www.w3.org/2001/XMLSchema#int",
+      "type": "literal",
+      "value": "1"
+     },
+     "name": {
+      "type": "literal",
+      "value": "Shibani Santurkar"
+     }
+    }
+   ]
+  },
+  "meta": {
+   "query-time-ms": 2,
+   "result-size-total": 24
+  }
+ }
+}
