@@ -126,6 +126,9 @@ Create a `.env` file in the project root with your keys (this file is git-ignore
 ```dotenv
 # Required for LLM adjudication
 OPENAI_API_KEY=sk-...
+# Optional — sampling temperature. Unset ⇒ the model default (gpt-6-luna accepts only its default);
+# set LLM_TEMPERATURE=0 when overriding --model with one that supports it, for more stable verdicts
+# LLM_TEMPERATURE=0
 
 # Optional — improve coverage / rate limits for the data sources
 S2_API_KEY=...
@@ -213,7 +216,7 @@ NO ISSUES (18) — verified, nothing to fix:
 | `--check-citations` | Advisory: for each in-text citation of a matched reference, check the citing context against the cited work's **abstract** (needs the LLM). See [Citation alignment](#citation-alignment---check-citations). |
 | `--fresh` | Ignore cached results and re-query everything. |
 | `--cache PATH` | Cache DB location. Default: `<bib_dir>/.reference_audit/cache.db`. |
-| `--model NAME` | Override the LLM model (default `gpt-5.4-mini`). |
+| `--model NAME` | Override the LLM model (default `gpt-6-luna`). |
 | `--grobid URL` | GROBID base URL for PDF input. Default `http://localhost:8070` (or `GROBID_URL`). |
 | `--fail-on hallucinated\|multiple` | Exit non-zero if any entry gets that verdict — for gating submissions in CI. |
 

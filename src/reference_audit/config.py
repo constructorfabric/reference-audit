@@ -1,7 +1,7 @@
 """Runtime configuration for the reference auditor.
 
 All settings load from the environment / `.env` (pydantic-settings). Secrets live only in
-`.env` (git-ignored); never hard-code keys. The LLM model defaults to `gpt-5.4-mini` per
+`.env` (git-ignored); never hard-code keys. The LLM model defaults to `gpt-6-luna` per
 the README but is configurable.
 """
 
@@ -24,7 +24,10 @@ class AuditConfig(BaseSettings):
     )
 
     # --- LLM (OpenAI SDK) ---
-    model: str = "gpt-5.4-mini"
+    model: str = "gpt-6-luna"
+    # None ⇒ omit `temperature` and use the model default. gpt-6-luna rejects any value but its default
+    # (1), so a fixed 0.0 would fail every call; set LLM_TEMPERATURE=0 for models that accept it.
+    llm_temperature: float | None = None
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_base_url: str | None = Field(default=None, alias="OPENAI_BASE_URL")
 
@@ -87,7 +90,9 @@ class AuditConfig(BaseSettings):
     # 0.16: PDF input via GROBID — TEI entry-type inference changes source routing, and an entry with
     #       neither a title nor an identifier is now reported unresolved instead of being searched on
     #       (a title-less query could previously score an arbitrary paper as a match).
-    pipeline_version: str = "0.16"
+    # 0.17: default LLM model gpt-5.4-mini → gpt-6-luna, and temperature is no longer pinned to 0.0
+    #       (model default unless LLM_TEMPERATURE is set) — adjudication behavior changes.
+    pipeline_version: str = "0.17"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

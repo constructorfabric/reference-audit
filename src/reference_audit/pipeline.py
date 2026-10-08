@@ -360,6 +360,7 @@ class AuditPipeline:
                 api_key=config.openai_api_key,
                 base_url=config.openai_base_url,
                 concurrency=config.llm_concurrency,
+                temperature=config.llm_temperature,
             )
         else:
             self.llm = None

@@ -1,5 +1,6 @@
 """M4 LLM adjudication with a fake (in-memory) LLM client — no network."""
 
+import pytest
 import httpx
 import respx
 
@@ -165,3 +166,39 @@ async def test_pipeline_llm_rejects_all_is_none(tmp_path):
     await pipe.aclose()
     cache.close()
     assert report.entries[0].verdict.kind == "none"
+
+
+class _RecordingCompletions:
+    """Captures chat.completions.create kwargs and returns a fixed structured reply."""
+
+    def __init__(self):
+        self.kwargs = None
+
+    async def create(self, **kwargs):
+        from types import SimpleNamespace
+
+        self.kwargs = kwargs
+        msg = SimpleNamespace(content='{"same": true}')
+        return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
+
+
+@pytest.mark.parametrize("temperature", [None, 0.0])
+async def test_llm_client_sends_temperature_only_when_set(temperature):
+    # gpt-6-luna rejects any temperature but its default, so None must omit the parameter entirely.
+    from types import SimpleNamespace
+
+    from pydantic import BaseModel
+
+    from reference_audit.llm.client import LLMClient
+
+    class Same(BaseModel):
+        same: bool
+
+    completions = _RecordingCompletions()
+    fake = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    llm = LLMClient(model="m", api_key=None, client=fake, temperature=temperature)
+    assert (await llm.structured("s", "u", Same, "Same")).same is True
+    if temperature is None:
+        assert "temperature" not in completions.kwargs
+    else:
+        assert completions.kwargs["temperature"] == temperature

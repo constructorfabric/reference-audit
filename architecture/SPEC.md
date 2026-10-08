@@ -85,7 +85,8 @@ verdict of step 1.
 2. The part which queries the databases is modular (easy to change and add adapters for individual
    databases).
 3. `.env` contains the API keys.
-4. The LLM model is configurable; by default use `gpt-5.4-mini`.
+4. The LLM model is configurable; by default use `gpt-6-luna`. The sampling temperature is the
+   model default unless `LLM_TEMPERATURE` is set (gpt-6-luna accepts only its default).
 5. Use `uv` to manage Python dependencies.
 6. Python code is a module in `src/`, without relative imports and `sys.path.append`.
 7. PDF input is extracted by a locally-run GROBID, which the auditor talks to but does not manage. The

@@ -1,8 +1,8 @@
 """Async OpenAI wrapper for structured-output adjudication.
 
 Thin layer over `AsyncOpenAI` returning validated pydantic objects. Retries transient failures;
-caps in-flight requests with a semaphore for batch calls. The model defaults to `gpt-5.4-mini`
-(configurable). The cache (layer 2) is consulted by the pipeline *before* calling here, so this
+caps in-flight requests with a semaphore for batch calls. The model defaults to `gpt-6-luna`
+(configurable). `temperature` is sent only when set; otherwise the model default applies. The cache (layer 2) is consulted by the pipeline *before* calling here, so this
 layer is pure I/O.
 """
 
@@ -31,7 +31,7 @@ class LLMClient:
         api_key: str | None,
         base_url: str | None = None,
         concurrency: int = 8,
-        temperature: float = 0.0,
+        temperature: float | None = None,
         client=None,
     ):
         self.model = model
@@ -56,14 +56,15 @@ class LLMClient:
         @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=0.5, min=0.5, max=8),
                reraise=True)
         async def _call() -> str:
+            extra = {} if self.temperature is None else {"temperature": self.temperature}
             resp = await self._client.chat.completions.create(
                 model=self.model,
-                temperature=self.temperature,
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
                 response_format=response_format(schema_model, schema_name),
+                **extra,
             )
             return resp.choices[0].message.content or ""
 
