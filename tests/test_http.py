@@ -87,3 +87,4 @@ async def test_documented_source_caps_reach_the_limiter():
     for adapter, cap in ((CrossrefAdapter(), 3), (ArxivAdapter(), 1)):
         assert adapter.rate_limiter.max_in_flight == cap
         await adapter.aclose()
+    assert ArxivAdapter.rate_per_sec <= 1 / 3  # arXiv API terms: one request every three seconds

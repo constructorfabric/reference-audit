@@ -258,8 +258,9 @@ snapshot (`openalex`) and the DBLP XML dump (`kb.dblp_publication`). Select it w
 `SOURCE_BACKEND=clickhouse` in `.env` or `--backend clickhouse`. The other sources (Crossref, arXiv,
 Open Library, Google Books, publisher and web fetches) always use their APIs. Those requests stay inside
 each API's published limits: they are spaced per source, and Crossref (3 at a time, its polite-pool
-limit) and arXiv (1, per its API terms) also cap requests in flight, retries included. Without the cap,
-a batch of a few hundred entries turned about a fifth of them into Crossref 429s.
+limit) and arXiv (1) also cap requests in flight, retries included. arXiv's terms allow one request
+every three seconds, so lookups by arXiv id are the slowest step of a large batch. Without these
+limits, a batch of a few hundred entries turned about a fifth of them into 429s.
 
 There are no rate limits and no third-party outages on this path, so a large batch audits in
 minutes, where the Semantic Scholar API (1 request/s) takes about an hour per thousand references.

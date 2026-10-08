@@ -52,8 +52,10 @@ def _entry_to_record(entry: ET.Element) -> SourceRecord:
 class ArxivAdapter(SourceAdapter):
     name = "arxiv"
     handles = {EntryType.MISC, EntryType.ARTICLE, EntryType.INPROCEEDINGS}
-    rate_per_sec = 3.0
-    max_in_flight = 1  # the arXiv API terms allow a single connection at a time
+    # The arXiv API terms: no more than one request every three seconds, over a single connection.
+    # At 3 requests/s, a third of a 112-entry HALLMARK chunk came back unresolved on arXiv 429s.
+    rate_per_sec = 1 / 3
+    max_in_flight = 1
 
     async def _query(self, params: dict, query_kind: str) -> SourceQueryResult:
         try:
