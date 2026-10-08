@@ -474,7 +474,7 @@ values truncated inside a brace, such as `Man{\'e`, which `parse_bib` reports as
 become a not-evaluated prediction with the parser's reason, never a guessed label.
 
 **`score`** writes `predictions.identity.jsonl` and `predictions.strict.jsonl`. It runs
-`hallmark evaluate --eval-mode both --strict` on each, restricted to the audited entries, and writes
+`hallmark evaluate --eval-mode both` on each, restricted to the audited entries, and writes
 `summary.md` with:
 - the metrics, with HALLMARK's coverage next to them;
 - per-type label counts;
@@ -484,6 +484,11 @@ become a not-evaluated prediction with the parser's reason, never a guessed labe
 
 A false positive or miss that HALLMARK itself relabelled (its `relabeled_from` / `relabel_reason`
 fields) carries that history, since a disagreement on a relabelled entry is a candidate label error.
+
+Every audited entry gets a prediction: `score` stops unless the audited and labelled keys are the
+same set. HALLMARK's own `--strict` is not used for this, because it counts an `evaluated=false`
+prediction as missing, and a not-audited entry must stay a reported non-measurement. HALLMARK reports
+such entries through `response_coverage`.
 
 The two mappings exist because the two tools ask different questions. reference-audit's verdict asks
 whether *any real document* corresponds to the entry. HALLMARK's `HALLUCINATED` also covers real papers

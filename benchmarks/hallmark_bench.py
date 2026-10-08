@@ -696,8 +696,10 @@ def score(
         raise typer.BadParameter(f"{out} audited split {meta['split']!r}, not {split!r}")
     audits: list[CompactAudit] = _read_jsonl(out / "audits.jsonl", CompactAudit)
 
-    # Evaluate on exactly the audited entries, so a --limit run is scored on its sample and
-    # `--strict` still guarantees every one of them has a prediction.
+    # Evaluate on exactly the audited entries, so a --limit run is scored on its sample. Every one of
+    # them gets a prediction: the key sets are equal (audit keys are unique) or scoring stops here.
+    # HALLMARK's own `--strict` is not used for this, since it counts an `evaluated=false` prediction
+    # as missing and a not-audited entry must stay a reported non-measurement.
     labeled_all = [
         json.loads(line)
         for line in (hallmark_dir / "data" / HALLMARK_VERSION / f"{split}.jsonl")
@@ -732,7 +734,6 @@ def score(
             "--predictions", str(pred_path),
             "--tool-name", f"reference-audit-{mapping}",
             "--eval-mode", "both",
-            "--strict",
             "--detailed",
             "--output", str(result_path),
         ]

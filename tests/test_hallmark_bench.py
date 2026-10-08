@@ -238,3 +238,65 @@ def test_summary_handles_relabelled_rows_without_type_keys():
             "[HALLMARK relabelled HALLUCINATED → VALID: real paper]") in summary
     assert "### fabricated_doi (1 of 1)" in summary
     assert "| 1.000 |" in summary  # coverage is in the metrics table
+
+
+# --- score, end to end through HALLMARK's own evaluator ------------------------------------------
+
+_LABELED = hb.DEFAULT_HALLMARK_DIR / "data" / hb.HALLMARK_VERSION / "dev_public.jsonl"
+_HALLMARK_BIN = hb.DEFAULT_HALLMARK_DIR / ".venv" / "bin" / "hallmark"
+
+
+@pytest.mark.skipif(
+    not (_LABELED.exists() and _HALLMARK_BIN.exists()),
+    reason="needs the HALLMARK checkout and its venv (README, 'Benchmarking on HALLMARK')",
+)
+def test_score_runs_hallmark_on_a_run_with_a_not_audited_entry(tmp_path):
+    """Both score bugs the first real run hit: a relabelled row without type keys, and an
+    `evaluated=false` entry, which HALLMARK's `--strict` rejects."""
+    import json
+
+    rows = [json.loads(line) for line in _LABELED.read_text(encoding="utf-8").splitlines()]
+    plain = [r for r in rows if r["label"] == "VALID" and "hallucination_type" in r]
+    relabelled = next(r for r in rows if r["label"] == "VALID" and "hallucination_type" not in r)
+    hallucinated = [r for r in rows if r["label"] == "HALLUCINATED"]
+    chosen = [plain[0], relabelled, plain[1], hallucinated[0], hallucinated[1]]
+    hallmark_dir = tmp_path / "hallmark"
+    data = hallmark_dir / "data" / hb.HALLMARK_VERSION
+    data.mkdir(parents=True)
+    (data / "dev_public.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in chosen), encoding="utf-8"
+    )
+
+    def matched(key):
+        return hb.CompactAudit(key=key, status="audited", verdict="exactly_one",
+                               confidence="high", matched_source="dblp", matched_title="T")
+
+    def no_match(key):
+        return hb.CompactAudit(key=key, status="audited", verdict="none", confidence="high")
+
+    k = [r["bibtex_key"] for r in chosen]
+    audits = [
+        matched(k[0]),                                            # true negative
+        no_match(k[1]),                                           # false positive, relabelled
+        hb.not_audited(k[2], "unparsed", "unbalanced braces"),    # not evaluated
+        no_match(k[3]),                                           # detected
+        matched(k[4]),                                            # missed
+    ]
+    out = tmp_path / "run"
+    out.mkdir()
+    hb._write_jsonl(out / "audits.jsonl", audits)
+    (out / "run.json").write_text(json.dumps({
+        "split": "dev_public", "entries": 5, "counts": {}, "counts_before_retry": {},
+        "reference_audit_sha": "x", "pipeline_version": "0", "model": "m", "llm_enabled": True,
+        "hallmark_sha": "y", "hallmark_version": hb.HALLMARK_VERSION, "wall_seconds": 60,
+        "from_cache": 0,
+    }), encoding="utf-8")
+
+    hb.score(split="dev_public", hallmark_dir=hallmark_dir, hallmark_bin=_HALLMARK_BIN, out=out)
+
+    result = json.loads((out / "eval.identity.json").read_text(encoding="utf-8"))["conservative"]
+    assert (result["num_entries"], result["num_evaluated"]) == (5, 4)
+    assert result["false_positive_rate"] == pytest.approx(0.5)
+    summary = (out / "summary.md").read_text(encoding="utf-8")
+    assert "HALLMARK relabelled HALLUCINATED → VALID" in summary
+    assert f"`{k[4]}`" in summary.split("## Misses")[1]
