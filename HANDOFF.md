@@ -2,8 +2,8 @@
 
 Updated 2026-10-09, for the next session to continue from a fresh context.
 Branch `feat/hallmark-clickhouse`. Commits `c5226b5` (harness, DBLP via SPARQL, ClickHouse backend) and
-`c331de5` are pushed to `origin`. `b734b1a` (the tool-gap fixes) and this HANDOFF update are **local
-only**: push them when the user agrees. No PR is open, and `main` is unchanged.
+`c331de5` are pushed to `origin`. `b734b1a` (the tool-gap fixes), the HTML-entity fix and the HANDOFF
+updates are **local only**: push them when the user agrees. No PR is open, and `main` is unchanged.
 
 ## Goal
 
@@ -58,9 +58,13 @@ Done and committed on this branch:
    - **Found and fixed on the way: a cache-slot collision.** Enrichment by a matched or backfilled
      identifier was cached in the entry's own by-id slot, so later runs read the matched work's
      records as the entry's own lookup. It is now cached under a probe entry.
-5. README, PRD, DESIGN and the `parsing` / `identification` feature docs are updated.
-   `uv run cfs validate` passes, and `uv run pytest` gives 477 passed, 7 skipped.
-6. `.claude/settings.json` enables the ClickHouse agent-skills plugin for this project.
+5. **HTML character references are decoded** (`3fe7f9f`, `pipeline_version` **0.21**). Web-scraped metadata
+   leaves `d&apos;Amore` and `&amp;` in `.bib` fields. They are now decoded in `.bib` text
+   (`parsing/entities.py`, `;`-terminated references only) and in author and title normalization.
+   In dev_public this affects 9 entries: 6 VALID, which all now match cleanly, and 3 HALLUCINATED.
+6. README, PRD, DESIGN and the `parsing` / `identification` feature docs are updated.
+   `uv run cfs validate` passes, and `uv run pytest` gives 481 passed, 7 skipped.
+7. `.claude/settings.json` enables the ClickHouse agent-skills plugin for this project.
 
 **Not done:**
 - The full `dev_public` audit.
@@ -103,9 +107,8 @@ Done and committed on this branch:
     `10.1109/CVPR46437.2021.00469` belongs to "Delving into Localization Errors for Monocular 3D
     Object Detection"; IBRNet is `…00466`. **This is likely a HALLMARK label error**; list it as one
     in the report;
-  - `a1de81b91af8` is a `strict` false positive. The cited author is `Francesco d&apos;Amore`, an
-    HTML entity that is never decoded, so it fails the author check against `d'Amore` (see the
-    gaps below).
+  - `a1de81b91af8` was a `strict` false positive: the cited author `Francesco d&apos;Amore` failed
+    the author check against `d'Amore`. It is clean at 0.21, after the entity fix.
 
 ## Next steps
 
@@ -145,9 +148,6 @@ All commands run from the repo root.
 
 ## Known remaining gaps (not fixed; raise with the user if the run shows they matter)
 
-- **HTML entities in author names are not decoded.** `d&apos;Amore` fails the author check against
-  `d'Amore`, which is a `strict` false positive. Titles are already unescaped for search
-  (`titlewords.py`), but authors are not.
 - **The matched DOI shown can be the arXiv DataCite DOI** even when the pooled artifact also holds
   the published DOI. `_merge_ids` keeps the richest record's DOI. The DOI check is unaffected (it
   reads `merged_dois`); the "matched: doi:…" line and the harness's `matched_doi` are.
