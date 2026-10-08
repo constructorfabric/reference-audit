@@ -28,6 +28,8 @@ to an LLM when needed:
    reference list and the in-text citation markers. Either way, DOIs, ISBNs, arXiv ids, OpenAlex Work
    ids (an `openalex.org/W…` URL becomes a first-class identifier) and Google Books volume ids (a
    `books.google.…/books?id=…` URL) are normalized identically, and everything below is unchanged.
+   HTML character references left by web-scraped metadata (`d&apos;Amore`, `&amp;`) are decoded in
+   `.bib` text, and in every author and title comparison, so they match the sources' plain text.
 2. **Query** multiple scholarly databases — Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open
    Library, Google Books — both by identifier and by title/author. A cited OpenAlex Work id or
    Google Books volume id is resolved directly to that work (the authoritative key for entries —

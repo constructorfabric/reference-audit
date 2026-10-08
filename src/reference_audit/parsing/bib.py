@@ -24,6 +24,7 @@ from bibtexparser.bparser import BibTexParser
 from bibtexparser.customization import convert_to_unicode
 
 from reference_audit.models import BibEntry, Identifiers, UnparsedEntry, entry_type_from_bib
+from reference_audit.parsing.entities import decode_html_entities
 from reference_audit.parsing.identifiers import (
     extract_arxiv_id,
     normalize_doi,
@@ -56,7 +57,9 @@ def _classify_keys(raw: str) -> set[str]:
 
 
 def _clean(s: str) -> str:
-    return re.sub(r"\s+", " ", s.replace("{", "").replace("}", "")).strip()
+    # HTML references (`d&apos;Amore`) come from web-scraped metadata; see `parsing.entities`.
+    text = decode_html_entities(s.replace("{", "").replace("}", ""))
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _split_authors(author_field: str) -> list[str]:

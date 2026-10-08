@@ -14,11 +14,13 @@ from anyascii import anyascii
 from rapidfuzz import fuzz
 
 from reference_audit.models import BibEntry, FeatureVector, Identifiers, SourceRecord
+from reference_audit.parsing.entities import decode_html_entities
 from reference_audit.matching.names import author_overlap, author_set_jaccard, author_subset
 
 
 def _norm_title(t: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", anyascii(t or "").lower())).strip()
+    text = anyascii(decode_html_entities(t or "")).lower()  # "&amp;" is no word "amp"
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", text)).strip()
 
 
 def title_ratio(a: str, b: str) -> float:

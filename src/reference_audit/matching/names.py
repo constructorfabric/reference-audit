@@ -12,9 +12,13 @@ import re
 from anyascii import anyascii
 from rapidfuzz import fuzz
 
+from reference_audit.parsing.entities import decode_html_entities
+
 
 def _norm(text: str) -> str:
-    return re.sub(r"[^a-z\s,.-]", "", anyascii(text or "").lower()).strip()
+    # Decode HTML references first: "d&apos;Amore" must compare as "d'Amore", not "dapos amore".
+    text = anyascii(decode_html_entities(text or ""))
+    return re.sub(r"[^a-z\s,.-]", "", text.lower()).strip()
 
 
 # The BibTeX `and others` convention (and a written-out "et al.") is a *truncation marker*, not a

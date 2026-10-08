@@ -96,6 +96,14 @@ web page); a bare `W…` token with no `openalex.org` host is not trusted. A `bo
 URL likewise yields a first-class `Identifiers.google_books` volume id (the `url` is kept, as it is a
 real landing page); a bare token with no Google Books host is not trusted.
 
+Text fields (title, authors, venue, publisher, pages) have their `;`-terminated HTML character
+references decoded (`parsing/entities.py`: `d&apos;Amore` → `d'Amore`, `&amp;` → `&`). Web-scraped
+metadata carries them, and left encoded they fail the author check against a source's plain text.
+A bare `&` or a legacy reference without its `;` is left as written. Matching decodes the same way
+when normalizing author names and titles (`matching/names.py`, `matching/features.py`), so a
+source record carrying references compares alike. `raw_fields` keep the text as written. This runs
+inside the `inst-parse-bib` step and is tested (`tests/test_entities.py`); not separately traced.
+
 **Input**: Raw `.bib` field strings (doi, isbn, eprint, url).
 
 **Output**: A normalized `Identifiers` record attached to each `BibEntry`.
@@ -160,3 +168,4 @@ forms.
 - [x] Commented preprint twins are routed to an informational list, never the audited list.
 - [x] An entry the BibTeX parser cannot read is reported as unparsed, with its line and reason, and
       is never silently dropped.
+- [x] HTML character references in `.bib` text are decoded, so `d&apos;Amore` matches `d'Amore`.

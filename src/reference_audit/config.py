@@ -127,7 +127,9 @@ class AuditConfig(BaseSettings):
     #       link (candidates change). A cited DOI the matched work does not carry is checked and
     #       reported as a `doi` field finding; an unresolved entry records why; a `none` on a local
     #       snapshot that may predate the work carries a coverage caveat.
-    pipeline_version: str = "0.20"
+    # 0.21: HTML character references (`d&apos;Amore`, `&amp;`) are decoded in .bib fields and in
+    #       author/title normalization, so author checks and title scores change for such entries.
+    pipeline_version: str = "0.21"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)
