@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "clickhouse-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "ClickHouse/agent-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "clickhouse-best-practices@clickhouse-agent-skills": true
+  }
+}
