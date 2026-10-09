@@ -362,7 +362,9 @@ The finding is advisory like every field finding: the verdict is unchanged. Impl
 - The LLM tie-break is shown the matched work as the database records it. Before, it was shown the
   entry under review, labelled "the same work, confirmed by identifier", so it judged a different
   title to be the same.
-- A substituted content word in a title is an `error`.
+- A substituted content word in a title is an `error`, and so is a different journal or conference
+  series (`ACL` vs `ICLR`; pipeline 0.23). The prompt's general advice to prefer `uncertain` when the
+  entry is plausibly right had the LLM hedge on both.
 
 **Authors are a field finding** (`field = "author"`, `fieldcheck._author_check`).
 - Each cited author is compared person by person (`names.same_person`) with every source's author

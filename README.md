@@ -80,7 +80,8 @@ to an LLM when needed:
      `error`. A citation that names only some of the work's authors without `and others` is reported
      per `--partial-authors`: `ignore`, `warn` (an `uncertain` finding, the default) or `error`.
    - A difference no rule settles goes to the LLM, which is shown the matched work as the database
-     records it, never the entry under review.
+     records it, never the entry under review. A substituted title word, or a different journal or
+     conference series, is an error.
    - The **cited DOI** is checked too: when the matched work does not carry it, the DOI's own records
      are looked up. A DOI that belongs to a different paper, or that the doi.org Handle API does not
      know, is reported as a wrong `doi` field, naming that paper.

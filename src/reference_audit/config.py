@@ -147,7 +147,8 @@ class AuditConfig(BaseSettings):
     #       cited version agree on (an OpenAlex title defect won on source rank); a pooled record's
     #       author list comes from the most reliable source, not the citation-richest (S2's defective
     #       list made the LLM reject a real paper); members are deduplicated; given-name forms
-    #       ('Tim' / 'Timothy') and dropped middle initials match.
+    #       ('Tim' / 'Timothy') and dropped middle initials match; the field-check prompt calls a
+    #       different journal or conference series an error (the LLM hedged on ACL vs ICLR).
     pipeline_version: str = "0.23"
 
     def llm_enabled(self) -> bool:

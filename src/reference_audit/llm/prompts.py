@@ -68,6 +68,9 @@ FIELD_CHECK_SYSTEM = (
     "- A TITLE that differs from the database title by a substituted, inserted or deleted content "
     "word ('Robust' vs 'Resilient', 'towards' vs 'for', 'Self-supervised' vs 'Unsupervised') is an "
     "'error': the identifier already fixed the work, so its title is known.\n"
+    "- A VENUE that names a different journal or conference series than the database venue ('ACL' vs "
+    "'ICLR', 'UAI' vs 'ICML') is an 'error': the database records where the identified work "
+    "appeared (this does not apply to a preprint server or repository, above).\n"
     "If the entry's value is plausibly correct and the database merely differs, prefer 'uncertain' "
     "over 'error'. Use 'uncertain' whenever you cannot affirmatively decide. Respond in strict JSON."
 )
