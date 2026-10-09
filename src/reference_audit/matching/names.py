@@ -215,13 +215,16 @@ def omitted_authors(bib_authors: list[str], record_authors: list[str]) -> list[s
     """Authors of the record that the cited list leaves out, when it does not say it is shortened.
 
     An `and others` / `et al.` in the cited list is an explicit truncation, so nothing is omitted.
+    A cited list as long as the record's omits nobody: a record name it does not match is spelled
+    differently ('Brandon RichardWebster', 'Misha Belkin', a record's typo), not left out. So a list
+    is partial only when it names fewer authors than the record.
     """
     if any(_is_etal(a) for a in bib_authors):
         return []
-    bib = _named(bib_authors)
-    if not bib:
+    bib, record = _named(bib_authors), _named(record_authors)
+    if not bib or len(bib) >= len(record):
         return []
-    return [r for r in _named(record_authors) if not any(same_person(r, b) for b in bib)]
+    return [r for r in record if not any(same_person(r, b) for b in bib)]
 
 
 def authors_compatible(a: list[str], b: list[str], threshold: float = 0.8) -> bool:

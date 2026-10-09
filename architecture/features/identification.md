@@ -377,7 +377,9 @@ The finding is advisory like every field finding: the verdict is unchanged. Impl
   its end are `unverifiable`, since the record may have been cut there.
 - A citation that names only some of the work's authors without `and others` is reported per
   `AuditConfig.partial_authors` (CLI `--partial-authors`): `ignore`, `warn` (`uncertain`, the
-  default) or `error`. Many bibliographies shorten long lists; HALLMARK counts an unmarked omission as
+  default) or `error`. A list is partial only when it names fewer authors than the record: in a list
+  of the record's length, a name it does not match is a spelling variant ('Brandon RichardWebster'),
+  not an omission. Many bibliographies shorten long lists; HALLMARK counts an unmarked omission as
   a hallucination.
 - This replaces the earlier free-text issue ("author … not found in … record"). That issue
   compared surnames fuzzily against the best record only, and skipped the check whenever the record

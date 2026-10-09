@@ -88,3 +88,12 @@ def test_cli_rejects_an_unknown_partial_authors_mode(tmp_path):
     result = CliRunner().invoke(app, ["audit", str(tex), str(bib), "--partial-authors", "maybe"])
     assert result.exit_code != 0
     assert "--partial-authors must be" in result.output
+
+
+def test_a_full_length_list_with_a_spelling_variant_omits_nobody():
+    # HALLMARK c96d1587797e (VALID): the record writes 'Brandon RichardWebster'. Under
+    # --partial-authors error this was reported as an omission and scored as a hallucination.
+    cited = ["Brian Hu", "Paul Tunison", "Brandon Richard Webster", "Anthony Hoogs"]
+    record = ["Brian Hu", "Paul Tunison", "Brandon RichardWebster", "Anthony Hoogs"]
+    assert omitted_authors(cited, record) == []
+    assert omitted_authors(cited[:2], record) == ["Brandon RichardWebster", "Anthony Hoogs"]
