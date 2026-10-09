@@ -1,8 +1,9 @@
 """`reference-audit` command-line interface (Typer).
 
 `audit` runs the async pipeline (parse + identify, cached) over either a `.tex` + `.bib` pair or a
-single PDF. `--no-network` gives the parse-only report (pair input only — a PDF's reference list comes
-from an HTTP call to GROBID, so there is no offline parse for it).
+single PDF. `--no-network` gives the parse-only report (for a PDF only when it embeds the BibTeX records
+of its references — otherwise its reference list comes from an HTTP call to GROBID, so there is no
+offline parse for it).
 """
 
 from __future__ import annotations
@@ -14,9 +15,11 @@ import typer
 
 from reference_audit.config import AuditConfig
 from reference_audit.inputs import InvalidInputError, PdfInput, default_cache_path, resolve_input
+from reference_audit.pdf.embedded import read_embedded_references
 from reference_audit.pdf.grobid import GrobidError
 from reference_audit.pipeline import (
     EmptyBibliographyError,
+    build_embedded_parse_report,
     build_parse_report,
     run_audit,
     run_pdf_audit,
@@ -73,6 +76,11 @@ def audit(
     grobid: str | None = typer.Option(
         None, "--grobid", help="GROBID base URL for PDF input (default http://localhost:8070)."
     ),
+    ignore_embedded: bool = typer.Option(
+        False, "--ignore-embedded",
+        help="For a PDF that embeds the BibTeX records of its cited works (AI4X template), extract "
+             "the references with GROBID anyway.",
+    ),
     fail_on: str | None = typer.Option(
         None, "--fail-on", help="Exit non-zero if any verdict matches: hallucinated | multiple."
     ),
@@ -85,7 +93,9 @@ def audit(
     """Audit a .bib with its .tex, or a PDF on its own.
 
     With a PDF, GROBID supplies both the reference list and the in-text citations, so no .bib is
-    needed. Either way each reference is identified and screened for hallucinations.
+    needed — unless the PDF embeds the BibTeX records of its cited works (the AI4X template does),
+    which are then audited instead. Either way each reference is identified and screened for
+    hallucinations.
     """
     if fmt not in ("text", "json", "both"):
         raise typer.BadParameter("format must be one of: text, json, both")
@@ -99,18 +109,29 @@ def audit(
     except InvalidInputError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
+    embedded_bib: str | None = None
     if no_network and isinstance(source, PdfInput):
-        # --no-network is a contract ("this run contacts nothing"), and --grobid can point at any
-        # host, so we cannot honestly weaken it to "no *remote* network" for a PDF. Reject it rather
+        # A PDF that embeds its references' BibTeX records parses offline. Any other PDF needs
+        # GROBID, and --no-network is a contract ("this run contacts nothing") — --grobid can point
+        # at any host, so we cannot honestly weaken it to "no *remote* network". Reject it rather
         # than quietly redefining what the flag promises.
-        raise typer.BadParameter(
-            "--no-network cannot be combined with a PDF: the reference list and the in-text "
-            "citations are extracted by the GROBID service over HTTP, so a PDF has no offline parse "
-            "path. Pass a .tex + .bib pair for the offline parse-only report."
-        )
+        embedded = None if ignore_embedded else read_embedded_references(source.pdf_path)
+        if embedded is None or embedded.bib_text is None:
+            why = (
+                "--ignore-embedded was given" if embedded is None
+                else embedded.problem or "it embeds no BibTeX records of its references"
+            )
+            raise typer.BadParameter(
+                f"--no-network cannot be combined with this PDF ({why}): its reference list and "
+                "in-text citations would be extracted by the GROBID service over HTTP, so it has no "
+                "offline parse path. Pass a .tex + .bib pair for the offline parse-only report."
+            )
+        embedded_bib = embedded.bib_text
 
     try:
-        if no_network:
+        if no_network and embedded_bib is not None:
+            report = build_embedded_parse_report(source.pdf_path, embedded_bib)
+        elif no_network:
             report = build_parse_report(source.tex_path, source.bib_path)
         else:
             updates: dict = {}
@@ -122,6 +143,8 @@ def audit(
                 updates["check_alignment"] = True
             if grobid:
                 updates["grobid_url"] = grobid
+            if ignore_embedded:
+                updates["use_embedded_references"] = False
             if backend:
                 updates["source_backend"] = backend
             if partial_authors:

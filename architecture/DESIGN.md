@@ -129,9 +129,10 @@ modules, and `parsing` must not import `pdf/grobid`.
 A PDF input is the one case where assembling the entry list *itself* requires a network call — to a
 GROBID service that turns the PDF into TEI. That call is made only by `pdf/grobid.py` and only from the
 async `build_pdf_parse_report`, never from the synchronous `build_parse_report`. So `--no-network`
-keeps its literal meaning and is accepted only for `.tex` + `.bib` input; combining it with a `.pdf` is
-rejected rather than silently redefined as "no *remote* network", which would be a promise the tool
-cannot keep once `grobid_url` may point anywhere.
+keeps its literal meaning and is accepted only for `.tex` + `.bib` input and for a PDF that embeds the
+BibTeX records of its references (`pdf/embedded.py` reads the local file only); combining it with any
+other `.pdf` is rejected rather than silently redefined as "no *remote* network", which would be a
+promise the tool cannot keep once `grobid_url` may point anywhere.
 
 #### GROBID is a local, opt-in service
 
@@ -411,7 +412,10 @@ produces, so identification, matching, verdicts, alignment and reporting are unt
 multipart upload, a named error per failure mode). `pdf/tei.py` is pure: it maps TEI `<biblStruct>`
 elements to `BibEntry` (through `parsing.bib.entry_from_fields`, the shared construction seam) and
 in-text `<ref type="bibr">` markers to `CitationContext` (through `parsing.context`, the shared
-sentence definition). **IMPLEMENTED (not yet @cpt-traced).**
+sentence definition). `pdf/embedded.py` reads a PDF that embeds the BibTeX records of its cited works
+(the AI4X template's `cited-references.bib.hex` attachment) — those records are then parsed as a `.bib`
+and GROBID is not called — and looks each record's title up in the printed reference list.
+**IMPLEMENTED (not yet @cpt-traced).**
 
 ##### Responsibility boundaries
 

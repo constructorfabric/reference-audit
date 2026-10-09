@@ -92,7 +92,8 @@ verdict of step 1.
 7. PDF input is extracted by a locally-run GROBID, which the auditor talks to but does not manage. The
    HTTP call and the TEI→model mapping are separate modules, so the mapping — where extraction
    correctness actually lives — is verifiable offline from recorded TEI. Extraction quality is measured
-   against test documents compiled from their own `.bib`, which makes that `.bib` ground truth.
+   against test documents compiled from their own `.bib`, which makes that `.bib` ground truth. A PDF
+   that embeds the BibTeX records of its cited works (the AI4X template's) is read from them instead.
 
 ## Traceability
 

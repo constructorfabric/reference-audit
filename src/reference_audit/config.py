@@ -113,6 +113,9 @@ class AuditConfig(BaseSettings):
     # upper-cased env var, whereas an aliased one silently ignores by-name construction here
     # (`populate_by_name` is not set), which would make AuditConfig(grobid_url=...) a no-op in tests.
     grobid_url: str = "http://localhost:8070"
+    # A PDF that embeds the BibTeX records of its cited works (`pdf.embedded`, e.g. one made with the
+    # AI4X template) is audited from them, without GROBID. CLI --ignore-embedded turns this off.
+    use_embedded_references: bool = True
 
     # --- Cache / pipeline ---
     cache_path: Path | None = None        # default: <bib_dir>/.reference_audit/cache.db

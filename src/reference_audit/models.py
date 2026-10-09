@@ -390,6 +390,8 @@ class AuditReport(BaseModel):
     # it linked none (bookkeeping is then unknown, not "everything is cited"). `notes` carries the
     # document-level caveats the renderer must show so no reader mistakes an extraction artifact for
     # an error in the manuscript. Defaults reproduce the .bib/.tex behavior exactly.
-    input_kind: Literal["tex_bib", "pdf"] = "tex_bib"
+    # `pdf_embedded`: the entries are the BibTeX records the PDF embeds for its cited works
+    # (`pdf.embedded`) — authored source like a .bib, every one of them cited, no citing contexts.
+    input_kind: Literal["tex_bib", "pdf", "pdf_embedded"] = "tex_bib"
     citation_linking: Literal["available", "unavailable", "not_applicable"] = "available"
     notes: list[str] = Field(default_factory=list)

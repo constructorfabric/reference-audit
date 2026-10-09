@@ -25,6 +25,12 @@ from reference_audit.matching.sameobject import cluster_accepted
 from reference_audit.matching.scoring import bucket
 from reference_audit.matching.verdict import build_verdict
 from reference_audit.matching.webcheck import check_web_reference
+from reference_audit.pdf.embedded import (
+    ATTACHMENT_NAME,
+    read_embedded_references,
+    reference_list_text,
+    title_printed,
+)
 from reference_audit.pdf.grobid import GrobidClient, GrobidRequestError
 from reference_audit.pdf.tei import TeiParseError, parse_tei
 from reference_audit.models import (
@@ -53,7 +59,7 @@ from reference_audit.fieldcheck import (
     resolve_field_findings,
 )
 from reference_audit.alignmentcheck import alignment_note, resolve_alignment_findings
-from reference_audit.parsing.bib import parse_bib
+from reference_audit.parsing.bib import parse_bib, parse_bib_text
 from reference_audit.parsing.tex import parse_cited_keys, parse_citation_contexts
 from reference_audit.sources.base import SourceAdapter
 from reference_audit.versioning import better_version_notes
@@ -300,6 +306,81 @@ async def build_pdf_parse_report(pdf_path: str | Path, *, client: GrobidClient) 
     return PdfParse(report=report, contexts=parsed.contexts, contexts_available=linking_available)
 
 
+def build_embedded_parse_report(pdf_path: str | Path, bib_text: str) -> AuditReport:
+    """Parse the BibTeX records a PDF embeds for its cited works (`pdf.embedded`).
+
+    The records are authored source, so the entries are built exactly as from a `.bib` — and share
+    its verdict cache. Every record is cited: the bibliography style exports only the entries BibTeX
+    printed. A record is what the author compiled, which a hand-edited `.bbl` can make differ from
+    what is printed, so each title is looked up in the PDF's reference list.
+
+    Raises `EmptyBibliographyError` when the records hold no readable entry.
+    """
+    path = Path(pdf_path)
+    entries, _twins, unparsed = parse_bib_text(bib_text)
+    if not entries:
+        detail = f" ({len(unparsed)} unparseable)" if unparsed else ""
+        raise EmptyBibliographyError(
+            f"the {ATTACHMENT_NAME} attachment of {path.name} holds no readable BibTeX entry{detail}"
+        )
+
+    notes = [
+        f"references were read from the BibTeX records of the cited works embedded in {path.name} "
+        f"(attachment {ATTACHMENT_NAME}), not extracted from the typeset text",
+    ]
+    printed: str | None
+    try:
+        printed = reference_list_text(path)
+    except Exception as exc:  # noqa: BLE001 — pypdf raises many types; reported, never swallowed
+        printed = None
+        notes.append(
+            f"the text of {path.name} could not be extracted ({type(exc).__name__}: {exc}), so the "
+            "embedded records were not compared with the printed reference list"
+        )
+
+    audits: list[EntryAudit] = []
+    unprinted = 0
+    for e in entries:
+        e.cited = True
+        issues = _parse_issues(e)
+        if printed is not None and title_printed(e.title, printed) is False:
+            unprinted += 1
+            issues.append(
+                "the title of this embedded record was not found in the PDF's printed reference "
+                "list — the record checked may differ from the printed reference"
+            )
+        audits.append(EntryAudit(entry=e, verdict=None, issues=issues))
+    if unprinted:
+        notes.append(
+            f"{unprinted} embedded record(s) have a title that was not found in the printed "
+            "reference list; compare them with the PDF, or re-run with --ignore-embedded to audit "
+            "the references extracted from the typeset text"
+        )
+
+    by_type: dict[str, int] = {}
+    for e in entries:
+        by_type[e.entry_type.value] = by_type.get(e.entry_type.value, 0) + 1
+    summary = {
+        "total_entries": len(entries),
+        "cited": len(entries),
+        "uncited": 0,
+        "cited_but_missing": 0,
+        "commented_twins": 0,        # inapplicable: the style exports no commented-out entries
+        "missing_includes": 0,       # inapplicable: a PDF has no \input targets
+        "unparsed": len(unparsed),
+        "entries_with_issues": sum(1 for a in audits if a.issues),
+        "by_type": by_type,
+        "titles_not_in_printed_references": unprinted,
+    }
+    return AuditReport(
+        entries=audits,
+        unparsed=unparsed,
+        summary=summary,
+        input_kind="pdf_embedded",
+        notes=notes,
+    )
+
+
 def _verdict_summary(report: AuditReport) -> dict[str, int]:
     counts = {"none": 0, "exactly_one": 0, "multiple": 0, "unresolved": 0}
     for a in report.entries:
@@ -430,19 +511,48 @@ class AuditPipeline:
         return await self._audit_all(report, progress=progress)
 
     async def run_pdf(self, pdf_path: str | Path, *, progress: bool = False) -> AuditReport:
-        """Audit a PDF: GROBID supplies both its reference list and its in-text citations.
+        """Audit a PDF: from the BibTeX records it embeds, if any, otherwise from GROBID's
+        extraction of its reference list and in-text citations.
 
         A sibling of `run` rather than an extra optional parameter on it — the two inputs need
         different arguments, and an `isinstance`/`None`-sniffing signature would make every existing
         call site ambiguous for no gain.
         """
-        parsed = await build_pdf_parse_report(pdf_path, client=self._grobid())
+        report: AuditReport | None = None
+        fallback_notes: list[str] = []
+        if self.config.use_embedded_references:
+            embedded = read_embedded_references(pdf_path)
+            if embedded.bib_text is not None:
+                try:
+                    report = build_embedded_parse_report(pdf_path, embedded.bib_text)
+                except EmptyBibliographyError as exc:
+                    fallback_notes.append(
+                        f"{exc}; the references were extracted from the typeset text by GROBID instead"
+                    )
+            elif embedded.problem is not None:
+                fallback_notes.append(
+                    f"{embedded.problem}; the references were extracted from the typeset text by "
+                    "GROBID instead"
+                )
+
+        if report is not None:
+            if self.config.check_alignment:
+                # The records carry no citing sentences. Said once, for the document, rather than
+                # as an issue on every entry.
+                report.notes.append(
+                    "citation alignment was not checked: the embedded records carry no citing "
+                    "sentences; re-run with --ignore-embedded to take them from GROBID"
+                )
+        else:
+            parsed = await build_pdf_parse_report(pdf_path, client=self._grobid())
+            report = parsed.report
+            report.notes.extend(fallback_notes)
+            # Contexts come free from the same TEI we already had to fetch, so they are always kept;
+            # the alignment check itself still gates on `config.check_alignment`.
+            self._citation_contexts = parsed.contexts
+            self._contexts_available = parsed.contexts_available
         await self.preflight()
-        # Contexts come free from the same TEI we already had to fetch, so they are always kept; the
-        # alignment check itself still gates on `config.check_alignment`.
-        self._citation_contexts = parsed.contexts
-        self._contexts_available = parsed.contexts_available
-        return await self._audit_all(parsed.report, progress=progress)
+        return await self._audit_all(report, progress=progress)
 
     async def _audit_all(self, report: AuditReport, *, progress: bool) -> AuditReport:
         tasks = [asyncio.ensure_future(self._audit_entry(a)) for a in report.entries]

@@ -257,7 +257,9 @@ extracting from it both the printed reference list as `BibEntry` records and the
 occurrences as `CitationContext` records, so a paper with no available `.tex`/`.bib` is audited by the
 same pipeline. Bookkeeping that has no meaning for a PDF **MUST** be reported as inapplicable or
 unknown rather than as zero — in particular, when no in-text citation marker can be linked to a
-bibliography entry, no reference may be reported as uncited.
+bibliography entry, no reference may be reported as uncited. A PDF that embeds the BibTeX records of
+its cited works (as the AI4X template makes it do) **MUST** be audited from those records, each checked
+against the printed reference list, unless the user asks for extraction.
 
 **Rationale**: For mass automated processing the available artifact is a PDF; requiring authored LaTeX sources would exclude most real inputs.
 

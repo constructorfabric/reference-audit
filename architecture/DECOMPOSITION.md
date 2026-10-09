@@ -208,6 +208,8 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
   - Report per-reference extraction gaps as entry issues, and input-level caveats as report notes
   - Name every failure mode distinctly instead of degrading to an empty reference list
   - Measure extraction fidelity against documents compiled from a known `.bib`
+  - Read the BibTeX records a PDF embeds for its cited works (AI4X template) instead of extracting, and
+    check each record's title against the printed reference list
 
 - **Out of scope**:
   - Managing the GROBID container (start/stop/health administration)

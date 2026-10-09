@@ -25,7 +25,9 @@ to an LLM when needed:
 
 1. **Parse** the input — either the `.bib` (resolving `\cite`/`\nocite` in the `.tex`), or a PDF, from
    which a locally-run [GROBID](https://github.com/grobidOrg/grobid) extracts both the printed
-   reference list and the in-text citation markers. Either way, DOIs, ISBNs, arXiv ids, OpenAlex Work
+   reference list and the in-text citation markers. A PDF that embeds the BibTeX records of its cited
+   works (as one made with the [AI4X template](#pdfs-that-embed-their-references) does) is read from
+   those records instead, without GROBID. Either way, DOIs, ISBNs, arXiv ids, OpenAlex Work
    ids (an `openalex.org/W…` URL becomes a first-class identifier) and Google Books volume ids (a
    `books.google.…/books?id=…` URL) are normalized identically, and everything below is unchanged.
    HTML character references left by web-scraped metadata (`d&apos;Amore`, `&amp;`) are decoded in
@@ -199,7 +201,8 @@ uv run reference-audit audit <paper.pdf> [options]
 ```
 
 They are mutually exclusive: a PDF *is* the whole input, since GROBID extracts both its reference list
-and its in-text citations, so passing a `.bib` alongside one is rejected.
+and its in-text citations (or the PDF embeds its references' BibTeX records), so passing a `.bib`
+alongside one is rejected.
 
 Example, against the bundled pilot:
 
@@ -259,13 +262,15 @@ NO ISSUES (18) — verified, nothing to fix:
 | `--cache PATH` | Cache DB location. Default: `<bib_dir>/.reference_audit/cache.db`. |
 | `--model NAME` | Override the LLM model (default `gpt-6-luna`). |
 | `--grobid URL` | GROBID base URL for PDF input. Default `http://localhost:8070` (or `GROBID_URL`). |
+| `--ignore-embedded` | For a PDF that embeds the BibTeX records of its cited works, extract the references with GROBID anyway. See [PDFs that embed their references](#pdfs-that-embed-their-references). |
 | `--backend api\|clickhouse` | Where Semantic Scholar, OpenAlex and DBLP are read from: their public APIs, or a local ClickHouse mirror. Default `SOURCE_BACKEND`, else `api`. See [Local ClickHouse backend](#local-clickhouse-backend). |
 | `--fail-on hallucinated\|multiple` | Exit non-zero if any entry gets that verdict — for gating submissions in CI. |
 | `--partial-authors ignore\|warn\|error` | How to report a cited author list that names only some of the work's authors without `and others`: not at all, as `uncertain` (default), or as an `error`. Default `PARTIAL_AUTHORS`, else `warn`. |
 
-`--no-network` applies to `.tex` + `.bib` input only. A PDF's reference list comes from an HTTP call to
-GROBID, so there is no offline parse path for it, and combining the two is rejected rather than
-quietly redefining what the flag promises.
+`--no-network` applies to `.tex` + `.bib` input, and to a PDF that embeds the BibTeX records of its
+references. Any other PDF's reference list comes from an HTTP call to GROBID, so there is no offline
+parse path for it, and combining the two is rejected rather than quietly redefining what the flag
+promises.
 
 Example — fail a CI check if any reference looks hallucinated, as JSON:
 
@@ -408,6 +413,31 @@ Failures are named, never degraded into an empty bibliography: an unreachable or
 with no text layer, and a PDF with no detectable reference list each exit non-zero with the specific
 reason (and, for an unreachable service, the command to start one).
 
+### PDFs that embed their references
+
+A PDF made with the [AI4X conference template](https://github.com/kazeevn/AI4X-2027-Template)
+carries the BibTeX records of its cited works: the template's bibliography style (`ai4x.bst`, a copy
+of `unsrturl.bst` that prints identically) writes each cited entry's record into the `.bbl`, and its
+class embeds them as the PDF attachment `cited-references.bib.hex`. Only the cited entries are
+embedded, with only the fields printed in the reference list plus identifiers (DOI, ISBN, arXiv id,
+PubMed id), `@string` macros and `crossref` already resolved by BibTeX. The records are hex-encoded,
+because they pass through TeX on the way to the attachment, where a raw `%`, `#` or `\` would break.
+
+`reference-audit audit paper.pdf` looks for the attachment first. When it is there, the records are
+audited exactly like a `.bib` — no GROBID, the same verdict cache, and `--no-network` works:
+
+- The header reads `references embedded in PDF`, and every entry is cited (BibTeX exported only what
+  it printed).
+- A record is what the author compiled, not necessarily what is printed — a hand-edited `.bbl` can make
+  them differ. Each record's title is therefore looked up in the PDF's printed reference list (after
+  its last *References* heading), and one that is not found is an issue on that entry, summarized in
+  `INPUT NOTES` and in `summary.titles_not_in_printed_references`.
+- The records carry no citing sentences, so `--check-citations` is declared unchecked in `INPUT NOTES`.
+  `--ignore-embedded` takes the references, and the citing sentences, from GROBID instead.
+
+A PDF without the attachment goes to GROBID as before. A malformed attachment, or a PDF the attachment
+cannot be read from, goes to GROBID too, with the reason in `INPUT NOTES`.
+
 ## Development
 
 ```bash
@@ -440,7 +470,10 @@ REFERENCE_AUDIT_LIVE=1 uv run pytest -k pdf                   # measure, then as
 Build artifacts land in a gitignored `tests/documents/<slug>/.build/<version>/`; nothing is written
 next to the fixtures. The committed oracle is GROBID's TEI XML for the smallest document
 (`tests/fixtures/tei/`, with a `.provenance.txt` recording the GROBID image, request parameters and
-TeX Live version) — never a PDF. Regenerate it with `--grobid <url> --write-tei`.
+TeX Live version) — never a PDF. Regenerate it with `--grobid <url> --write-tei`. The one committed PDF,
+`tests/fixtures/embedded/paper.pdf`, is not a GROBID oracle: it is compiled from the `.tex` + `.bib`
+beside it with the AI4X template's `ai4x.cls` and `ai4x.bst`, because what it tests is the attachment
+only a template-built PDF has.
 
 Two deliberate behaviors of the harness:
 
@@ -738,7 +771,8 @@ uv run cfs update            # update studio (kits are left alone unless you pas
 src/reference_audit/
   parsing/     # .bib / .tex / identifier parsing; context.py = the shared sentence definition
   pdf/         # PDF input: grobid.py (the only network module — one client, one named error per
-               #   failure mode) + tei.py (pure TEI -> BibEntry / CitationContext mapping)
+               #   failure mode) + tei.py (pure TEI -> BibEntry / CitationContext mapping) +
+               #   embedded.py (the BibTeX records a PDF embeds, and the printed-title check)
   sources/     # modular adapters: Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open Library,
                #   Google Books, publisher (DOI landing-page citation export), web (cited-page fetch),
                #   render (headless-browser rendering of JS single-page-app pages); + routing;
@@ -766,6 +800,7 @@ tests/
   documents/   # test papers: <paper-title-slug>/<version>.{tex,bib} (initial, polished, …),
                #   plus the auxiliary LaTeX sources needed to compile them (see each SOURCES.md)
   fixtures/tei/# recorded GROBID output + provenance, so the mapper is verifiable offline
+  fixtures/embedded/ # an AI4X-template PDF that embeds its references' BibTeX records, + its sources
   pdf_fixtures.py # not a test: preflight + compile + TEI capture, runnable by hand
   pdf_oracle.py   # matches extracted references to printed ones and scores the difference
   *.py         # mocked unit/integration tests; the pilot paper is the development oracle

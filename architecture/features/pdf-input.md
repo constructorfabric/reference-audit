@@ -13,6 +13,7 @@
 - [3. Processes / Business Logic (CDSL)](#3-processes--business-logic-cdsl)
   - [Map TEI references to entries](#map-tei-references-to-entries)
   - [Map in-text markers to citing contexts](#map-in-text-markers-to-citing-contexts)
+  - [Read the BibTeX records a PDF embeds](#read-the-bibtex-records-a-pdf-embeds)
 - [4. States (CDSL)](#4-states-cdsl)
   - [Citation linking availability](#citation-linking-availability)
 - [5. Definitions of Done](#5-definitions-of-done)
@@ -22,6 +23,7 @@
   - [A PDF is accepted as the whole input](#a-pdf-is-accepted-as-the-whole-input)
   - [Inapplicable bookkeeping is declared, not zeroed](#inapplicable-bookkeeping-is-declared-not-zeroed)
   - [Extraction fidelity is measured against a compiled oracle](#extraction-fidelity-is-measured-against-a-compiled-oracle)
+  - [Embedded records are preferred, and checked against the printed list](#embedded-records-are-preferred-and-checked-against-the-printed-list)
 - [6. Acceptance Criteria](#6-acceptance-criteria)
 
 <!-- /toc -->
@@ -31,7 +33,8 @@
 > **Status:** IMPLEMENTED, not yet `@cpt`-traced. The capability is built and covered by tests
 > (`pdf/grobid.py`, `pdf/tei.py`, the `inputs.py`/`cli.py`/`pipeline.py` wiring, the offline mapper
 > tests in `tests/test_tei.py` and `tests/test_grobid_client.py`, the stubbed end-to-end run in
-> `tests/test_pdf_pipeline.py`, and the live compiled-PDF oracle in `tests/test_pdf_extraction.py`).
+> `tests/test_pdf_pipeline.py`, the live compiled-PDF oracle in `tests/test_pdf_extraction.py`, and the
+> embedded-records path in `pdf/embedded.py` with `tests/test_embedded.py`).
 > The checkboxes stay `[ ]` because instruction-level `@cpt` tracing to code is follow-on governance
 > work — mirroring [Citation Alignment](citation-alignment.md) and the untraced
 > `sources`/`matching`/`llm`/`cache` components in [DESIGN](../DESIGN.md). Flip each box to `[x]` when
@@ -47,6 +50,10 @@ A PDF as the whole audited input. A locally-run GROBID converts the PDF to TEI X
 that TEI into the same `BibEntry` and `CitationContext` records the `.bib`/`.tex` front end produces.
 Identification, matching, verdicts, citation alignment and reporting are untouched — the PDF path
 replaces only where the records come from.
+
+A PDF can also carry the authored records itself: one made with the AI4X conference template embeds
+the BibTeX records of its cited works as the attachment `cited-references.bib.hex`. Such a PDF is read
+from those records, parsed exactly as a `.bib`, and GROBID is not involved.
 
 ### 1.2 Purpose
 
@@ -106,12 +113,13 @@ from a `.bib` + `.tex` pair, plus explicit notes on what the extraction could no
   is listed as uncited.
 
 **Steps**:
-1. [ ] - `p1` - Classify the CLI arguments as a PDF input, rejecting a `.pdf` combined with a `.bib` and `--no-network` with a `.pdf` (`inputs.resolve_input`) - `inst-resolve-input`
-2. [ ] - `p1` - Health-check GROBID, then upload the PDF once and return its TEI (`GrobidClient.fulltext_tei`) - `inst-fetch-tei`
-3. [ ] - `p1` - Map TEI `<biblStruct>` elements to `BibEntry` records (`pdf.tei.parse_tei`) - `inst-map-references`
-4. [ ] - `p1` - Map in-text `<ref type="bibr">` markers to per-reference `CitationContext`s - `inst-map-contexts`
-5. [ ] - `p1` - **FOR EACH** reference collect deterministic issues plus its extraction failures - `inst-collect-issues`
-6. [ ] - `p1` - **RETURN** the assembled `AuditReport` with `input_kind`, `citation_linking` and input notes - `inst-build-report`
+1. [ ] - `p1` - Classify the CLI arguments as a PDF input, rejecting a `.pdf` combined with a `.bib`, and `--no-network` with a `.pdf` that embeds no BibTeX records (`inputs.resolve_input`, `cli.audit`) - `inst-resolve-input`
+2. [ ] - `p1` - **IF** the PDF embeds the BibTeX records of its cited works and `--ignore-embedded` is not given, parse them as a `.bib`, look each title up in the printed reference list, and **RETURN** that `AuditReport` (`pipeline.build_embedded_parse_report`); a malformed attachment continues below with its reason as an input note - `inst-read-embedded`
+3. [ ] - `p1` - Health-check GROBID, then upload the PDF once and return its TEI (`GrobidClient.fulltext_tei`) - `inst-fetch-tei`
+4. [ ] - `p1` - Map TEI `<biblStruct>` elements to `BibEntry` records (`pdf.tei.parse_tei`) - `inst-map-references`
+5. [ ] - `p1` - Map in-text `<ref type="bibr">` markers to per-reference `CitationContext`s - `inst-map-contexts`
+6. [ ] - `p1` - **FOR EACH** reference collect deterministic issues plus its extraction failures - `inst-collect-issues`
+7. [ ] - `p1` - **RETURN** the assembled `AuditReport` with `input_kind`, `citation_linking` and input notes - `inst-build-report`
 
 ## 3. Processes / Business Logic (CDSL)
 
@@ -157,6 +165,33 @@ dangling citation.
 
 **Output**: `CitationContext`s per reference key, with 0-based ordinals in document order; plus counts
 of unlinked and dangling markers.
+
+### Read the BibTeX records a PDF embeds
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-algo-pdf-input-embedded-records`
+
+The AI4X template's bibliography style (`ai4x.bst`, `unsrturl.bst` with one addition) writes each cited
+entry's BibTeX record into the `.bbl`, and its class embeds the records as the PDF attachment
+`cited-references.bib.hex`. They are the cited entries only, in printed order, with only the printed
+fields plus identifiers, and with `@string` macros and `crossref` resolved by BibTeX. They are
+hex-encoded because they pass through TeX, where a raw `%`, `#` or `\` would break them; whitespace in
+the payload is insignificant, since BibTeX and TeX wrap its lines.
+
+The decoded records go through `parsing.bib.parse_bib_text`, so an entry is built exactly as from the
+`.bib` it came from and shares its content hash and verdict cache. Every entry is cited.
+
+A record is what the author compiled, which a hand-edited `.bbl` can make differ from what is printed.
+Each record's title is therefore looked up in the PDF's text after its last References heading: the
+title is split at math and LaTeX commands, whose typeset form differs from the source, and every
+segment of four or more letters must appear in the printed text, compared as lower-case ASCII letters
+only so that hyphenation, line breaks, ligatures and accents fall away. A title with no such segment
+is not judged.
+
+**Input**: A PDF.
+
+**Output**: The decoded `.bib` text, or nothing; a reason when an attachment exists but cannot be used
+(the PDF is unreadable, the attachment is not hex, is truncated, or holds no entry). Then `BibEntry`
+records, each with an issue if its title was not found in the printed reference list.
 
 ## 4. States (CDSL)
 
@@ -230,8 +265,8 @@ to a reference that has no marker.
 - [ ] `p1` - **ID**: `cpt-referenceaudit-dod-pdf-input-cli-argument`
 
 The system **MUST** accept `audit <paper.pdf>` with no second argument, and **MUST** reject a `.pdf`
-combined with a `.bib`, and `--no-network` combined with a `.pdf`, with a message naming the invocation
-that works.
+combined with a `.bib`, and `--no-network` combined with a `.pdf` that embeds no BibTeX records, with a
+message naming the invocation that works.
 
 **Implements**:
 - `cpt-referenceaudit-flow-pdf-input-audit-pdf`
@@ -273,6 +308,25 @@ reported all at once and never stubbed; the one permitted substitution is placeh
 - API: `tests/pdf_fixtures.py` (preflight, compile, TEI capture), `tests/pdf_oracle.py` (matching)
 - Entities: `MissingDocumentInputsError`, `LatexCompileError`, `Comparison`
 
+### Embedded records are preferred, and checked against the printed list
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-dod-pdf-input-embedded-records`
+
+The system **MUST** audit a PDF from the BibTeX records it embeds, without contacting GROBID, unless
+`--ignore-embedded` is given; **MUST** fall back to GROBID, with the reason as an input note, when the
+attachment exists but cannot be used; **MUST** report as an issue each record whose title is not found
+in the printed reference list; and **MUST** declare citation alignment unchecked once, for the
+document, since the records carry no citing sentences.
+
+**Implements**:
+- `cpt-referenceaudit-flow-pdf-input-audit-pdf`
+- `cpt-referenceaudit-algo-pdf-input-embedded-records`
+
+**Touches**:
+- API: `pdf.embedded.read_embedded_references`, `pdf.embedded.title_printed`,
+  `pipeline.build_embedded_parse_report`, `AuditPipeline.run_pdf`, `parsing.bib.parse_bib_text`
+- Entities: `EmbeddedReferences`, `AuditReport.input_kind`, `AuditConfig.use_embedded_references`
+
 ## 6. Acceptance Criteria
 
 - [x] `reference-audit audit paper.pdf` audits a PDF with no `.bib` and no `.tex`.
@@ -289,3 +343,8 @@ reported all at once and never stubbed; the one permitted substitution is placeh
 - [x] Citing contexts recovered from a PDF match the LaTeX-derived ones at median similarity 1.00.
 - [x] Compiling a document with a missing input reports every missing file in one pass and generates
       no stubs.
+- [x] A PDF built with the AI4X template is audited from its embedded records without GROBID, and
+      `--no-network` gives its parse-only report; the records are exactly its cited entries, with the
+      same content hashes as the `.bib` they were compiled from.
+- [x] A record whose title is not in the printed reference list (a hand-edited `.bbl`) is flagged.
+- [x] A malformed attachment falls back to GROBID with the reason in the input notes.

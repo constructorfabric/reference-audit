@@ -150,7 +150,10 @@ def render_text(report: AuditReport) -> str:
     citedness_known = report.citation_linking == "available"
     lines: list[str] = []
     if verdicts:
-        header = "Reference audit — references extracted from PDF" if pdf else "Reference audit"
+        header = {
+            "pdf": "Reference audit — references extracted from PDF",
+            "pdf_embedded": "Reference audit — references embedded in PDF",
+        }.get(report.input_kind, "Reference audit")
     else:
         header = "Reference audit — parse summary (no network)"
     lines.append(header)
@@ -163,7 +166,7 @@ def render_text(report: AuditReport) -> str:
     counts.append(f"{s.get('entries_with_issues', 0)} with issues")
     if s.get("unparsed"):
         counts.append(f"{s['unparsed']} unparseable")
-    if not pdf:
+    if report.input_kind == "tex_bib":
         # A PDF has no commented-out entries, so the count is not zero — it is meaningless.
         counts.append(f"{s.get('commented_twins', 0)} commented twins")
     lines.append("  ·  ".join(counts))

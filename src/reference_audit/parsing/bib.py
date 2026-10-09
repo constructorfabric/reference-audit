@@ -198,7 +198,11 @@ def _unparsed_entries(
 
 def parse_bib(bib_path: str | Path) -> BibParse:
     """Parse a .bib file. Returns (audited_entries, commented_twins, unparsed_entries)."""
-    raw = Path(bib_path).read_text(encoding="utf-8", errors="replace")
+    return parse_bib_text(Path(bib_path).read_text(encoding="utf-8", errors="replace"))
+
+
+def parse_bib_text(raw: str) -> BibParse:
+    """Parse .bib text — a file's, or the records a PDF embeds (`pdf.embedded`)."""
     commented_only = _classify_keys(raw)
 
     parser = BibTexParser(common_strings=True)
