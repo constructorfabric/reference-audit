@@ -286,6 +286,12 @@ the 3-way verdict (`verdict`), URL-only web verification (`webcheck` — includi
 JavaScript app shell that could not be rendered is left unresolved, never read as a wrong/`none`
 URL), and version ranking. **IMPLEMENTED.**
 
+Pooling joins records through a version relation only when their author lists are compatible person
+by person (`names.authors_compatible`), across every record of both groups. A pooled record keeps its
+member records (`SourceRecord.members`), so the field check (`fieldcheck`) can compare an entry with
+the version it cites rather than a compilation of all versions. Authors are checked there as an
+`author` field finding, person by person against every source (see the identification feature).
+
 ##### Responsibility boundaries
 
 Does not call databases directly (consumes candidates from `sources`) and does not render output.

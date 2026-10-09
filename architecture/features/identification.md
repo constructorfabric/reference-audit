@@ -236,7 +236,8 @@ surname "others" would drag author overlap down and break the subset check (an i
 abbreviated list is no longer ⊆ the full author list), tripping the distinct-author-set veto and
 forcing needless adjudication — which, with no LLM, leaves an otherwise-confirmable paper (e.g. a
 ~30-author RLHF survey) unresolved. The marker is dropped, so the named authors matching a prefix of
-the record's full list confirms identity.
+the record's full list confirms identity. The author field check (below) reads the marker the same
+way: a list that says it is shortened is never reported as a partial author list.
 
 A cited OpenAlex Work id (an `openalex.org/W…` URL) is routed to OpenAlex's by-id lookup and treated
 as authoritative identity: when the resolved Work matches the entry's title+author it is pinned as
@@ -307,7 +308,9 @@ a real work passed clean even when its DOI pointed at another paper or at nothin
   (`raw["merged_dois"]`), since the pooled record's own `ids.doi` is one DOI only, often the arXiv
   DataCite DOI of the preprint.
 - `error` when a source's by-id record for the DOI is a different work (named in the finding), or
-  when doi.org answers 404.
+  when the doi.org Handle API does not know the DOI (`responseCode` 100). The resolver itself is not
+  asked: for a DOI under a prefix nobody registered (`10.8888/...`) it answers HTTP 500, not 404, which
+  read as an outage and left HALLMARK's fabricated DOIs `unverifiable`.
 - `uncertain` when that record has the same title and authors but was not merged, or when doi.org
   knows the DOI but no source has a record for it.
 - `unverifiable` when no source has a record and doi.org cannot be reached.
@@ -315,7 +318,58 @@ a real work passed clean even when its DOI pointed at another paper or at nothin
 Books (identified by Open Library editions, and legitimately cited by a chapter-level DOI) and arXiv
 DataCite DOIs are not checked. The DOI's own lookup is cached under a probe entry keyed by that DOI.
 The finding is advisory like every field finding: the verdict is unchanged. Implemented and tested
-(`tests/test_cited_doi.py`); not separately `@cpt`-traced.
+(`tests/test_cited_doi.py`, `tests/test_publisher.py`); not separately `@cpt`-traced.
+
+**Pooling keeps distinct works apart and keeps its members** (`matching/pool.py`, pipeline 0.22).
+- A version relation joins two groups of records only when every record of one has authors
+  compatible with every record of the other. The relation is a matching title and author list, or a
+  database's version link, which comes from the aggregators' own work-merging and can be wrong.
+  Authors are compared person by person (`names.authors_compatible`: at least 80% of the shorter list
+  are on the longer one).
+  - Before, the fuzzy surname overlap rated CrossFormer's authors 0.85 against CrossFormer++'s, with
+    two of seven people different.
+  - A one-author supplementary-material DOI fitted both lists and bridged them.
+  - So a conference paper was fused with its journal extension, and the matching ICLR record
+    disappeared behind the extension's metadata (a `none` for a real paper).
+- A shared identifier still merges unconditionally.
+- A pooled record keeps its member records (`SourceRecord.members`, each without `raw`, abstract or
+  members of its own).
+- Its venue is never a preprint server or repository (`features.is_repository_venue`: arXiv, DBLP's
+  `CoRR`, Infoscience, …) while a member names the journal or conference. DBLP joins the venue
+  priority after OpenAlex.
+
+**Field checks compare against the version the entry cites** (`fieldcheck._ordered_records`).
+- The fields are compared against the pooled record's members, in this order:
+  - those of the kind the entry cites: a preprint when its venue is a preprint server, or when it
+    has no venue but an arXiv id; otherwise the journal/conference version;
+  - then those from the cited year;
+  - then by source authority.
+- Before, the pooled record's compiled fields stood in for every version. An ICLR paper was compared
+  with OpenAlex's arXiv copy: venue `unverifiable` on 168 of 513 HALLMARK VALID entries, and the
+  preprint's year and title reported as wrong. A conference paper was compared with its later
+  journal version.
+- The LLM tie-break is shown the matched work as the database records it. Before, it was shown the
+  entry under review, labelled "the same work, confirmed by identifier", so it judged a different
+  title to be the same.
+- A substituted content word in a title is an `error`.
+
+**Authors are a field finding** (`field = "author"`, `fieldcheck._author_check`).
+- Each cited author is compared person by person (`names.same_person`) with every source's author
+  list. The comparison is order-free (`Tian Li` / `Li Tian`) and allows a second surname, initials,
+  hyphens and umlaut transliteration. A near-namesake fails (`Carreira` / `Barreira`).
+- A cited author found on no source is an `error`.
+- When every record is shorter than the citation and is, in order, its leading part, the authors past
+  its end are `unverifiable`, since the record may have been cut there.
+- A citation that names only some of the work's authors without `and others` is reported per
+  `AuditConfig.partial_authors` (CLI `--partial-authors`): `ignore`, `warn` (`uncertain`, the
+  default) or `error`. Many bibliographies shorten long lists; HALLMARK counts an unmarked omission as
+  a hallucination.
+- This replaces the earlier free-text issue ("author … not found in … record"). That issue
+  compared surnames fuzzily against the best record only, and skipped the check whenever the record
+  was shorter than the citation, so a wholesale-replaced author list passed.
+
+These changes are implemented and tested (`tests/test_pool.py`, `tests/test_fieldcheck.py`,
+`tests/test_names.py`); they are not separately `@cpt`-traced.
 
 **Implements**:
 - `cpt-referenceaudit-algo-identification-verdict`

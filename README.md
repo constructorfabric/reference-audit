@@ -46,7 +46,13 @@ to an LLM when needed:
 3. **Pool** the results, merging records that are the same work (shared identifier, or a
    preprint↔published version link). ISBNs are treated as a *set*: one book registers several
    ISBN-13s (print + electronic, per edition), so records that share any one of them are pooled as
-   the same work rather than read as different books.
+   the same work rather than read as different books. A version relation (a matching title, or a
+   database's version link) joins two groups only when every record of one has authors compatible
+   with every record of the other, compared person by person. So a conference paper is not fused with
+   a journal extension that has other authors (CrossFormer at ICLR, CrossFormer++ in TPAMI), not even
+   through a one-author supplementary-material DOI that fits both. A pooled record keeps its member
+   records, and its venue is never a preprint server (`arXiv`, DBLP's `CoRR`) while a member names
+   the journal or conference.
 4. **Score** each candidate with interpretable features (title/author/year/venue similarity,
    identifier agreement, and distinct-work signals). Identifier agreement is likewise set-aware for
    ISBNs — a cite that gives a book's electronic ISBN matches a source record carrying that book's
@@ -59,10 +65,21 @@ to an LLM when needed:
 6. **Verdict** — count the distinct works and report none / exactly one / multiple. An entry left
    without a verdict says why: the source that failed, the LLM call that failed, or the candidates
    that stayed undecided.
-7. **Check the fields** of an exactly-one match against the canonical record (year, venue, volume,
-   pages, …). This includes the **cited DOI**: when the matched work does not carry it, the DOI's
-   own records are looked up. A DOI that belongs to a different paper, or that doi.org does not know
-   (404), is reported as a wrong `doi` field, naming that paper.
+7. **Check the fields** of an exactly-one match (title, authors, venue, year, volume, pages, …).
+   - Each field is compared against the **version the entry cites**, read from the pooled record's
+     members: a citation of the arXiv preprint against the preprint, one of a journal or conference
+     against the published paper, and of a conference paper and its later journal version, the one
+     from the cited year.
+   - **Authors** are checked person by person against every source's author list, so name order
+     (`Tian Li` / `Li Tian`), compound surnames and one source's defect do not flag a real author, and
+     a near-namesake does not pass (`Carreira` is not `Barreira`). A cited author on no source is an
+     `error`. A citation that names only some of the work's authors without `and others` is reported
+     per `--partial-authors`: `ignore`, `warn` (an `uncertain` finding, the default) or `error`.
+   - A difference no rule settles goes to the LLM, which is shown the matched work as the database
+     records it, never the entry under review.
+   - The **cited DOI** is checked too: when the matched work does not carry it, the DOI's own records
+     are looked up. A DOI that belongs to a different paper, or that the doi.org Handle API does not
+     know, is reported as a wrong `doi` field, naming that paper.
 
 A reference identified only by a URL (a `@misc` blog post, software or project page that no scholarly
 database indexes) is verified against the page itself: the tool fetches the URL, checks the page's
@@ -239,6 +256,7 @@ NO ISSUES (18) — verified, nothing to fix:
 | `--grobid URL` | GROBID base URL for PDF input. Default `http://localhost:8070` (or `GROBID_URL`). |
 | `--backend api\|clickhouse` | Where Semantic Scholar, OpenAlex and DBLP are read from: their public APIs, or a local ClickHouse mirror. Default `SOURCE_BACKEND`, else `api`. See [Local ClickHouse backend](#local-clickhouse-backend). |
 | `--fail-on hallucinated\|multiple` | Exit non-zero if any entry gets that verdict — for gating submissions in CI. |
+| `--partial-authors ignore\|warn\|error` | How to report a cited author list that names only some of the work's authors without `and others`: not at all, as `uncertain` (default), or as an `error`. Default `PARTIAL_AUTHORS`, else `warn`. |
 
 `--no-network` applies to `.tex` + `.bib` input only. A PDF's reference list comes from an HTTP call to
 GROBID, so there is no offline parse path for it, and combining the two is rejected rather than
@@ -461,6 +479,9 @@ uv run python benchmarks/hallmark_bench.py score --split dev_public   #   ~1 h o
   pipeline. Pass `--no-llm` to measure that on purpose.
 - The run is resumable chunk by chunk. Entries left unresolved are re-audited once
   (`--retry-unresolved`), since errors are never cached. `--limit N --seed S` audits a random sample.
+- `--partial-authors ignore|warn|error` overrides `PARTIAL_AUTHORS`. HALLMARK counts an unmarked
+  partial author list as a hallucination, so `error` scores the tool the way HALLMARK labels it. The
+  setting is recorded in `run.json`, and a run directory refuses to resume under another one.
 - `--backend api|clickhouse` overrides `SOURCE_BACKEND` (see
   [Local ClickHouse backend](#local-clickhouse-backend)). The backend is recorded in `run.json`, and a
   run directory refuses to resume under a different backend, model or `pipeline_version`.
@@ -485,6 +506,10 @@ become a not-evaluated prediction with the parser's reason, never a guessed labe
 
 A false positive or miss that HALLMARK itself relabelled (its `relabeled_from` / `relabel_reason`
 fields) carries that history, since a disagreement on a relabelled entry is a candidate label error.
+Seven `dev_public` entries labelled VALID are hallucinated: four cite another paper's DOI, three
+cite authors who are not on the paper. HALLMARK had labelled all seven HALLUCINATED and relabelled
+them on 2026-05-30. The evidence for each, with DOIs and DBLP keys to check it against, is in
+[`benchmarks/hallmark_label_errors.md`](benchmarks/hallmark_label_errors.md).
 
 Every audited entry gets a prediction: `score` stops unless the audited and labelled keys are the
 same set. HALLMARK's own `--strict` is not used for this, because it counts an `evaluated=false`
@@ -502,7 +527,7 @@ which reference-audit reports as field findings rather than through the verdict.
 | `exactly_one`, clean (high / medium) | VALID 0.9 / 0.75 | same |
 | `exactly_one` + an `uncertain` field finding | VALID 0.6 | VALID 0.6 |
 | `exactly_one` + an `unverifiable` field (e.g. a venue only an arXiv record was found for) | VALID 0.6 | UNCERTAIN 0.5 |
-| `exactly_one` + an `error` field finding, or a cited author missing from the matched record | VALID 0.6 | HALLUCINATED 0.7 |
+| `exactly_one` + an `error` field finding (a wrong title, venue, year or DOI, or a cited author who is not an author of the work) | VALID 0.6 | HALLUCINATED 0.7 |
 | `multiple`, or unresolved | UNCERTAIN 0.5 | same |
 | not audited (round-trip failure, or the audit raised) | UNCERTAIN 0.5, `evaluated=false` | same |
 
@@ -654,6 +679,7 @@ architecture/  # governed specification & design (SPEC, PRD, DESIGN, DECOMPOSITI
 benchmarks/
   hallmark_bench.py # HALLMARK harness: audit a blind split, map verdicts to labels, run HALLMARK's
                     #   evaluator (needs the pinned checkout in benchmarks/.hallmark — see above)
+  hallmark_label_errors.md # dev_public entries labelled VALID that are hallucinated, with evidence
 tests/
   documents/   # test papers: <paper-title-slug>/<version>.{tex,bib} (initial, polished, …),
                #   plus the auxiliary LaTeX sources needed to compile them (see each SOURCES.md)
