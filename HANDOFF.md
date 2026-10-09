@@ -64,6 +64,15 @@ Every one of them was relabelled HALLUCINATED → VALID by HALLMARK's `systemati
   - a partial list must be shorter than the record's;
   - Handle API code 301 means unregistered.
 
+### Submissions (2026-10-09, later)
+
+`benchmarks/submissions/hallmark/` holds one submission per split HALLMARK ships a blind file for:
+`dev_public`, `test_public` and `stress_test` (`test_hidden` is withheld). They use `strict` with
+`--partial-authors error`, are written by `hallmark_bench.py submit`, and pass HALLMARK's
+`validate-predictions` and `evaluate`. Run dirs: `benchmarks/runs/hallmark/<split>-partial-error/`.
+- `test_public` `strict` conservative: DR 0.988, FPR 0.020, F1 0.988, MCC 0.969, coverage 0.986.
+- `stress_test`: DR 0.967 over 121 entries (the canary is not scored).
+
 ## Remaining work list (not fixed; raise with the user)
 
 1. **Renamed preprints.** A 2026 preprint whose arXiv title changed after citation gets a title error
@@ -83,7 +92,14 @@ Every one of them was relabelled HALLUCINATED → VALID by HALLMARK's `systemati
    Fixing them changes `same_person`, which pooling uses, so it needs a version bump.
 7. **LLM adjudication is nondeterministic (temperature 1)** on borderline cases. Flamingo, with 4
    fabricated authors, flipped between `exactly_one` and `none` between runs.
-8. **Minor:**
+8. **From `test_public` / `stress_test`** (README, "Result: `test_public` and `stress_test`"):
+   - `c2d3e2af7c54` (NSGA-II runtime analysis), a real paper with no match: not diagnosed.
+   - 4 relabelled VALID false positives (Mip-NeRF, MAE, MiniGPT-4, LLaMA 2) are not yet checked as
+     label errors.
+   - A spelling variant (Minimisation / Minimization) passes as formatting, like hyphens (item 3).
+   - Clear venue (AISTATS vs ICML) and one-off arXiv year errors end `uncertain`, not `error`.
+   - 2 `stress_test` partial author lists are not flagged (`bcc2d959b101`, `acbaa1cad903`).
+9. **Minor:**
    - the arXiv base URL is `http://` (a 301 on every query);
    - a resolved verdict is cached even when a source errored, with a thinner artifact.
 

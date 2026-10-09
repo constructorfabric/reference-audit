@@ -342,14 +342,14 @@ def test_resumed_audit_keeps_its_start_and_adds_up_wall_time(tmp_path, monkeypat
 # --- submit -------------------------------------------------------------------------------------
 
 
-def _submit_run(tmp_path, audits, *, limit=0):
+def _submit_run(tmp_path, audits, *, limit=0, records=None):
     """A HALLMARK checkout holding only the blind split, and a finished run directory."""
     import json
 
     data = tmp_path / "hallmark" / "data" / hb.HALLMARK_VERSION
     data.mkdir(parents=True)
     (data / "dev_public_blind.jsonl").write_text(
-        "".join(r.model_dump_json() + "\n" for r in _records()), encoding="utf-8"
+        "".join(r.model_dump_json() + "\n" for r in records or _records()), encoding="utf-8"
     )
     out = tmp_path / "run"
     out.mkdir()
@@ -433,3 +433,21 @@ def test_submission_passes_hallmarks_own_validator(tmp_path):
     hb.submit(split="dev_public", mapping="identity", hallmark_dir=hallmark_dir,
               hallmark_bin=_HALLMARK_BIN, out=out, dest=tmp_path / "sub")
     assert (tmp_path / "sub" / "reference-audit-identity_dev_public_predictions.jsonl").exists()
+
+
+def test_submit_leaves_hallmarks_canary_out_and_names_it(tmp_path):
+    import json
+
+    canary = "__canary__dev_public"
+    records = [_rec(canary, {"title": "HALLMARK BENCHMARK DATA", "year": "2025"}), *_records()]
+    audits = [hb.CompactAudit(key=canary, status="audited", verdict="none", confidence="high"),
+              *_TWO_AUDITS]
+    hallmark_dir, out = _submit_run(tmp_path, audits, records=records)
+    dest = tmp_path / "sub"
+    hb.submit(split="dev_public", mapping="strict", hallmark_dir=hallmark_dir,
+              hallmark_bin=_fake_hallmark(tmp_path, 0), out=out, dest=dest)
+
+    rows = (dest / "reference-audit-strict_dev_public_predictions.jsonl").read_text().splitlines()
+    assert [json.loads(r)["bibtex_key"] for r in rows] == ["aaaaaaaaaaaa", "bbbbbbbbbbbb"]
+    manifest = json.loads((dest / "reference-audit-strict_dev_public.json").read_text())
+    assert (manifest["entries"], manifest["excluded_canaries"]) == (2, [canary])

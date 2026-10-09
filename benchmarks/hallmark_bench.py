@@ -67,6 +67,10 @@ DEFAULT_SUBMISSIONS_DIR = REPO_ROOT / "benchmarks" / "submissions" / "hallmark"
 HALLMARK_VERSION = "v1.2"
 TOOL_NAME = "reference-audit"
 
+# HALLMARK's watermark record (`hallmark.dataset.schema.is_canary_entry`): not benchmark data, so
+# HALLMARK's loader skips it and its evaluator never scores it.
+CANARY_PREFIX = "__canary__"
+
 # The pipeline's own marker for an entry whose audit raised (`AuditPipeline._audit_entry`).
 AUDIT_FAILED_PREFIX = "audit failed"
 
@@ -590,6 +594,8 @@ def build_summary(
     predictions: dict[Mapping, dict[str, Prediction]],
     results: dict[Mapping, dict],
 ) -> str:
+    canaries = [e["bibtex_key"] for e in labeled if e["bibtex_key"].startswith(CANARY_PREFIX)]
+    labeled = [e for e in labeled if not e["bibtex_key"].startswith(CANARY_PREFIX)]
     lines = [
         f"# reference-audit on HALLMARK `{split}`",
         "",
@@ -605,6 +611,9 @@ def build_summary(
         "Conservative mode leaves UNCERTAIN out of the classification metrics; aggressive mode "
         "counts it as HALLUCINATED. `evaluated=false` predictions are excluded in both.",
         "",
+        *([f"HALLMARK's canary record(s) {', '.join(f'`{k}`' for k in canaries)} are audited but "
+           "not benchmark data: HALLMARK does not score them, and they are left out below.", ""]
+          if canaries else []),
         "## Metrics",
         "",
         "| mapping | mode | " + " | ".join(name for _, name in _METRICS) + " |",
@@ -806,8 +815,9 @@ def submit(
     """Write a full-split run as a HALLMARK submission: <tool>_<split>_predictions.jsonl + manifest.
 
     Reads no labels. Every key of the blind split must have exactly one audit record, in split
-    order; a not-audited entry stays UNCERTAIN with ``evaluated=false``. The file is checked with
-    HALLMARK's own ``validate-predictions`` before it replaces an earlier submission.
+    order; a not-audited entry stays UNCERTAIN with ``evaluated=false``. HALLMARK's canary record is
+    not benchmark data, so it is left out of the file and named in the manifest. The file is checked
+    with HALLMARK's own ``validate-predictions`` before it replaces an earlier submission.
     """
     if mapping not in MAPPINGS:
         raise typer.BadParameter(f"--mapping must be one of {MAPPINGS}")
@@ -836,7 +846,8 @@ def submit(
     tool = f"{TOOL_NAME}-{mapping}"
     dest.mkdir(parents=True, exist_ok=True)
     pred_path = dest / f"{tool}_{split}_predictions.jsonl"
-    preds = [predict(a, mapping) for a in audits]
+    canaries = [a.key for a in audits if a.key.startswith(CANARY_PREFIX)]
+    preds = [predict(a, mapping) for a in audits if not a.key.startswith(CANARY_PREFIX)]
     staged = pred_path.with_suffix(pred_path.suffix + ".tmp")
     staged.write_text("".join(p.model_dump_json() + "\n" for p in preds), encoding="utf-8")
     proc = subprocess.run(
@@ -861,6 +872,7 @@ def submit(
         "blind_split_sha256": _sha256(blind_path),
         "entries": len(preds),
         "labels": dict(sorted(labels.items())),
+        "excluded_canaries": canaries,
         **{k: meta.get(k) for k in _MANIFEST_RUN_FIELDS},
         "run_dir": _repo_relative(out),
         "generated_at": datetime.now(UTC).isoformat(),

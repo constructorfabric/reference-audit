@@ -531,6 +531,9 @@ predictions and the blind split.
 - It refuses a `--limit` sample, and a run whose records are not the blind split's keys one-to-one
   in split order.
 - A not-audited entry stays `UNCERTAIN` with `evaluated=false`.
+- HALLMARK's canary record (a `__canary__…` key, a watermark that HALLMARK never scores) is audited
+  but left out of the file, and the manifest names it under `excluded_canaries`. `summary.md` leaves it
+  out the same way.
 - HALLMARK's own `hallmark validate-predictions` must accept the file before it replaces an earlier
   submission.
 
@@ -605,6 +608,47 @@ At pipeline 0.21, `strict` had DR 0.951, FPR 0.094, F1 0.945, MCC 0.860 and cove
 - the doi.org Handle API.
 
 A cold run takes about 45 minutes; with warm source and LLM caches, minutes.
+
+#### Result: `test_public` and `stress_test`, pipeline 0.23
+
+These were run on 2026-10-09 with the same settings: ClickHouse, `gpt-6-luna`, `--partial-authors error`,
+HALLMARK `f774fa4`, and reference-audit `f100559` (docs-only after `7e9933c`). They are what the
+submissions in `benchmarks/submissions/hallmark/` contain.
+- **`test_public`**: all 831 entries ran in 21 minutes on a mostly cold cache.
+  - 2 entries failed the `.bib` round-trip and are not evaluated.
+  - 2 HALLUCINATED entries stay unresolved at the LLM candidate cap.
+- **`stress_test`**: all 122 entries ran in 7 minutes. One of them is HALLMARK's canary, which is not
+  scored, so 121 entries are scored, all of them HALLUCINATED.
+
+| split | mapping | mode | DR | FPR | F1 | MCC | Tier-3 F1 | coverage |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `test_public` | `identity` | conservative | 0.424 | 0.003 | 0.595 | 0.461 | 0.652 | 0.990 |
+| `test_public` | `identity` | aggressive | 0.429 | 0.010 | 0.598 | 0.456 | 0.649 | 0.990 |
+| `test_public` | `strict` | conservative | 0.988 | 0.020 | 0.988 | 0.969 | 0.964 | 0.986 |
+| `test_public` | `strict` | aggressive | 0.988 | 0.032 | 0.985 | 0.959 | 0.952 | 0.986 |
+| `stress_test` | `identity` | either | 0.364 | — | 0.533 | — | 0.400 | 1.000 |
+| `stress_test` | `strict` | either | 0.967 | — | 0.983 | — | 0.971 | 1.000 |
+
+`stress_test` has no VALID entries, so FPR and MCC are undefined; HALLMARK says to read it by DR.
+
+- **`test_public`, `strict`**: 6 false positives among 312 VALID entries.
+  - HALLMARK relabelled four of them HALLUCINATED → VALID. Three cite a DOI that belongs to another
+    paper (Mip-NeRF, MAE) or a venue the paper did not appear at (MiniGPT-4, cited at CVPR). The
+    fourth is LLaMA 2, where 20 cited names are not on the matched record. Some are real authors
+    missing from the source record (Wenhan Xiong, Dmitriy Liskovich); others look fabricated
+    ("Yuchen Zarov", from Yuchen Zhang and Iliyan Zarov). None of the four has yet been checked the
+    way `benchmarks/hallmark_label_errors.md` checks the `dev_public` ones.
+  - One is a name variant the tool does not match: Ebrahimianghazani / Ebrahimian.
+  - One is a real paper the tool found no match for: the NSGA-II runtime analysis. This is also
+    `identity`'s only false positive.
+- **`test_public`, `strict` misses (6)**:
+  - four near-miss titles that differ only in a hyphen or in British/American spelling
+    ("Minimisation");
+  - one wrong venue (AISTATS for ICML) and one arXiv year, which the field check left `uncertain`
+    instead of `error`.
+- **`stress_test`, `strict` misses (4)**:
+  - two partial author lists the author check did not flag;
+  - two arXiv version mismatches whose year is one off, which the field check leaves `uncertain`.
 
 ## Constructor Fabric
 
