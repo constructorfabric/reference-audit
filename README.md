@@ -286,7 +286,7 @@ every three seconds, so lookups by arXiv id are the slowest step of a large batc
 limits, a batch of a few hundred entries turned about a fifth of them into 429s.
 
 The local sources have no rate limits and no third-party outages. A large batch is then paced by the
-API sources that remain: about 35 minutes per thousand references, mostly Crossref's three requests in
+API sources that remain: about 45 minutes per thousand references, mostly Crossref's three requests in
 flight. On the Semantic Scholar API (1 request/s), the same batch takes about an hour.
 The two backends are interchangeable to the rest of the pipeline. The local adapters keep the API
 adapters' source names, and shape their rows like the API's JSON before the same normalizers. Their
@@ -472,7 +472,7 @@ git -C benchmarks/.hallmark checkout f774fa40675daa83eca6201637a94c4536b7bb3e
 uv venv benchmarks/.hallmark/.venv --python 3.12
 uv pip install --python benchmarks/.hallmark/.venv/bin/python -e benchmarks/.hallmark
 
-uv run python benchmarks/hallmark_bench.py audit --split dev_public   # ~35 min on --backend clickhouse,
+uv run python benchmarks/hallmark_bench.py audit --split dev_public   # ~45 min on --backend clickhouse,
 uv run python benchmarks/hallmark_bench.py score --split dev_public   #   ~1 h on the APIs
 ```
 
@@ -549,30 +549,45 @@ A cited DOI that belongs to a different paper, or that does not resolve, is an `
 on the `doi` field (see [How it works](#how-it-works)). `strict` therefore counts it as HALLUCINATED;
 `identity` does not, since a real document still matches.
 
-#### Result: `dev_public`, pipeline 0.21
+#### Result: `dev_public`, pipeline 0.23
 
-This run was on 2026-10-09 with the ClickHouse backend and `gpt-6-luna`, at HALLMARK `f774fa4`. It
-started at reference-audit `b004463`, and later retries ran at `b8420eb`; nothing in between affects a
-verdict. All 1,119 entries were run:
+This run was on 2026-10-09 with the ClickHouse backend and `gpt-6-luna`, at HALLMARK `f774fa4` and
+reference-audit `7e9933c`. All 1,119 entries were run:
 - 1,112 were audited; 7 failed the `.bib` round-trip and are not evaluated.
-- 8 HALLUCINATED entries stayed unresolved at the per-entry LLM candidate cap.
-- 33 more were first refused by arXiv (429, while this IP was throttled) and were resolved on a later
-  retry.
+- 8 HALLUCINATED entries stay unresolved at the per-entry LLM candidate cap.
 
-| mapping | mode | DR | FPR | F1 | MCC | Tier-3 F1 | coverage |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `identity` | conservative | 0.421 | 0.002 | 0.592 | 0.499 | 0.664 | 0.984 |
-| `identity` | aggressive | 0.432 | 0.002 | 0.603 | 0.505 | 0.667 | 0.984 |
-| `strict` | conservative | 0.951 | 0.094 | 0.945 | 0.860 | 0.887 | 0.777 |
-| `strict` | aggressive | 0.957 | 0.392 | 0.836 | 0.613 | 0.616 | 0.777 |
+The two `--partial-authors` settings give the same verdicts and differ only in the `author` finding
+for an unmarked partial list. `error` scores the tool the way HALLMARK labels such a list.
 
-`identity` almost never flags a real paper: 1 of 513 VALID entries. It finds only hallucinations with
-no real counterpart, since its verdict is about existence, not metadata.
+| mapping | partial lists | mode | DR | FPR | F1 | MCC | Tier-3 F1 | coverage |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `identity` | either | conservative | 0.415 | 0.002 | 0.585 | 0.494 | 0.659 | 0.984 |
+| `identity` | either | aggressive | 0.425 | 0.002 | 0.596 | 0.500 | 0.662 | 0.984 |
+| `strict` | `warn` | conservative | 0.948 | 0.018 | 0.966 | 0.928 | 0.969 | 0.982 |
+| `strict` | `warn` | aggressive | 0.949 | 0.022 | 0.965 | 0.925 | 0.964 | 0.982 |
+| `strict` | `error` | conservative | 0.995 | 0.018 | 0.990 | 0.978 | 0.969 | 0.982 |
+| `strict` | `error` | aggressive | 0.995 | 0.022 | 0.988 | 0.975 | 0.964 | 0.982 |
 
-`strict` gets most of its UNCERTAIN predictions (and so its low coverage and its aggressive FPR) from a
-single gap. A pooled record took the venue `arXiv (Cornell University)` from the OpenAlex preprint copy
-of a work, even when DBLP in the same pool had the conference. That made the venue unverifiable on 168
-of 513 VALID entries.
+- **`identity`** almost never flags a real paper (1 of 513 VALID entries). It finds only
+  hallucinations with no real counterpart, since its verdict is about existence, not metadata.
+- **`strict`** flags 9 VALID entries. Eight are hallucinated despite their label (see above). The
+  ninth is a 2026 preprint whose arXiv title changed after it was cited, which no source still
+  records.
+- **`strict` with `error`** misses 3 hallucinations:
+  - an author-order swap (the author check is order-free);
+  - two near-miss titles that differ only in a hyphen ("Schema Variable" / "Schema-Variable"),
+    which the tool treats as formatting.
+
+At pipeline 0.21, `strict` had DR 0.951, FPR 0.094, F1 0.945, MCC 0.860 and coverage 0.777
+(conservative), and FPR 0.392 aggressive. The changes since are listed under `pipeline_version` in
+`config.py`:
+- version-aware field checks;
+- person-level authors;
+- no fusing of a paper with its journal extension;
+- the field-check LLM's context;
+- the doi.org Handle API.
+
+A cold run takes about 45 minutes; with warm source and LLM caches, minutes.
 
 ## Constructor Fabric
 
