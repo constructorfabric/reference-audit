@@ -135,3 +135,101 @@ def test_representative_year_from_registrant_not_richest_record():
     [rep] = pool_candidates([s2, crossref])
     assert rep.citation_count == 500  # identity still the richest record
     assert rep.year == 2019           # but the year is the registrant's
+
+
+# --- version edges are person-level; a pooled record keeps its members ----------------------------
+
+_CF_TITLE = "CrossFormer: A Versatile Vision Transformer Hinging on Cross-scale Attention"
+_CFPP_TITLE = "CrossFormer++: A Versatile Vision Transformer Hinging on Cross-Scale Attention"
+_CF = ["Wenxiao Wang", "Lu Yao", "Long Chen", "Binbin Lin", "Deng Cai", "Xiaofei He", "Wei Liu"]
+_CFPP = ["Wenxiao Wang", "Wei Chen", "Qibo Qiu", "Long Chen", "Boxi Wu", "Binbin Lin", "Xiaofei He",
+         "Wei Liu"]
+
+
+def test_a_conference_paper_is_not_fused_with_its_journal_extension():
+    # HALLMARK f8d361220ec8: CrossFormer (ICLR, no DOI) and CrossFormer++ (TPAMI), each with an arXiv
+    # copy. Short surnames made the fuzzy author overlap 0.85, so every pair had a version edge and
+    # the ICLR record disappeared behind CrossFormer++'s metadata. Union-find order must not matter.
+    import itertools
+
+    iclr = _rec("dblp", title=_CF_TITLE + ".", authors=_CF, venue="ICLR", year=2022)
+    cf_arxiv = _rec("openalex", doi="10.48550/arxiv.2108.00154", arxiv="2108.00154", title=_CF_TITLE,
+                    authors=_CF, venue="arXiv (Cornell University)", year=2021, cites=9)
+    tpami = _rec("openalex", doi="10.1109/tpami.2023.3341806", title=_CFPP_TITLE, authors=_CFPP,
+                 venue="IEEE TPAMI", year=2023, cites=50)
+    pp_arxiv = _rec("dblp", doi="10.48550/arxiv.2303.06908", arxiv="2303.06908", title=_CFPP_TITLE,
+                    authors=_CFPP, venue="CoRR", year=2023)
+    for order in itertools.permutations([iclr, cf_arxiv, tpami, pp_arxiv]):
+        pooled = pool_candidates(list(order))
+        with_iclr = next(p for p in pooled if any(m.venue == "ICLR" for m in p.members or [p]))
+        assert all(m.authors == _CF for m in with_iclr.members or [with_iclr]), order
+
+
+def test_a_pooled_venue_is_never_a_preprint_server_while_a_member_names_the_venue():
+    # RODE (HALLMARK fbc5d48e8551): OpenAlex holds only the arXiv copy, DBLP the ICLR paper.
+    authors = ["Tonghan Wang", "Tarun Gupta", "Anuj Mahajan"]
+    oa = _rec("openalex", doi="10.48550/arxiv.2010.01523", arxiv="2010.01523", authors=authors,
+              venue="arXiv (Cornell University)", year=2020, cites=40, title="RODE")
+    dblp = _rec("dblp", venue="ICLR", authors=authors, year=2021, title="RODE")
+    (pooled,) = pool_candidates([oa, dblp])
+    assert pooled.venue == "ICLR"
+    assert sorted(m.source for m in pooled.members) == ["dblp", "openalex"]
+    assert all(not m.members and not m.raw for m in pooled.members)  # leaves, without raw
+
+
+def test_members_stay_flat_when_a_pooled_record_is_pooled_again():
+    # Enrichment re-pools the matched artifact with by-id records.
+    a = _rec("crossref", doi="10.1/x", cites=5)
+    b = _rec("openalex", doi="10.1/x", cites=9)
+    (first,) = pool_candidates([a, b])
+    (again,) = pool_candidates([first, _rec("semantic_scholar", doi="10.1/x")])
+    assert sorted(m.source for m in again.members) == ["crossref", "openalex", "semantic_scholar"]
+    assert all(not m.members for m in again.members)
+
+
+def test_a_title_alone_never_makes_a_version():
+    published = _rec("crossref", doi="10.1/x", title="Deep Learning", authors=["Yann LeCun"])
+    preprint = SourceRecord(  # built directly: `_rec` would supply a default author
+        source="arxiv", title="Deep Learning", authors=[],
+        ids=Identifiers(arxiv_id="1234.5678", doi="10.48550/arxiv.1234.5678"),
+    )
+    assert preprint.authors == []
+    assert len(pool_candidates([published, preprint])) == 2
+
+
+def test_a_version_link_does_not_fuse_a_paper_with_its_journal_extension():
+    # In the real CrossFormer pool an aggregator's version link tied the CrossFormer arXiv copy to
+    # the CrossFormer++ TPAMI record; that link bypassed the guard while version edges did not.
+    import itertools
+
+    iclr = _rec("dblp", title=_CF_TITLE + ".", authors=_CF, venue="ICLR", year=2022)
+    cf_arxiv = _rec("openalex", doi="10.48550/arxiv.2108.00154", arxiv="2108.00154", title=_CF_TITLE,
+                    authors=_CF, venue="arXiv (Cornell University)", year=2021)
+    tpami = _rec("openalex", doi="10.1109/tpami.2023.3341806", title=_CFPP_TITLE, authors=_CFPP,
+                 venue="IEEE TPAMI", year=2023, cites=50,
+                 links=["https://arxiv.org/abs/2108.00154"])  # the aggregator's wrong link
+    for order in itertools.permutations([iclr, cf_arxiv, tpami]):
+        pooled = pool_candidates(list(order))
+        assert not any(
+            {"ICLR", "IEEE TPAMI"} <= {m.venue for m in p.members or [p]} for p in pooled
+        ), order
+
+
+def test_a_record_compatible_with_both_works_does_not_bridge_them():
+    # The real CrossFormer pool: a one-author Crossref supplementary-material DOI ('.../mm1') fits
+    # both author lists, so it version-linked CrossFormer's cluster to CrossFormer++'s preprint,
+    # which shares an arXiv id with the TPAMI record.
+    import itertools
+
+    supplement = _rec("crossref", doi="10.1109/tpami.2023.3341806/mm1", title=_CFPP_TITLE,
+                      authors=["Wenxiao Wang"])
+    iclr = _rec("dblp", title=_CF_TITLE + ".", authors=_CF, venue="ICLR", year=2022)
+    pp_arxiv = _rec("openalex", doi="10.48550/arxiv.2303.06908", arxiv="2303.06908",
+                    title=_CFPP_TITLE, authors=_CFPP, venue="arXiv (Cornell University)")
+    tpami = _rec("semantic_scholar", doi="10.1109/tpami.2023.3341806", arxiv="2303.06908",
+                 title=_CFPP_TITLE, authors=_CFPP, venue="IEEE TPAMI", cites=50)
+    for order in itertools.permutations([supplement, iclr, pp_arxiv, tpami]):
+        pooled = pool_candidates(list(order))
+        assert not any(
+            {"ICLR", "IEEE TPAMI"} <= {m.venue for m in p.members or [p]} for p in pooled
+        ), order

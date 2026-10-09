@@ -1,7 +1,7 @@
 """HTML character references from web-scraped metadata are decoded before parsing and matching."""
 
 from reference_audit.matching.features import title_ratio
-from reference_audit.matching.names import author_overlap, mismatched_authors
+from reference_audit.matching.names import author_overlap, authors_missing
 from reference_audit.parsing.bib import parse_bib
 from reference_audit.parsing.entities import decode_html_entities
 
@@ -28,7 +28,7 @@ def test_bib_fields_are_decoded(tmp_path):
 def test_an_encoded_author_matches_the_decoded_record():
     cited, record = ["Francesco d&apos;Amore", "Daniel Mitropolsky"], ["Francesco d'Amore",
                                                                          "Daniel Mitropolsky"]
-    assert mismatched_authors(cited, record) == []
+    assert authors_missing(cited, [record]) == []
     assert author_overlap(cited, record) == 1.0
 
 

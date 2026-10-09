@@ -238,7 +238,8 @@ def test_bibtex_others_marker_dropped_from_author_matching():
         author_set,
         author_set_jaccard,
         author_subset,
-        mismatched_authors,
+        authors_missing,
+        omitted_authors,
     )
 
     bib = ["Casper, Stephen", "Davies, Xander", "others"]
@@ -246,8 +247,9 @@ def test_bibtex_others_marker_dropped_from_author_matching():
     assert author_set(bib) == {"casper", "davies"}  # 'others' excluded
     assert author_subset(bib, full) is True  # named authors ⊆ full list (truncation is fine)
     assert author_overlap(bib, full) > 0.95  # not dragged down by 'others'
-    # 'others' is not reported as a wrong/missing name
-    assert mismatched_authors(bib, full) == []
+    # 'others' is not reported as a wrong/missing name, nor the list as an unmarked omission
+    assert authors_missing(bib, [full]) == []
+    assert omitted_authors(bib, full) == []
     # the truncated list legitimately has low set-Jaccard against the full list…
     assert author_set_jaccard(bib, full) < 0.6
 

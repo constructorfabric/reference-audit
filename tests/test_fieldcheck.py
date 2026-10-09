@@ -601,3 +601,176 @@ async def test_pipeline_field_check_flags_wrong_volume_and_empty_number(tmp_path
     # actionable findings are surfaced as issues; benign ones are not
     assert any("volume" in i for i in audit.issues)
     assert any("number" in i for i in audit.issues)
+
+
+# ── the version the entry cites (members of a pooled record) ────────────────
+
+
+def _pooled(*members: SourceRecord) -> MatchedArtifact:
+    from reference_audit.matching.pool import pool_candidates
+
+    (rep,) = pool_candidates(list(members))
+    return _artifact(rep)
+
+
+_AUTH = ["Tonghan Wang", "Tarun Gupta", "Anuj Mahajan"]
+
+
+def _arxiv_copy(**kw) -> SourceRecord:
+    base = dict(source="openalex", title="RODE", authors=_AUTH, year=2020, citation_count=40,
+                venue="arXiv (Cornell University)",
+                ids=Identifiers(doi="10.48550/arxiv.2010.01523", arxiv_id="2010.01523"))
+    return _rec(**(base | kw))
+
+
+def test_a_conference_citation_is_checked_against_the_conference_record():
+    # HALLMARK fbc5d48e8551: the pooled record carried OpenAlex's arXiv venue and year, so ICLR was
+    # "unverifiable" and 2021 "differed" from 2020, though DBLP had ICLR 2021.
+    e = _entry(title="RODE", authors=_AUTH, venue="ICLR", year=2021, ids=Identifiers())
+    art = _pooled(_arxiv_copy(), _rec("dblp", title="RODE.", authors=_AUTH, venue="ICLR", year=2021))
+    checks = _by_field(deterministic_field_checks(e, art))
+    assert (checks["journal/venue"].status, checks["journal/venue"].sources) == ("ok", ["dblp"])
+    assert checks["year"].status == "ok"
+
+
+def test_a_preprint_citation_is_checked_against_the_preprint():
+    e = _entry(title="RODE", authors=_AUTH, venue="arXiv preprint arXiv:2010.01523", year=2020,
+               ids=Identifiers())
+    art = _pooled(_arxiv_copy(), _rec("dblp", title="RODE.", authors=_AUTH, venue="ICLR", year=2021))
+    checks = _by_field(deterministic_field_checks(e, art))
+    assert checks["year"].status == "ok"                       # the preprint's year, not ICLR's
+    assert checks["journal/venue"].status == "needs_llm"       # compared, not "unverifiable"
+
+
+def test_a_later_journal_version_is_not_the_canonical_venue():
+    # HALLMARK b683f8f34292: an ICML 2022 paper pooled with its 2025 journal version.
+    a = ["Dimitris Fotakis", "Alkis Kalavasis", "Eleni Psaroudaki"]
+    e = _entry(title="Label Ranking through Nonparametric Regression", authors=a, venue="ICML",
+               year=2022, ids=Identifiers())
+    art = _pooled(
+        _rec("crossref", title="Label Ranking through Nonparametric Regression", authors=a,
+             venue="Theory of Computing Systems", year=2025, ids=Identifiers(doi="10.1007/x"),
+             citation_count=3),
+        _rec("dblp", title="Label Ranking through Nonparametric Regression.", authors=a,
+             venue="ICML", year=2022),
+    )
+    checks = _by_field(deterministic_field_checks(e, art))
+    assert checks["journal/venue"].status == "ok"
+    assert checks["year"].status == "ok"
+
+
+def test_the_title_comes_from_the_published_version():
+    # HALLMARK d541bf3fa5b9: the arXiv title was "...for Zero-shot Image Classification".
+    a = ["Junnan Li", "Silvio Savarese", "Steven C. H. Hoi"]
+    t = "Masked Unsupervised Self-training for Label-free Image Classification"
+    e = _entry(title=t, authors=a, venue="ICLR", year=2023, ids=Identifiers())
+    arxiv = Identifiers(doi="10.48550/arxiv.2206.02967", arxiv_id="2206.02967")
+    art = _pooled(
+        _arxiv_copy(title="Masked Unsupervised Self-training for Zero-shot Image Classification",
+                    authors=a, year=2022, ids=arxiv),
+        _rec("dblp", title=t + ".", authors=a, venue="ICLR", year=2023,
+             ids=Identifiers(arxiv_id="2206.02967")),
+    )
+    assert _by_field(deterministic_field_checks(e, art))["title"].status == "ok"
+
+
+def test_a_venue_only_preprint_copies_have_stays_unverifiable():
+    e = _entry(title="RODE", authors=_AUTH, venue="NeurIPS", year=2020, ids=Identifiers())
+    art = _pooled(_arxiv_copy(), _rec("dblp", title="RODE.", authors=_AUTH, venue="CoRR", year=2020,
+                                      ids=Identifiers(arxiv_id="2010.01523")))
+    v = _by_field(deterministic_field_checks(e, art))["journal/venue"]
+    assert v.status == "unverifiable"
+    assert "every source has only a preprint/repository copy" in v.detail
+
+
+# ── authors ──────────────────────────────────────────────────────────────────
+
+
+def test_a_cited_author_on_no_source_record_is_an_error():
+    # Flamingo (HALLMARK a24129d1c5e5): 'João Carreira' passed as a near-namesake of 'Ricardo
+    # Barreira' under the surname-only fuzzy match.
+    e = _entry(authors=["Jean-Baptiste Alayrac", "Ricardo Barreira", "João Carreira"])
+    art = _artifact(_rec("dblp", authors=["Jean-Baptiste Alayrac", "Jeff Donahue", "Pauline Luc",
+                                          "Ricardo Barreira"]))
+    a = _by_field(deterministic_field_checks(e, art))["author"]
+    assert a.status == "error"
+    assert a.detail.endswith("in any source: João Carreira")
+
+
+def test_every_source_record_is_consulted_for_authors():
+    # MSDN (HALLMARK a4a90253cc4d): S2 lists 'Wenhan Wang' for Wenhan Yang; DBLP has him right.
+    e = _entry(authors=["Shiming Chen", "Wenhan Yang"], ids=Identifiers())
+    art = _pooled(
+        _rec("semantic_scholar", title="A Title", authors=["Shiming Chen", "Wenhan Wang"],
+             ids=Identifiers(doi="10.1109/x")),
+        _rec("dblp", title="A Title", authors=["Shiming Chen", "Wenhan Yang"],
+             ids=Identifiers(doi="10.1109/x")),
+    )
+    assert _by_field(deterministic_field_checks(e, art))["author"].status == "ok"
+
+
+def test_name_order_and_compound_surnames_are_the_same_people():
+    e = _entry(authors=["Tian Li", "Lierni Sestorain", "Carlos Riquelme Ruiz", "Guo-Sen Xie"])
+    art = _artifact(_rec("openalex", authors=[
+        "Li Tian", "Sestorain Saralegui, Lierni", "Carlos Riquelme", "Guosen Xie"]))
+    assert _by_field(deterministic_field_checks(e, art))["author"].status == "ok"
+
+
+def test_a_replaced_author_list_is_checked_even_when_the_record_is_shorter():
+    # HALLMARK b9e0c641d08e: 8 cited authors, none of them on the 5-author paper. The old length
+    # guard read the shorter record as truncated and skipped the check.
+    cited = ["Jianan Zhao", "Meng Qu", "Chaozhuo Li", "Hao Yan", "Qian Liu", "Rui Li", "Xing Xie",
+             "Jian Tang"]
+    e = _entry(authors=cited)
+    art = _artifact(_rec("semantic_scholar", authors=[
+        "Yiting Cheng", "Fangyun Wei", "Jianmin Bao", "Dong Chen", "Wenqian Zhang"]))
+    assert _by_field(deterministic_field_checks(e, art))["author"].status == "error"
+
+
+def test_authors_past_the_end_of_a_possibly_truncated_record_are_unverifiable():
+    cited = ["Ada Lovelace", "Alan Turing", "Grace Hopper", "Edsger Dijkstra", "Donald Knuth",
+             "Barbara Liskov", "John McCarthy", "Frances Allen", "Tony Hoare", "Leslie Lamport"]
+    e = _entry(authors=cited)
+    art = _artifact(_rec("openalex", authors=cited[:4]))  # the citation's leading part
+    a = _by_field(deterministic_field_checks(e, art))["author"]
+    assert a.status == "unverifiable"
+    assert a.detail.startswith("every source lists only the first 4 of the 10 cited authors")
+
+
+@pytest.mark.parametrize(("mode", "status"), [("ignore", "ok"), ("warn", "uncertain"),
+                                              ("error", "error")])
+def test_a_partial_author_list_follows_the_option(mode, status):
+    full = ["Yining Wang", "Akshay Krishnamurthy", "Sivaraman Balakrishnan", "Aarti Singh"]
+    art = _artifact(_rec("dblp", authors=full))
+    partial = _by_field(deterministic_field_checks(
+        _entry(authors=full[:2]), art, partial_authors=mode))["author"]
+    assert partial.status == status
+    if status != "ok":
+        assert "omits 2 of the work's 4 authors" in partial.detail
+    marked = _by_field(deterministic_field_checks(
+        _entry(authors=[*full[:2], "others"]), art, partial_authors=mode))["author"]
+    assert marked.status == "ok"  # 'and others' says the list is shortened
+
+
+# ── the LLM's context is the matched work ────────────────────────────────────
+
+
+async def test_the_field_check_llm_sees_the_matched_work_not_the_entry():
+    # HALLMARK ba8fe5817a21: told the entry's title was "the same work, confirmed by identifier",
+    # the LLM judged 'Resilient' vs 'Robust' Dynamic Radiance Fields a formatting difference.
+    seen: list[str] = []
+
+    class CapturingLLM:
+        async def structured(self, system, user, schema_model, schema_name):
+            seen.append(user)
+            return FieldJudgment(classification="error", confidence="high", reason="r")
+
+    e = _entry(title="Resilient Dynamic Radiance Fields", venue="CVPR")
+    art = _artifact(_rec("crossref", title="Robust Dynamic Radiance Fields", venue="CVPR",
+                         authors=["Author, A."]))
+    findings = await resolve_field_findings(e, art, CapturingLLM(), AuditConfig(model="t"), None)
+    (prompt,) = seen
+    context = prompt.split("CONTEXT", 1)[1]
+    assert "Robust Dynamic Radiance Fields" in context
+    assert "Resilient" not in context
+    assert next(f for f in findings if f.field == "title").status == "error"

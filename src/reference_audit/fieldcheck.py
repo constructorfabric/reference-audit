@@ -34,6 +34,8 @@ from reference_audit.cache.store import AuditCache, prompt_hash
 from reference_audit.config import AuditConfig
 from reference_audit.llm.client import LLMClient, LLMError
 from reference_audit.llm.prompts import FIELD_CHECK_SYSTEM, field_check_user
+from reference_audit.matching.features import is_repository_venue
+from reference_audit.matching.names import check_cited_authors, omitted_authors
 from reference_audit.models import (
     BibEntry,
     EntryType,
@@ -47,17 +49,6 @@ from reference_audit.versioning import cited_arxiv_id
 
 _BOOK_TYPES = {EntryType.BOOK, EntryType.INCOLLECTION}
 
-# A "venue" that is really a preprint server, institutional repository, or aggregator. When the
-# matched record's venue looks like one of these, the database indexed a preprint/repository copy,
-# so the entry's published journal/conference cannot be confirmed against it — and a difference is
-# NOT a bib mistake. (Deterministic guard; the LLM is unreliable at applying this on its own.)
-_REPOSITORY_VENUE_RE = re.compile(
-    r"arxiv|bio\s*rxiv|med\s*rxiv|chem\s*rxiv|preprint|repositor|researchgate|\bssrn\b|zenodo|"
-    r"figshare|\bosf\b|hal[-\s]|scholarworks|dspace|eprints|research\s+square|"
-    r"technical reports server|\bscholar \(|\(.*\buniversit",
-    re.IGNORECASE,
-)
-
 # Values that mean "no real value" even though the field is present (sotnikov `number={}`,
 # goldenfeld `number={-}`). Compared after stripping braces/whitespace and lowercasing.
 _PLACEHOLDERS = {"", "-", "--", "–", "—", "n/a", "n.a.", "na", "none", "null", "tbd", "?", "..."}
@@ -68,9 +59,10 @@ _SOURCE_RANK = {
     "publisher": 0,
     "crossref": 1,
     "openalex": 2,
-    "openlibrary": 3,
-    "semantic_scholar": 4,
-    "arxiv": 5,
+    "dblp": 3,
+    "openlibrary": 4,
+    "semantic_scholar": 5,
+    "arxiv": 6,
 }
 
 _DASH_RUN = re.compile(r"\s*[-–—‐]+\s*")
@@ -116,12 +108,38 @@ def _pages_clean_range(raw: str) -> bool:
 # ── canonical value sourcing ─────────────────────────────────────────────────
 
 
-def _ordered_records(artifact: MatchedArtifact) -> list[SourceRecord]:
-    """Records of the matched artifact, richest metadata first (published, crossref/openalex)."""
-    return sorted(
-        artifact.records,
-        key=lambda r: (r.is_preprint, _SOURCE_RANK.get(r.source, 9)),
-    )
+def _is_preprint_copy(rec: SourceRecord) -> bool:
+    """A preprint or repository copy of the work, rather than its journal/conference version."""
+    doi = rec.ids.doi or ""
+    return rec.is_preprint or doi.startswith("10.48550/arxiv") or is_repository_venue(rec.venue)
+
+
+def cites_preprint(entry: BibEntry) -> bool:
+    """The entry cites the preprint: its venue is a preprint server or repository, or it names no
+    venue but an arXiv id. Anything else cites a journal or conference version."""
+    if entry.venue:
+        return is_repository_venue(entry.venue)
+    return cited_arxiv_id(entry) is not None
+
+
+def _ordered_records(entry: BibEntry, artifact: MatchedArtifact) -> list[SourceRecord]:
+    """The matched work's source records, the version the entry cites first.
+
+    A pooled record compiles one view across a work's versions, but an entry cites one version: the
+    arXiv preprint (its year, its title) or the published paper, and of a conference paper and its
+    later journal version, one of the two. So the fields are compared against the pooled record's
+    members: first those of the kind the entry cites (preprint or published), then those from the
+    cited year, then by source authority. The pooled records follow, as a fallback.
+    """
+    members = [m for r in artifact.records for m in (r.members or [r])]
+    wants_preprint = cites_preprint(entry)
+
+    def key(r: SourceRecord) -> tuple:
+        other_kind = _is_preprint_copy(r) != wants_preprint
+        other_year = entry.year is not None and r.year != entry.year
+        return (other_kind, other_year, _SOURCE_RANK.get(r.source, 9))
+
+    return sorted(members, key=key) + [r for r in artifact.records if r.members]
 
 
 def _rec_sources(rec: SourceRecord) -> list[str]:
@@ -132,16 +150,16 @@ def _rec_sources(rec: SourceRecord) -> list[str]:
 
 def _canonical(records: list[SourceRecord], getter) -> tuple[str, list[str]]:
     """First non-empty value for a field across the records, plus every source that agrees on it."""
-    value = ""
-    carrier = None
-    for r in records:
-        v = (getter(r) or "").strip()
-        if v:
-            value, carrier = v, r
-            break
-    if not value or carrier is None:
+    carrier = next((r for r in records if (getter(r) or "").strip()), None)
+    if carrier is None:
         return "", []
-    return value, _rec_sources(carrier)
+    value = getter(carrier).strip()
+    if carrier.members:  # a pooled fallback record: its own compiled value and merge set
+        return value, _rec_sources(carrier)
+    agree = {
+        r.source for r in records if not r.members and _fold(getter(r)) == _fold(value)
+    }
+    return value, sorted(agree)
 
 
 # ── per-field deterministic comparison ───────────────────────────────────────
@@ -192,15 +210,21 @@ def _string_field(name: str, bib_raw: str, canonical: str, sources: list[str]) -
 def _venue_check(entry: BibEntry, records: list[SourceRecord]) -> _Check | None:
     if not entry.venue:
         return None
-    canonical, sources = _canonical(records, lambda r: r.venue)
-    if canonical and _REPOSITORY_VENUE_RE.search(canonical):
-        chk = _Check("journal/venue", _strip(entry.venue), canonical, sources)
-        chk.status = "unverifiable"
-        chk.detail = (
-            f"matched a preprint/repository copy ('{canonical}'); the published venue could "
-            "not be confirmed"
-        )
-        return chk
+    wants_preprint = cites_preprint(entry)
+    # A cited journal or conference is compared against a record that names one; a preprint server
+    # is the canonical venue only when no source has anything else.
+    published = [r for r in records if not is_repository_venue(r.venue)]
+    canonical, sources = _canonical(records if wants_preprint else published, lambda r: r.venue)
+    if not canonical and not wants_preprint:
+        canonical, sources = _canonical(records, lambda r: r.venue)
+        if canonical:
+            chk = _Check("journal/venue", _strip(entry.venue), canonical, sources)
+            chk.status = "unverifiable"
+            chk.detail = (
+                f"every source has only a preprint/repository copy ('{canonical}'); the published "
+                "venue could not be confirmed"
+            )
+            return chk
     return _string_field("journal/venue", entry.venue, canonical, sources)
 
 
@@ -259,6 +283,52 @@ def _year_check(entry: BibEntry, records: list[SourceRecord]) -> _Check | None:
     return chk
 
 
+def _author_check(
+    entry: BibEntry, records: list[SourceRecord], partial_authors: str
+) -> _Check | None:
+    """Every cited author must be an author of the matched work in at least one source record.
+
+    A cited list that names only some of the work's authors, without saying so ('and others'), is
+    reported per `partial_authors`: `ignore` (not reported), `warn` (uncertain) or `error`.
+    """
+    if not entry.authors:
+        return None
+    cited = "; ".join(entry.authors)
+    with_authors = [r for r in records if r.authors]
+    if not with_authors:
+        chk = _Check("author", cited, "", [])
+        chk.status, chk.detail = "unverifiable", "no source returned an author list to check against"
+        return chk
+    carrier = with_authors[0]  # the cited version's list (see _ordered_records)
+    chk = _Check("author", cited, "; ".join(carrier.authors), _rec_sources(carrier))
+    missing, unchecked = check_cited_authors(entry.authors, [r.authors for r in with_authors])
+    if missing or unchecked:
+        chk.sources = sorted({s for r in with_authors for s in _rec_sources(r)})
+    if missing:
+        chk.status = "error"
+        chk.detail = f"not an author of the matched work in any source: {', '.join(missing)}"
+        return chk
+    if unchecked:
+        longest = max(len(r.authors) for r in with_authors)
+        chk.status = "unverifiable"
+        chk.detail = (
+            f"every source lists only the first {longest} of the {len(entry.authors)} cited "
+            f"authors, so {', '.join(unchecked)} could not be checked"
+        )
+        return chk
+    if partial_authors == "ignore":
+        return chk
+    omitted = omitted_authors(entry.authors, carrier.authors)
+    if omitted:
+        chk.status = "error" if partial_authors == "error" else "uncertain"
+        shown = ", ".join(omitted[:5]) + (", …" if len(omitted) > 5 else "")
+        chk.detail = (
+            f"the cited list omits {len(omitted)} of the work's {len(carrier.authors)} authors "
+            f"({shown}) without marking it shortened ('and others')"
+        )
+    return chk
+
+
 def _numeric_field(
     name: str, bib_raw: str | None, canonical: str, sources: list[str]
 ) -> _Check | None:
@@ -314,6 +384,7 @@ def deterministic_field_checks(
     artifact: MatchedArtifact,
     *,
     skip_fields: frozenset[str] = frozenset(),
+    partial_authors: str = "warn",
 ) -> list[_Check]:
     """All per-field rule outcomes for a matched entry (pure, no network/LLM).
 
@@ -321,9 +392,10 @@ def deterministic_field_checks(
     and verified separately against the cited Open Library edition (see `check_book_edition_fields`),
     not against the pooled artifact (which may hold a newer edition).
     """
-    records = _ordered_records(artifact)
+    records = _ordered_records(entry, artifact)
     checks: list[_Check | None] = [
         _title_check(entry, records),
+        _author_check(entry, records, partial_authors),
         _venue_check(entry, records),
         _year_check(entry, records),
     ]
@@ -367,6 +439,7 @@ async def _judge_field(
     chk: _Check,
     llm: LLMClient | None,
     cache: AuditCache | None,
+    context: SourceRecord,
 ) -> FieldFinding:
     if llm is None:
         finding = chk.finding()
@@ -375,7 +448,7 @@ async def _judge_field(
             f"differs from canonical '{chk.canonical_value}'; LLM unavailable, verify manually"
         )
         return finding
-    user = field_check_user(chk.field, chk.bib_value, chk.canonical_value, chk.sources, entry)
+    user = field_check_user(chk.field, chk.bib_value, chk.canonical_value, chk.sources, context)
     p_hash = prompt_hash(FIELD_CHECK_SYSTEM + "\n" + user)
     if cache is not None:
         cached = cache.get_llm_decision(p_hash, "field_check")
@@ -403,9 +476,15 @@ async def resolve_field_findings(
     skip_fields: frozenset[str] = frozenset(),
 ) -> list[FieldFinding]:
     """Full step-3 result for one matched entry: deterministic rules + LLM tie-break, in order."""
-    checks = deterministic_field_checks(entry, artifact, skip_fields=skip_fields)
+    checks = deterministic_field_checks(
+        entry, artifact, skip_fields=skip_fields, partial_authors=config.partial_authors
+    )
+    # The LLM is shown the matched work as the database records it (the cited version), never the
+    # entry itself: told that the entry's title is the confirmed one, it waved through a different
+    # title as formatting.
+    context = _ordered_records(entry, artifact)[0]
     escalated = await asyncio.gather(
-        *(_judge_field(entry, c, llm, cache) for c in checks if c.needs_llm)
+        *(_judge_field(entry, c, llm, cache, context) for c in checks if c.needs_llm)
     )
     escalated_iter = iter(escalated)
     return [next(escalated_iter) if c.needs_llm else c.finding() for c in checks]
@@ -458,7 +537,7 @@ async def check_book_edition_fields(
         canonical, sources = _canonical(records, lambda r: r.publisher)
         checks.append(_book_publisher_check(entry, canonical, sources))
     return [
-        await _judge_field(entry, c, llm, cache) if c.needs_llm else c.finding()
+        await _judge_field(entry, c, llm, cache, matched_edition) if c.needs_llm else c.finding()
         for c in checks
     ]
 

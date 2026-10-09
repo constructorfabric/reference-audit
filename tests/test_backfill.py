@@ -108,13 +108,15 @@ S2_SEARCH = {
 
 @respx.mock
 async def test_backfilled_doi_that_does_not_resolve_is_flagged(tmp_path):
-    # The work matches via S2 (exactly_one), but doi.org returns 404 for the backfilled DOI: it must
-    # be reported as unusable, never as a clean "DOI found".
+    # The work matches via S2 (exactly_one), but the handle system does not know the backfilled
+    # DOI: it must be reported as unusable, never as a clean "DOI found".
     respx.get(url__startswith="https://api.semanticscholar.org/graph/v1/paper/search").mock(
         return_value=httpx.Response(200, json=S2_SEARCH)
     )
-    respx.get("https://doi.org/10.5555/3666122.3668330").mock(
-        return_value=httpx.Response(404, text="DOI Not Found")
+    respx.get(url__startswith="https://doi.org/api/handles/10.5555/3666122.3668330").mock(
+        return_value=httpx.Response(
+            404, json={"responseCode": 100, "handle": "10.5555/3666122.3668330"}
+        )
     )
     bib = tmp_path / "r.bib"
     bib.write_text(DREAMSIM_BIB, encoding="utf-8")
@@ -139,13 +141,16 @@ async def test_backfilled_doi_that_does_not_resolve_is_flagged(tmp_path):
 
 @respx.mock
 async def test_backfilled_doi_that_resolves_is_reported_clean(tmp_path):
-    # Same flow, but doi.org redirects (handle found): the backfilled DOI is real, so it is reported
-    # plainly with no resolution warning.
+    # Same flow, but the handle is found: the backfilled DOI is real, so it is reported plainly
+    # with no resolution warning.
     respx.get(url__startswith="https://api.semanticscholar.org/graph/v1/paper/search").mock(
         return_value=httpx.Response(200, json=S2_SEARCH)
     )
-    respx.get("https://doi.org/10.5555/3666122.3668330").mock(
-        return_value=httpx.Response(302, headers={"Location": "https://example.org/paper"})
+    respx.get(url__startswith="https://doi.org/api/handles/10.5555/3666122.3668330").mock(
+        return_value=httpx.Response(200, json={
+            "responseCode": 1, "handle": "10.5555/3666122.3668330",
+            "values": [{"type": "URL", "data": {"value": "https://example.org/paper"}}],
+        })
     )
     bib = tmp_path / "r.bib"
     bib.write_text(DREAMSIM_BIB, encoding="utf-8")

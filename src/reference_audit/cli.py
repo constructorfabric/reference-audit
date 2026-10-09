@@ -76,6 +76,11 @@ def audit(
     fail_on: str | None = typer.Option(
         None, "--fail-on", help="Exit non-zero if any verdict matches: hallucinated | multiple."
     ),
+    partial_authors: str | None = typer.Option(
+        None, "--partial-authors",
+        help="A cited author list that omits some of the work's authors without 'and others': "
+             "ignore | warn | error (default: PARTIAL_AUTHORS, else warn).",
+    ),
 ) -> None:
     """Audit a .bib with its .tex, or a PDF on its own.
 
@@ -86,6 +91,8 @@ def audit(
         raise typer.BadParameter("format must be one of: text, json, both")
     if backend not in (None, "api", "clickhouse"):
         raise typer.BadParameter("--backend must be 'api' or 'clickhouse'")
+    if partial_authors not in (None, "ignore", "warn", "error"):
+        raise typer.BadParameter("--partial-authors must be 'ignore', 'warn' or 'error'")
 
     try:
         source = resolve_input(document, bib)
@@ -117,6 +124,8 @@ def audit(
                 updates["grobid_url"] = grobid
             if backend:
                 updates["source_backend"] = backend
+            if partial_authors:
+                updates["partial_authors"] = partial_authors
             config = AuditConfig().model_copy(update=updates)
             cache_path = cache or default_cache_path(source)
             common = {

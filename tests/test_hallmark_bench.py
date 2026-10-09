@@ -72,14 +72,14 @@ def test_round_trip_reports_an_unbalanced_entry_and_keeps_its_neighbours(tmp_pat
 # --- verdict -> HALLMARK label --------------------------------------------------------------------
 
 
-def _entry_audit(kind, confidence="high", *, findings=(), bib_authors=None, matched_authors=None):
-    authors = bib_authors or ["Ada Lovelace", "Alan Turing"]
+def _entry_audit(kind, confidence="high", *, findings=()):
+    authors = ["Ada Lovelace", "Alan Turing"]
     verdict = None
     if kind is not None:
         artifacts = []
         if kind == "exactly_one":
             best = SourceRecord(
-                source="dblp", title="A real title", authors=matched_authors or authors,
+                source="dblp", title="A real title", authors=authors,
                 year=2021, venue="ICML",
             )
             artifacts = [MatchedArtifact(records=[best], best_record=best)]
@@ -118,9 +118,13 @@ def _labels(audit):
         # an error outranks an unverifiable field
         (_entry_audit("exactly_one", findings=[_finding("unverifiable"), _finding("error", "year")]),
          ("VALID", 0.6), ("HALLUCINATED", 0.7)),
-        # a cited author absent from the matched record is a metadata error
-        (_entry_audit("exactly_one", matched_authors=["Ada Lovelace", "Grace Hopper"]),
+        # a cited author who is not an author of the work is a metadata error (the pipeline's own
+        # `author` finding; the harness no longer recomputes it)
+        (_entry_audit("exactly_one", findings=[_finding("error", "author")]),
          ("VALID", 0.6), ("HALLUCINATED", 0.7)),
+        # a partial author list under `--partial-authors warn` is uncertain: VALID under both
+        (_entry_audit("exactly_one", findings=[_finding("uncertain", "author")]),
+         ("VALID", 0.6), ("VALID", 0.6)),
         # cosmetic differences never move the label
         (_entry_audit("exactly_one", findings=[_finding("formatting")]),
          ("VALID", 0.9), ("VALID", 0.9)),
@@ -323,7 +327,7 @@ def test_resumed_audit_keeps_its_start_and_adds_up_wall_time(tmp_path, monkeypat
     def run():
         hb.audit(split="dev_public", hallmark_dir=tmp_path / "hallmark", out=out,
                  cache=tmp_path / "c.db", limit=0, seed=0, chunk_size=200, retry_unresolved=0,
-                 no_llm=True, backend="api")
+                 no_llm=True, backend="api", partial_authors=None)
         return json.loads((out / "run.json").read_text(encoding="utf-8"))
 
     first = run()

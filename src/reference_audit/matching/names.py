@@ -87,30 +87,118 @@ def author_subset(query_authors: list[str], item_authors: list[str]) -> bool:
     return a <= b or b <= a
 
 
-def mismatched_authors(
-    bib_authors: list[str],
-    canonical_authors: list[str],
-    threshold: float = 0.8,
-) -> list[str]:
-    """Return bib authors whose surname has no good match (≥ threshold) in the canonical list.
+# ── person-level matching (the author check) ─────────────────────────────────
+#
+# The surname-only fuzzy match above suits scoring, where an average over the list absorbs one bad
+# name. The author check names individual people, so it compares whole names, order-free: databases
+# disagree on name order ('Li Tian' / 'Tian Li', OpenAlex's 'Moriano Pablo') and on how much of a
+# compound surname they keep ('Lierni Sestorain' / 'Sestorain Saralegui, Lierni', 'Carlos Riquelme
+# Ruiz' / 'Carlos Riquelme'). A surname-only fuzzy match also lets a fabricated author through on a
+# near-namesake ('Carreira' ≈ 'Barreira' at 0.875).
 
-    Skips the check entirely when the canonical list is noticeably shorter than the bib list,
-    since a truncated API response would produce spurious mismatches for the omitted names.
+_NAME_SPLIT_RE = re.compile(r"[\s,.\-‐]+")
+_UMLAUT_RE = re.compile(r"([aou])e")
+
+
+def _name_tokens(name: str, *, join_hyphens: bool = False) -> tuple[list[str], list[str]]:
+    """(full tokens, initials) of a name, lower-cased and transliterated; order is not kept.
+
+    A hyphen splits by default ('Gontijo-Lopes' / 'Gontijo Lopes'); `join_hyphens` closes it instead,
+    for given names a source writes without one ('Guo-Sen' / 'Guosen').
     """
-    bib_authors, canonical_authors = _named(bib_authors), _named(canonical_authors)
-    if not bib_authors or not canonical_authors:
+    text = _norm(name)
+    if join_hyphens:
+        text = re.sub(r"(?<=[a-z])[-‐](?=[a-z])", "", text)
+    tokens = [t for t in _NAME_SPLIT_RE.split(text) if t]
+    return [t for t in tokens if len(t) > 1], [t for t in tokens if len(t) == 1]
+
+
+def _token_match(a: str, b: str) -> bool:
+    """Same name token, allowing umlaut transliteration ('mueller' / 'muller') and a one-letter
+    slip in a long token, but not a near-namesake ('carreira' / 'barreira')."""
+    if a == b or _UMLAUT_RE.sub(r"\1", a) == _UMLAUT_RE.sub(r"\1", b):
+        return True
+    return min(len(a), len(b)) >= 5 and fuzz.ratio(a, b) >= 90
+
+
+def same_person(a: str, b: str) -> bool:
+    """Whether two author strings can name the same person.
+
+    Every full token of the shorter name must appear in the other (in any order); the longer name may
+    carry extra tokens (a second surname, a middle name). Each initial of the shorter name must start
+    some token of the other ('D.P. Woodruff' / 'David P. Woodruff', but not 'J. Smith' / 'Adam Smith').
+    """
+    return any(
+        _tokens_agree(_name_tokens(a, join_hyphens=j), _name_tokens(b, join_hyphens=j))
+        for j in (False, True)
+    )
+
+
+def _tokens_agree(a: tuple[list[str], list[str]], b: tuple[list[str], list[str]]) -> bool:
+    if not (a[0] or a[1]) or not (b[0] or b[1]):
+        return False
+    # An initials-only name ('A. B.') sorts first and agrees when its initials start the other's.
+    (short_full, short_init), (long_full, long_init) = sorted((a, b), key=lambda t: len(t[0]))
+    long_tokens = long_full + long_init
+    for tok in short_full:
+        if not any(_token_match(tok, other) for other in long_full):
+            # a given name may be an initial on the other side ('David' / 'D.')
+            if not (tok[0] in long_init and len(short_full) > 1):
+                return False
+    return all(any(t.startswith(i) for t in long_tokens) for i in short_init)
+
+
+def check_cited_authors(
+    bib_authors: list[str], record_author_lists: list[list[str]]
+) -> tuple[list[str], list[str]]:
+    """(missing, unchecked): cited authors who appear in none of the matched work's records, and
+    cited authors no record reaches far enough to check.
+
+    Every source record of the work is consulted, so one source's defect (S2's 'Wenhan Wang' for
+    Wenhan Yang, OpenAlex's surname-less 'Ed H.') does not make a real author look fabricated.
+
+    A record may be truncated (OpenAlex stops at 100 authors). When every record is shorter than the
+    cited list and the longest one is, in order, its leading part, the cited authors past its end are
+    `unchecked`: the record may have been cut there. When the record and the cited list disagree, the
+    list was not truncated but replaced, and every cited author is checked.
+    """
+    bib = _named(bib_authors)
+    lists = [named for lst in record_author_lists if (named := _named(lst))]
+    if not bib or not lists:
+        return [], []
+    pool = [name for lst in lists for name in lst]
+    missing = [i for i, a in enumerate(bib) if not any(same_person(a, other) for other in pool)]
+    longest = max(lists, key=len)
+    k = len(longest)
+    if missing and k < len(bib) and all(same_person(x, y) for x, y in zip(longest, bib)):
+        return [bib[i] for i in missing if i < k], [bib[i] for i in missing if i >= k]
+    return [bib[i] for i in missing], []
+
+
+def authors_missing(bib_authors: list[str], record_author_lists: list[list[str]]) -> list[str]:
+    """Cited authors who appear in none of the matched work's records (see `check_cited_authors`)."""
+    return check_cited_authors(bib_authors, record_author_lists)[0]
+
+
+def omitted_authors(bib_authors: list[str], record_authors: list[str]) -> list[str]:
+    """Authors of the record that the cited list leaves out, when it does not say it is shortened.
+
+    An `and others` / `et al.` in the cited list is an explicit truncation, so nothing is omitted.
+    """
+    if any(_is_etal(a) for a in bib_authors):
         return []
-    if len(canonical_authors) < len(bib_authors) * 0.9:
+    bib = _named(bib_authors)
+    if not bib:
         return []
-    canonical_last = [ln for a in canonical_authors if (ln := last_name(a))]
-    if not canonical_last:
-        return []
-    result = []
-    for bib_author in bib_authors:
-        bib_last = last_name(bib_author)
-        if not bib_last:
-            continue
-        best = max((fuzz.ratio(bib_last, cl) / 100.0 for cl in canonical_last), default=0.0)
-        if best < threshold:
-            result.append(bib_author)
-    return result
+    return [r for r in _named(record_authors) if not any(same_person(r, b) for b in bib)]
+
+
+def authors_compatible(a: list[str], b: list[str], threshold: float = 0.8) -> bool:
+    """Whether two records' author lists can belong to one work: at least `threshold` of the
+    shorter list are people on the longer one. Unknown (an empty list) counts as compatible."""
+    a, b = _named(a), _named(b)
+    if not a or not b:
+        return True
+    short, long_ = sorted((a, b), key=len)
+    found = sum(1 for x in short if any(same_person(x, y) for y in long_))
+    return found / len(short) >= threshold

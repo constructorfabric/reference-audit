@@ -35,6 +35,7 @@ from reference_audit.sources.http import (
 from reference_audit.sources.normalize import publisher_bibtex_to_record
 
 _DOI_RESOLVER = "https://doi.org/"
+_HANDLE_API = "https://doi.org/api/handles/"
 
 # Silverchair-hosted publishers expose a citation download at
 #   {scheme}://{host}/Citation/Download?resourceId={N}&resourceType=3&citationFormat=2  (BibTeX)
@@ -123,22 +124,27 @@ class PublisherAdapter(SourceAdapter):
 
         A *backfilled* DOI is only useful if it resolves: authors sometimes record a bogus DOI in
         their arXiv/preprint metadata (e.g. an ACM `10.5555/...` placeholder for a venue that mints
-        no real DOI) which the aggregators then echo. doi.org answers authoritatively — a redirect to
-        a landing page (handle found) ⇒ registered; HTTP 404 (DOI Not Found) ⇒ not registered.
-        Redirects are deliberately NOT followed, so we read doi.org's own verdict and never mistake a
-        bot-walled destination (403) for an unregistered DOI. Returns None when doi.org could not be
-        reached (transport, or any non-404 error) — an outage is never read as 'invalid'.
+        no real DOI) which the aggregators then echo; a cited DOI may be invented outright.
+
+        The Handle REST API answers this authoritatively, and is asked instead of the resolver: the
+        resolver answers HTTP 500, not 404, for a DOI under a prefix nobody registered
+        (`10.8888/...`), which read as an outage. The API's `responseCode` decides: 1 (found) or 200
+        (handle found, no URL value) ⇒ registered; 100 (handle not found) ⇒ not registered. A
+        transport error, a 429/5xx or a body without a code returns None — an outage is never read
+        as 'invalid'.
         """
         await self.rate_limiter.acquire()
         try:
-            resp = await self.client.get(f"{_DOI_RESOLVER}{doi}", follow_redirects=False)
-        except httpx.HTTPError:
+            resp = await self.client.get(f"{_HANDLE_API}{doi}", params={"type": "URL"})
+            data = resp.json()
+        except (httpx.HTTPError, ValueError):
             return None
-        if resp.is_redirect or 200 <= resp.status_code < 300:
+        code = data.get("responseCode") if isinstance(data, dict) else None
+        if code in (1, 200):
             return True
-        if resp.status_code == 404:
+        if code == 100:
             return False
-        return None  # 401/403/429/5xx etc. — undetermined; never asserted invalid
+        return None  # undetermined; never asserted invalid
 
     async def lookup_by_id(self, ids: Identifiers) -> SourceQueryResult:
         if not ids.doi:

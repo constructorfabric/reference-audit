@@ -17,8 +17,8 @@ than through the verdict.
 
 * ``identity`` scores the verdict alone: ``none`` is HALLUCINATED and ``exactly_one`` is VALID.
 * ``strict`` also treats a confirmed metadata error on an ``exactly_one`` match (an ``error`` field
-  finding, or a cited author absent from the matched record) as HALLUCINATED, and a field no source
-  could confirm as UNCERTAIN.
+  finding: a wrong title, venue, year or DOI, or a cited author who is not an author of the work) as
+  HALLUCINATED, and a field no source could confirm as UNCERTAIN.
 
 ``multiple`` and unresolved verdicts are UNCERTAIN under both mappings. An entry the tool did not
 actually audit (the ``.bib`` round-trip changed it, or its audit raised) is UNCERTAIN with
@@ -52,7 +52,6 @@ from bibtexparser.customization import convert_to_unicode
 from pydantic import BaseModel, Field
 
 from reference_audit.config import AuditConfig
-from reference_audit.matching.names import mismatched_authors
 from reference_audit.models import EntryAudit, FieldFinding
 from reference_audit.parsing.bib import parse_bib
 from reference_audit.pipeline import run_audit
@@ -104,7 +103,6 @@ class CompactAudit(BaseModel):
     matched_year: int | None = None
     matched_venue: str = ""
     matched_doi: str = ""
-    author_mismatches: list[str] = Field(default_factory=list)
     findings: list[FieldFinding] = Field(default_factory=list)  # error / uncertain / unverifiable
     issues: list[str] = Field(default_factory=list)
     unresolved_reasons: list[str] = Field(default_factory=list)  # why the verdict is None
@@ -242,9 +240,6 @@ def compact(audit: EntryAudit) -> CompactAudit:
         matched_year=best.year if best else None,
         matched_venue=best.venue if best else "",
         matched_doi=(best.ids.doi or "") if best else "",
-        # The same check the pipeline runs for its "author ... not found" issue (pipeline.py), taken
-        # from the function rather than parsed back out of the message.
-        author_mismatches=mismatched_authors(audit.entry.authors, best.authors) if best else [],
         findings=[
             f for f in audit.field_findings if f.status in ("error", "uncertain", "unverifiable")
         ],
@@ -293,9 +288,7 @@ def predict(audit: CompactAudit, mapping: Mapping) -> Prediction:
         return out("HALLUCINATED", conf, f"no match: {audit.rationale}")
 
     matched = f"matched {audit.matched_source} '{audit.matched_title}'"
-    errors = [_finding_note(f) for f in audit.findings if f.status == "error"] + [
-        f"author '{a}' not in the matched record" for a in audit.author_mismatches
-    ]
+    errors = [_finding_note(f) for f in audit.findings if f.status == "error"]
     unverifiable = [_finding_note(f) for f in audit.findings if f.status == "unverifiable"]
     uncertain = [_finding_note(f) for f in audit.findings if f.status == "uncertain"]
     if errors:
@@ -440,6 +433,10 @@ def audit(
         None, help="Source backend for Semantic Scholar/OpenAlex/DBLP: api | clickhouse "
                    "(default: SOURCE_BACKEND in .env, else api)."
     ),
+    partial_authors: str | None = typer.Option(
+        None, help="A cited author list that omits some authors without 'and others': ignore | "
+                   "warn | error (default: PARTIAL_AUTHORS in .env, else warn)."
+    ),
 ) -> None:
     """Audit a blind HALLMARK split with reference-audit; resumable, one compact record per entry."""
     out = out or DEFAULT_RUNS_DIR / split
@@ -453,6 +450,10 @@ def audit(
         if backend not in ("api", "clickhouse"):
             raise typer.BadParameter("--backend must be 'api' or 'clickhouse'")
         config = config.model_copy(update={"source_backend": backend})
+    if partial_authors is not None:
+        if partial_authors not in ("ignore", "warn", "error"):
+            raise typer.BadParameter("--partial-authors must be 'ignore', 'warn' or 'error'")
+        config = config.model_copy(update={"partial_authors": partial_authors})
     if no_llm:
         config = config.model_copy(update={"use_llm": False})
     elif not config.llm_enabled():
@@ -471,6 +472,7 @@ def audit(
         "model": config.model,
         "llm_enabled": config.llm_enabled(),
         "source_backend": config.source_backend,
+        "partial_authors": config.partial_authors,
     }
     previous: dict = {}
     if run_meta_path.exists():
@@ -590,7 +592,8 @@ def build_summary(
         f"- audit outcomes before retrying unresolved/failed entries: {meta['counts_before_retry']}",
         f"- reference-audit `{meta['reference_audit_sha']}`, pipeline {meta['pipeline_version']}, "
         f"model `{meta['model']}` (LLM {'on' if meta['llm_enabled'] else 'off'}), "
-        f"source backend `{meta.get('source_backend', 'api')}`",
+        f"source backend `{meta.get('source_backend', 'api')}`, partial author lists "
+        f"`{meta.get('partial_authors', 'warn')}`",
         f"- HALLMARK `{meta['hallmark_sha']}` ({meta['hallmark_version']})",
         f"- audit wall time: {meta['wall_seconds'] / 60:.0f} min (cache hits: {meta['from_cache']})",
         "",

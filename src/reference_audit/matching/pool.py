@@ -12,14 +12,13 @@ The ambiguous, identifier-disjoint zone (similar titles, no link) is left to M5'
 
 from __future__ import annotations
 
-from reference_audit.matching.features import title_prefix_trap, title_ratio
-from reference_audit.matching.names import author_overlap, author_subset
+from reference_audit.matching.features import is_repository_venue, title_prefix_trap, title_ratio
+from reference_audit.matching.names import authors_compatible
 from reference_audit.models import Identifiers, SourceRecord
 from reference_audit.parsing.identifiers import extract_arxiv_id, normalize_doi
 
-# Thresholds for the preprint↔published version merge (tight: titles are "usually correct").
+# Title threshold for the preprint↔published version merge (tight: titles are "usually correct").
 _VERSION_MERGE_TITLE = 0.93
-_VERSION_MERGE_AUTHOR = 0.8
 
 
 def _own_keys(rec: SourceRecord) -> set[str]:
@@ -93,9 +92,10 @@ def _underlying_sources(rec: SourceRecord) -> list[str]:
 # registration-grade sources) outrank Semantic Scholar, whose venue strings are often truncated
 # ('Complexity' → 'Complex') and which omits volume/issue/pages. Records are ranked by their *best
 # underlying* source, so a pooled representative is ranked by the richest source inside it — not by
-# its lossy `.source` label. This realizes the SPEC's "compile all available information".
+# its lossy `.source` label. This realizes the SPEC's "compile all available information". DBLP
+# carries the conference of a CS paper that the aggregators often index only as its arXiv copy.
 _FIELD_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
-    "venue": ("publisher", "crossref", "openalex", "openlibrary"),
+    "venue": ("publisher", "crossref", "openalex", "dblp", "openlibrary"),
     "volume": ("publisher", "crossref", "openalex"),
     "issue": ("publisher", "crossref", "openalex"),
     "pages": ("publisher", "crossref", "openalex"),
@@ -115,8 +115,16 @@ def _rank(rec: SourceRecord, priority: tuple[str, ...]) -> int:
 
 
 def _best_field(recs: list[SourceRecord], attr: str, priority: tuple[str, ...]) -> str:
-    """Most authoritative non-empty value for `attr` across a same-work group ('' if none has it)."""
-    for r in sorted(recs, key=lambda r: _rank(r, priority)):
+    """Most authoritative non-empty value for `attr` across a same-work group ('' if none has it).
+
+    For the venue, a preprint server or repository ('arXiv (Cornell University)', DBLP's 'CoRR') is
+    used only when no member names a journal or conference: OpenAlex's arXiv copy of an ICLR paper
+    must not outrank DBLP's 'ICLR'.
+    """
+    ranked = sorted(recs, key=lambda r: _rank(r, priority))
+    if attr == "venue":
+        ranked.sort(key=lambda r: is_repository_venue(r.venue))  # stable: rank kept within each
+    for r in ranked:
         value = (getattr(r, attr) or "").strip()
         if value:
             return value
@@ -172,6 +180,8 @@ def pool_candidates(records: list[SourceRecord]) -> list[SourceRecord]:
     own = [_own_keys(r) for r in records]
     links = [_link_keys(r) for r in records]
     parent = list(range(n))
+    # The records in each cluster, keyed by its root.
+    cluster = {i: [r] for i, r in enumerate(records)}
 
     def find(i: int) -> int:
         while parent[i] != i:
@@ -180,24 +190,48 @@ def pool_candidates(records: list[SourceRecord]) -> list[SourceRecord]:
         return i
 
     def union(i: int, j: int) -> None:
-        parent[find(j)] = find(i)
+        ri, rj = find(i), find(j)
+        parent[rj] = ri
+        cluster[ri].extend(cluster.pop(rj))
+
+    def authors_agree_across(i: int, j: int) -> bool:
+        """A version relation joins two clusters only if every record of one has authors compatible
+        with every record of the other. A conference paper and its journal extension (CrossFormer at
+        ICLR, CrossFormer++ in TPAMI) are two works; fusing them hides the record that matches the
+        entry behind the other one's metadata. Checking each pair, not each edge, keeps a record that
+        fits both (a one-author supplementary-material DOI) from bridging them. Version *links* are
+        held to this too: they come from the aggregators' own work-merging, which can be wrong."""
+        return all(
+            authors_compatible(a.authors, b.authors)
+            for a in cluster[find(i)]
+            for b in cluster[find(j)]
+        )
 
     for i in range(n):
         for j in range(i + 1, n):
             if find(i) == find(j):
                 continue
-            id_edge = bool(
-                own[i]
-                and own[j]
-                and ((own[i] & own[j]) or (own[i] & links[j]) or (links[i] & own[j]))
-            )
-            if id_edge or _same_work_version(records[i], records[j]):
+            shared_id = bool(own[i] & own[j])  # the same DOI/arXiv/ISBN/OpenAlex id: one record
+            linked = bool(own[i] and own[j] and ((own[i] & links[j]) or (links[i] & own[j])))
+            if shared_id or (
+                (linked or _same_work_version(records[i], records[j]))
+                and authors_agree_across(i, j)
+            ):
                 union(i, j)
 
     clusters: dict[int, list[SourceRecord]] = {}
     for idx in range(n):
         clusters.setdefault(find(idx), []).append(records[idx])
     return [_representative(g) if len(g) > 1 else g[0] for g in clusters.values()]
+
+
+def _as_member(rec: SourceRecord) -> SourceRecord:
+    return rec.model_copy(update={"raw": {}, "abstract": "", "members": []}, deep=True)
+
+
+def _members(rec: SourceRecord) -> list[SourceRecord]:
+    """The source records behind `rec`: its members if it is pooled, else itself."""
+    return list(rec.members) if rec.members else [_as_member(rec)]
 
 
 def _representative(recs: list[SourceRecord]) -> SourceRecord:
@@ -228,6 +262,7 @@ def _representative(recs: list[SourceRecord]) -> SourceRecord:
         # DOI is kept here so a cited published DOI can still be recognised as this work's.
         "merged_dois": sorted({d for r in recs for d in _member_dois(r)}),
     }
+    merged.members = [m for r in recs for m in _members(r)]
     return merged
 
 
@@ -251,9 +286,10 @@ def _title_authors_agree(a: SourceRecord, b: SourceRecord) -> bool:
         return False
     if title_prefix_trap(a.title, b.title, tail_threshold=0.34):
         return False  # V3: shared prefix, divergent tail (bagrov vs kravchenko)
-    return author_overlap(a.authors, b.authors) >= _VERSION_MERGE_AUTHOR or author_subset(
-        a.authors, b.authors
-    )
+    # Person-level, not a fuzzy surname average: short surnames (Wang, Chen, Lin, He, Liu) let
+    # CrossFormer's authors "overlap" CrossFormer++'s at 0.85 with two of seven people different.
+    # A title alone never makes a version: both records must name their authors.
+    return bool(a.authors and b.authors) and authors_compatible(a.authors, b.authors)
 
 
 def _same_work_version(a: SourceRecord, b: SourceRecord) -> bool:

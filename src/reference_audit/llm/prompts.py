@@ -65,6 +65,9 @@ FIELD_CHECK_SYSTEM = (
     "- If the database value looks like a TRUNCATION or substring of the entry's value (e.g. "
     "database 'Complex' vs entry 'Complexity'), the entry is the fuller, correct form — classify "
     "'formatting_variant' or 'uncertain', never 'error'.\n"
+    "- A TITLE that differs from the database title by a substituted, inserted or deleted content "
+    "word ('Robust' vs 'Resilient', 'towards' vs 'for', 'Self-supervised' vs 'Unsupervised') is an "
+    "'error': the identifier already fixed the work, so its title is known.\n"
     "If the entry's value is plausibly correct and the database merely differs, prefer 'uncertain' "
     "over 'error'. Use 'uncertain' whenever you cannot affirmatively decide. Respond in strict JSON."
 )
@@ -106,18 +109,20 @@ def citation_alignment_user(entry: BibEntry, context_text: str, abstract: str) -
 
 
 def field_check_user(
-    field: str, bib_value: str, canonical_value: str, sources: list[str], entry: BibEntry
+    field: str, bib_value: str, canonical_value: str, sources: list[str], work: SourceRecord
 ) -> str:
+    """`work` is the matched work as the database records it, never the entry under review."""
     src = ", ".join(sources) if sources else "database"
+    authors = "; ".join(work.authors[:12]) + ("; …" if len(work.authors) > 12 else "")
     return (
         f"FIELD UNDER REVIEW: {field}\n"
         f"  citation (.bib) value:  {bib_value or '(empty)'}\n"
         f"  authoritative value:    {canonical_value or '(empty)'}   [source: {src}]\n\n"
-        "CONTEXT — the same work, confirmed by identifier (for grounding only):\n"
-        f"  title:   {entry.title}\n"
-        f"  authors: {'; '.join(entry.authors) or '(none)'}\n"
-        f"  year:    {entry.year or '(none)'}\n"
-        f"  type:    {entry.entry_type.value}\n\n"
+        "CONTEXT — the matched work as the database records it (for grounding only):\n"
+        f"  title:   {work.title or '(none)'}\n"
+        f"  authors: {authors or '(none)'}\n"
+        f"  year:    {work.year or '(none)'}\n"
+        f"  venue:   {work.venue or '(none)'}\n\n"
         f"Is the .bib {field} value the same as the authoritative value apart from formatting, "
         "or is it a genuine mistake?"
     )

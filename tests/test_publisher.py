@@ -1,6 +1,7 @@
 """Publisher-of-record resolver: BibTeX export parsing, URL derivation, graceful degradation."""
 
 import httpx
+import pytest
 import respx
 
 from reference_audit.config import AuditConfig
@@ -248,3 +249,27 @@ async def test_enrichment_uses_backfilled_doi_to_flag_fabricated_pages(tmp_path)
     assert by_field["pages"].status == "error"          # the previously-hidden bug, now caught
     assert "publisher" in by_field["pages"].sources      # sourced from the authority of record
     assert "article number" in by_field["pages"].detail
+
+
+# --- doi_registered: the doi.org Handle API ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "expected"),
+    [
+        (200, {"responseCode": 1, "handle": "10.1109/x"}, True),
+        (200, {"responseCode": 200, "handle": "10.1109/x"}, True),   # found, no URL value
+        # An unregistered prefix: the resolver answers HTTP 500 for it, the Handle API a 100.
+        (404, {"responseCode": 100, "handle": "10.8888/ngtbpa.458568"}, False),
+        (500, {"responseCode": 2, "message": "error"}, None),        # a handle-server error
+        (429, None, None),                                           # throttled: undetermined
+    ],
+)
+@respx.mock
+async def test_doi_registered_reads_the_handle_api_response_code(status, body, expected):
+    respx.get(url__startswith="https://doi.org/api/handles/10.").mock(
+        return_value=httpx.Response(status, json=body) if body else httpx.Response(status)
+    )
+    adapter = PublisherAdapter(client=httpx.AsyncClient())
+    assert await adapter.doi_registered("10.8888/ngtbpa.458568") is expected
+    await adapter.aclose()

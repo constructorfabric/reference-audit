@@ -83,6 +83,13 @@ class AuditConfig(BaseSettings):
 
     # --- Step 3: field correctness ---
     check_fields: bool = True             # verify each field of an exactly-one match is correct
+    # A cited author list that names only some of the work's authors without saying so ('and
+    # others'): `ignore` it, `warn` (an `uncertain` author finding) or report an `error`. Many
+    # bibliographies shorten long lists; HALLMARK counts an unmarked omission as a hallucination.
+    # CLI --partial-authors.
+    partial_authors: Literal["ignore", "warn", "error"] = Field(
+        default="warn", alias="PARTIAL_AUTHORS"
+    )
 
     # --- Citation alignment (advisory; opt-in) ---
     # Compare each citing context against the cited work's abstract. Off by default: it needs the LLM
@@ -129,7 +136,14 @@ class AuditConfig(BaseSettings):
     #       snapshot that may predate the work carries a coverage caveat.
     # 0.21: HTML character references (`d&apos;Amore`, `&amp;`) are decoded in .bib fields and in
     #       author/title normalization, so author checks and title scores change for such entries.
-    pipeline_version: str = "0.21"
+    # 0.22: the HALLMARK run's work list. Field checks compare against the version the entry cites
+    #       (the pooled record keeps its member records); a pooled venue is never a preprint
+    #       server while a member names the venue; pooling no longer fuses a paper with a journal
+    #       extension that has other authors; the field-check LLM sees the matched work, not the
+    #       entry, as context; authors are checked person by person against every source, as an
+    #       `author` field finding (with the partial-list option); the cited DOI is checked with the
+    #       doi.org Handle API, which answers 404 for an unregistered prefix.
+    pipeline_version: str = "0.22"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

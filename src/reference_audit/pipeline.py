@@ -19,7 +19,7 @@ from reference_audit.config import AuditConfig
 from reference_audit.llm.client import LLMClient
 from reference_audit.matching.adjudicate import adjudicate_entry
 from reference_audit.matching.features import _published_doi, compute_features, title_ratio
-from reference_audit.matching.names import author_overlap, mismatched_authors
+from reference_audit.matching.names import author_overlap
 from reference_audit.matching.pool import pool_candidates
 from reference_audit.matching.sameobject import cluster_accepted
 from reference_audit.matching.scoring import bucket
@@ -891,11 +891,6 @@ class AuditPipeline:
             and venue_allows_no_doi(entry.venue)
         ):
             audit.issues.append("no DOI expected for this venue (allowlisted)")
-        if best.authors:
-            for wrong in mismatched_authors(entry.authors, best.authors):
-                audit.issues.append(
-                    f"author '{wrong}' not found in {best.source} record (possible wrong name)"
-                )
 
     async def _backfilled_doi_note(self, doi: str, source: str) -> str:
         """Backfill message for a *discovered* DOI, gated on whether it actually resolves.

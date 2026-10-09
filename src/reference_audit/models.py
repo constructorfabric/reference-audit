@@ -184,6 +184,10 @@ class SourceRecord(BaseModel):
     version_links: list[str] = Field(default_factory=list)  # locations + relation targets (version graph)
     openalex_work_id: str | None = None                     # merge anchor (M4)
     raw: dict = Field(default_factory=dict)
+    # A pooled record's own source records (preprint and published versions, one per source), each
+    # without `raw`, `abstract` or members of its own. The pooled fields above are a compilation; the
+    # field check reads these to compare an entry against the version it cites. Empty for a leaf.
+    members: list[SourceRecord] = Field(default_factory=list)
 
 
 class SourceQueryResult(BaseModel):

@@ -148,6 +148,23 @@ def venue_compatible(entry_venue: str, record_venue: str) -> float:
     return 0.9 + 0.1 * (fuzz.partial_ratio(_norm_title(entry_venue), _norm_title(record_venue)) / 100.0)
 
 
+# A "venue" that is really a preprint server, an institutional repository or an aggregator. A record
+# with such a venue is a preprint/repository copy: it cannot confirm (or refute) the journal or
+# conference an entry cites, and pooling must not let it stand in for the published venue. DBLP files
+# arXiv preprints under the venue "CoRR".
+_REPOSITORY_VENUE_RE = re.compile(
+    r"arxiv|\bcorr\b|bio\s*rxiv|med\s*rxiv|chem\s*rxiv|preprint|repositor|researchgate|\bssrn\b|"
+    r"zenodo|figshare|\bosf\b|hal[-\s]|scholarworks|dspace|eprints|infoscience|research\s+square|"
+    r"technical reports server|\bscholar \(|\(.*\buniversit",
+    re.IGNORECASE,
+)
+
+
+def is_repository_venue(venue: str | None) -> bool:
+    """Whether `venue` names a preprint server or repository rather than a journal or conference."""
+    return bool(venue and _REPOSITORY_VENUE_RE.search(venue))
+
+
 def compute_features(entry: BibEntry, record: SourceRecord, *, tail_threshold: float) -> FeatureVector:
     t_ratio = title_ratio(entry.title, record.title)
     a_overlap = author_overlap(entry.authors, record.authors)
