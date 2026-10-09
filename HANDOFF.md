@@ -1,164 +1,131 @@
 # Handoff: reference-audit on the HALLMARK benchmark
 
 Updated 2026-10-09, for the next session to continue from a fresh context.
-Branch `feat/hallmark-clickhouse`. Commits up to `c331de5` are pushed. Everything after it (the tool-gap
-fixes, the entity fix, this session's harness/limiter fixes and the HANDOFF updates) is **local only**:
-push when the user agrees. No PR is open; `main` is unchanged.
+Branch `feat/hallmark-clickhouse`, pushed to `origin` after every step. The user asked for commits
+and pushes straight away, with no PR. `main` is unchanged.
 
 ## Goal
 
 Measure reference-audit on [HALLMARK](https://github.com/rpatrik96/hallmark) `dev_public` (1,119
-entries: 513 VALID, 606 HALLUCINATED). The user wants:
+entries: 513 VALID, 606 HALLUCINATED), and fix what the measurement exposes. The user wanted:
 - leaderboard-comparable metrics;
 - per-type detection rates;
-- a work list of false positives and misses.
+- a work list of false positives and misses;
+- a switch for partial author lists;
+- the HALLMARK label errors documented.
 
-## Status: measured at pipeline 0.21; the work list is diagnosed, nothing on it is fixed
+## Status: done at pipeline 0.23
 
-The run is in `benchmarks/runs/hallmark/dev_public/` (gitignored): `summary.md`, `eval.*.json`,
-`predictions.*.jsonl`, `audits.jsonl`. The headline table is in README, "Benchmarking on HALLMARK →
-Result". In brief:
+Final runs, at commit `7e9933c` (gitignored, on this machine):
+- `benchmarks/runs/hallmark/dev_public/` with `--partial-authors warn`, the default;
+- `benchmarks/runs/hallmark/dev_public-partial-error/` with `--partial-authors error`.
 
-| mapping | mode | DR | FPR | F1 | MCC | coverage |
-| --- | --- | --- | --- | --- | --- | --- |
-| identity | conservative | 0.421 | 0.002 | 0.592 | 0.499 | 0.984 |
-| strict | conservative | 0.951 | 0.094 | 0.945 | 0.860 | 0.777 |
-| strict | aggressive | 0.957 | 0.392 | 0.836 | 0.613 | 0.777 |
+The result table is in README, "Benchmarking on HALLMARK → Result". `strict` conservative with
+`error`: DR 0.995, FPR 0.018, F1 0.990, MCC 0.978, coverage 0.982.
 
-- 7 entries are not evaluated (`.bib` round-trip).
-- 8 HALLUCINATED entries are unresolved at `llm_max_candidates=8`.
-- 33 more hit arXiv 429s while this IP was throttled (arXiv refused even single requests). A third
-  retry (`--retry-unresolved 3`) resolved them once arXiv answered again.
-- The audit wall time was about 38 min: 31 for the run, then 5 and 2 for retries. `run.json` says
-  7 min, because the harness bug that lost the first 31 was fixed only after them.
+Earlier runs, kept for comparison:
+- `dev_public-0.21`: DR 0.951, FPR 0.094, F1 0.945, coverage 0.777;
+- `dev_public-0.22`;
+- `dev_public-0.23-first`.
 
-This session's commits:
-- `361f533` `score`: relabelled rows without type keys crashed it; the summary now shows coverage and
-  relabel history.
-- `2b0cec1` Per-source in-flight cap (Crossref 3, arXiv 1), and every retry goes through the limiter.
-  Before this, 21–25% of a chunk came back unresolved on Crossref 429s.
-- `b004463` arXiv is spaced at 1 request / 3 s, per its API terms.
-- `4e34b1d` `score` dropped HALLMARK's `--strict`, which rejects `evaluated=false`. Adds an
-  end-to-end `score` test through HALLMARK's binary.
-- The next commit: run wall time accumulates over resumed invocations; README result section; the
-  acceptance criterion in `identification.md` §6 is ticked.
+`benchmarks/hallmark_label_errors.md` documents eight entries labelled VALID that are hallucinated,
+each with DOIs and DBLP keys to verify it:
+- four cite another paper's DOI;
+- three cite authors who are not on the paper;
+- one cites a venue PaLM never appeared at.
 
-None of these is verdict-affecting: `pipeline_version` stays 0.21.
+Every one of them was relabelled HALLUCINATED → VALID by HALLMARK's `systematic-relabel-2026-05-30`.
 
-## Work list (diagnosed with evidence; each fix below is verdict-affecting → bump to 0.22)
+### What changed this session (all pushed)
 
-Counts are from the 0.21 run. A `strict` FP is a VALID entry the `strict` mapping calls
-HALLUCINATED: 32 in all, of which 24 are tool errors, 7 are likely label errors and 1 is a typo.
-`strict` misses 26 hallucinations: 11 `partial_author_list`, 8 `near_miss_title`, 3
-`chimeric_title`, 2 `swapped_authors`, 1 `merged_citation`, 1 `wrong_venue`.
+- **Harness:**
+  - `score` crashed on relabelled rows without type keys;
+  - HALLMARK's `--strict` rejects `evaluated=false`, so the harness checks completeness itself;
+  - wall time now accumulates over resumed runs;
+  - new `--partial-authors`.
+- **Source limits:**
+  - Crossref allows 3 requests in flight, arXiv 1, with arXiv spaced at 1 per 3 s;
+  - every retry goes through the limiter.
+- **Pipeline 0.22:**
+  - pooled records keep their `members`;
+  - field checks compare against the version the entry cites;
+  - authors are checked person by person, as an `author` field finding with
+    `--partial-authors ignore|warn|error` (default `warn`);
+  - pooling no longer fuses a paper with a journal extension that has other authors;
+  - the field-check LLM sees the matched work, not the entry;
+  - cited DOIs are checked with the doi.org Handle API.
+- **Pipeline 0.23:**
+  - a field's canonical value is the one most sources of the cited version agree on;
+  - the pooled author list comes from the most reliable source;
+  - members are deduplicated;
+  - given-name forms (Tim / Timothy) are recognised;
+  - the prompt calls a different venue series an error.
+- **After 0.23, findings only, no version bump:**
+  - a partial list must be shorter than the record's;
+  - Handle API code 301 means unregistered.
 
-1. **The pooled record's venue, year and title come from the preprint copy.**
-   - Cause: `matching/pool.py` `_representative`. `_FIELD_SOURCE_PRIORITY` has no `dblp`; OpenAlex's
-     arXiv DataCite member (venue `arXiv (Cornell University)`, preprint year) outranks DBLP's `ICLR`;
-     and the title is the richest member's.
-   - Effect: venue `unverifiable` on **168 of 513 VALID** (strict UNCERTAIN), about 60 HALLUCINATED
-     made UNCERTAIN, and 8 FPs (6 year, 2 title: `d541bf3fa5b9`, `be850b9b2b71`).
-   - Fix: compile venue, year and title from published (non-preprint-ish) members first, add `dblp`
-     to the priority, and treat `CoRR` and `Infoscience` as repository venues
-     (`fieldcheck._REPOSITORY_VENUE_RE`).
-2. **The title-check LLM is told the .bib entry is the confirmed work.**
-   - Cause: `llm/prompts.py:108` `field_check_user` puts `entry.title` under
-     "CONTEXT — the same work, confirmed by identifier".
-   - Effect: the LLM rules "Resilient" vs "Robust", and two entirely different titles, as formatting
-     or uncertain. That is up to 9 strict misses (6 `near_miss_title`, 3 `chimeric_title`).
-   - Fix: take the context from the matched record. Fix item 1 first, or published-vs-preprint title
-     variants will become FPs.
-3. **The author check (`matching/names.py` `mismatched_authors`).**
-   - It is surname-only, against the best record only. That gives 12 FPs:
-     - given/family order swapped (`Li Tian`, `Jing Li`, `Yu Zheng`, `Moriano Pablo`);
-     - compound surnames (`Sestorain Saralegui`, `Riquelme Ruiz`, `Fernández García`, `Gontijo-Lopes`);
-     - defective source records (OpenAlex `Ed H.`, S2 `Wenhan Wang`, S2 missing Osher).
-   - Fuzzy surname 0.8 lets a fabricated `Carreira` pass as `Barreira` (Flamingo).
-   - The "record ≥ 0.9 × cited length" guard skips the check when the authors were replaced
-     wholesale: 3 misses (`b9e0c641d08e`, `d453d206147d`, `b8d6a54dae43`).
-   - Fix: compare names order-insensitively; flag only an author absent from every member record;
-     replace the length guard with "the leading authors agree".
-4. **Pooling over-merges a paper with its journal extension.**
-   - CrossFormer (ICLR 2022) and CrossFormer++ (TPAMI) fuse transitively through their preprints.
-     The ICLR record has no DOI, so the V1 veto never fires, and the representative's
-     CrossFormer++ title and authors hide the match. That is the only `identity` FP (`f8d361220ec8`).
-   - Related: the canonical venue and year come from a later version, giving 3 FPs:
-     - `b683f8f34292`: ICML vs a 2025 journal;
-     - `f7a0b6460bd6`: NeurIPS vs IEEE TIT;
-     - `d1e149ca3cc4`: NeurIPS vs IJCAI.
-   - Fix: check the cited venue and year against every version, and do not bridge two published
-     records through a preprint when their author sets differ.
-5. **doi.org returns HTTP 500 for an unregistered prefix** (e.g. `10.8888/...`), which is read as
-   "unreachable" → `doi` unverifiable. That is 8 `fabricated_doi` UNCERTAIN. The Handle API
-   `https://doi.org/api/handles/<doi>` is authoritative (`responseCode` 1 = registered, 100 = not
-   found, HTTP 404). Use it in `publisher.doi_registered`.
-6. Not diagnosed: 3 `fabricated_doi` → `multiple` (`abd68711ff28`, `cf9b91805136`, `d0a040eb49c2`).
-7. Minor and operational:
-   - the arXiv base URL is `http://`, so every query pays a 301 → https;
-   - a resolved verdict is cached even when a source errored, with a thinner artifact and no record
-     of the error;
-   - the 8 LLM-cap entries are unresolved by design (raise `llm_max_candidates`? user's call).
+## Remaining work list (not fixed; raise with the user)
 
-**Likely HALLMARK label errors** (labelled VALID; the tool flags them with evidence). All but OPT
-were relabelled HALLUCINATED → VALID by HALLMARK:
-- the cited DOI belongs to another paper: `d0f7f9c72c33` IBRNet, `f802800935ef` ImageBind,
-  `ff2931c3228f` MoCo v3, `ded9f5844e90` TensoRF;
-- authors not on the paper: `a24129d1c5e5` Flamingo (4), `e9e08922a057` PaLM (4, also cited as
-  ICML), `c65faf378a95` OPT (2, also cited as ACL).
+1. **Renamed preprints.** A 2026 preprint whose arXiv title changed after citation gets a title error
+   (`a0527a7c2d1b`, the one non-label-error FP). arXiv's API gives only the latest title.
+2. **Author order is not checked.** An adjacent swap passes (`be764c4d9889`).
+3. **Hyphen-only near-miss titles are treated as formatting** (`cc3bac858db2`, `1cc022db3273`). This
+   is a policy question: HALLMARK calls them hallucinations.
+4. **8 entries are unresolved at `llm_max_candidates=8`.** Raise the cap? That's the user's call.
+5. **3 `fabricated_doi` entries end `multiple`** (`abd68711ff28`, `cf9b91805136`, `d0a040eb49c2`).
+   Not diagnosed.
+6. **Name variants still not matched**, harmless now for the partial-list check but visible to the
+   pooling guard:
+   - joined/split tokens (`RichardWebster`);
+   - `ß` / `ss` (`Reiß` / `Reis`);
+   - Russian diminutives (`Misha` / `Mikhail`).
 
-**Policy questions for the user** (disagreements with HALLMARK by design, not bugs):
-- `partial_author_list`: the tool does not report omitted authors (11 misses, 14 UNCERTAIN).
-- Hyphen-only `near_miss_title` (`cc3bac858db2`, `1cc022db3273`) are treated as formatting.
-- A duplicated "in the in the" in a VALID title (`e73343fc5b98`) is flagged as a title error.
-
-## Next steps (user decides)
-
-1. Fix work-list items 1–5 under one `pipeline_version` bump (0.22). Re-run dev_public in a fresh
-   `--out` (about 35 min), compare with 0.21, then update the README result.
-2. Optional: `test_public` (831), an API-backend run, and push / open a PR.
+   Fixing them changes `same_person`, which pooling uses, so it needs a version bump.
+7. **LLM adjudication is nondeterministic (temperature 1)** on borderline cases. Flamingo, with 4
+   fabricated authors, flipped between `exactly_one` and `none` between runs.
+8. **Minor:**
+   - the arXiv base URL is `http://` (a 301 on every query);
+   - a resolved verdict is cached even when a source errored, with a thinner artifact.
 
 ## Machine state outside git (this machine only)
 
 - `benchmarks/.hallmark/`: HALLMARK at `f774fa40675daa83eca6201637a94c4536b7bb3e`, with its own venv.
-  Labelled split: `data/v1.2/dev_public.jsonl`; the harness audits `dev_public_blind.jsonl`.
-- `.env`: `SOURCE_BACKEND=clickhouse`, ClickHouse credentials, `OPENAI_API_KEY` (model `gpt-6-luna`).
-  The polite-pool mailto comes from `PAPER_SEARCH_MCP_UNPAYWALL_EMAIL` (set by the user).
-- `benchmarks/runs/hallmark/.cache/cache.db` is the cache of the 0.21 run. Delete these once no
-  longer needed; nothing reads them:
-  - `cache.db.pre-0.20` (polluted by the old cache-slot bug);
-  - `cache.db.throttled-0.21{,-wal,-shm}` (the run stopped for Crossref 429s);
-  - `benchmarks/runs/hallmark/dev_public-throttled/`.
-- `benchmarks/runs/hallmark/smoke40/`: the 40-entry smoke run.
-- Running `uv run cfs init --yes` rewrites tracked files and recreates `CLAUDE.md`, which the user
-  deleted on purpose in 9c828c4. Revert both if it is ever re-run.
+- `.env`:
+  - `SOURCE_BACKEND=clickhouse`, the ClickHouse credentials and `OPENAI_API_KEY` (`gpt-6-luna`);
+  - the polite-pool mailto comes from `PAPER_SEARCH_MCP_UNPAYWALL_EMAIL`, set by the user.
+- `benchmarks/runs/hallmark/.cache/cache.db` is warm for 0.23; a rerun at 0.23 takes minutes.
+- Delete these once no longer needed; nothing reads them:
+  - `.cache/cache.db.pre-0.20`;
+  - `.cache/cache.db.throttled-0.21{,-wal,-shm}`;
+  - `dev_public-throttled/`.
 
 ## Decisions the user made (do not re-ask)
 
-- `dev_public` first; the harness lives in the repo under `benchmarks/`, with docs and `cfs` updates.
+- `dev_public` first; the harness lives in the repo with docs and `cfs` updates.
 - DBLP via SPARQL; the backend is a per-run switch (`api` default, `.env` selects `clickhouse`).
 - I may add indexes to the local ClickHouse.
+- Fix items 1–5 of the 0.21 work list (done); the partial-author treatment is a CLI/config switch
+  (done); commit and push straight away, no PR; document the HALLMARK label errors (done).
 
 ## Rules and gotchas
 
 - AGENTS.md applies:
   - bump `AuditConfig.pipeline_version` on any verdict-affecting change;
-  - update README and `architecture/` in the same change, and keep `uv run cfs validate` green;
-  - a failure is reported, never defaulted.
+  - update README and `architecture/` in the same change, and keep `uv run cfs validate` green.
+
+  Field findings are recomputed on every verdict-cache hit, so a findings-only change needs no bump.
 - Before editing governed docs, the `cf-studio` prerequisites apply (a phase plan, a DoD and
-  acceptance criteria); writing them in the scratchpad satisfies them.
+  acceptance criteria). Writing them in the scratchpad satisfies them.
 - **Never send the user's email address to an external service.**
 - HALLMARK `evaluate`:
-  - conservative *excludes* UNCERTAIN, and aggressive counts it as HALLUCINATED;
-  - `evaluated=false` is excluded from both;
-  - `--strict` rejects `evaluated=false`, so the harness does not use it.
+  - conservative excludes UNCERTAIN, and aggressive counts it as HALLUCINATED;
+  - `evaluated=false` is excluded from both.
 
-  Always report coverage next to the metrics.
-- HALLMARK v1.2 rows relabelled HALLUCINATED → VALID carry no `hallucination_type` /
-  `difficulty_tier` key.
+  Report coverage next to the metrics.
+- `run.json` records the commit at the *end* of a run. Do not leave tracked files modified while a run
+  is going; use a git worktree for parallel code work.
+- Do not run probes in parallel with a benchmark run: each process has its own Crossref/arXiv cap.
+- When moving a SQLite cache aside, move its `-wal` / `-shm` files with it.
 - `clickhouse-connect`:
   - use the sync client with `autogenerate_session_id=False`;
-  - search words must be lower-case;
-  - read-only probes can use `.venv/bin/python` (`AuditConfig()` reads `.env`).
-- Per process, Crossref allows 3 requests in flight and arXiv 1. **Do not run a probe in parallel with
-  a benchmark run**: each process gets its own cap, so a probe doubles the load on the source.
-- When moving a SQLite cache aside, move its `-wal` / `-shm` files with it.
+  - search words must be lower-case.
