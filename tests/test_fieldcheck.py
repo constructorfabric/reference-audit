@@ -774,3 +774,65 @@ async def test_the_field_check_llm_sees_the_matched_work_not_the_entry():
     assert "Robust Dynamic Radiance Fields" in context
     assert "Resilient" not in context
     assert next(f for f in findings if f.field == "title").status == "error"
+
+
+# ── one source's defect is outvoted ──────────────────────────────────────────
+
+
+def test_a_title_most_sources_agree_on_beats_a_more_authoritative_defect():
+    # HALLMARK db9d82ff3f94: OpenAlex titles arXiv:2212.08073 "Affective Coherence Monitoring for
+    # Transformer-Based Language Models"; S2, arXiv and DBLP have Constitutional AI. No member is the
+    # cited ICLR version, so the preprint copies form one group, and OpenAlex outranks the others.
+    t = "Constitutional AI: Harmlessness from AI Feedback"
+    a = ["Yuntao Bai", "Saurav Kadavath", "Sandipan Kundu"]
+    ids = Identifiers(doi="10.48550/arxiv.2212.08073", arxiv_id="2212.08073")
+    e = _entry(title=t, authors=a, venue="ICLR", year=2023, ids=Identifiers())
+    art = _pooled(
+        _rec("openalex", title="Affective Coherence Monitoring for Transformer-Based Language Models",
+             authors=a, year=2022, venue="arXiv (Cornell University)", ids=ids, citation_count=900),
+        _rec("semantic_scholar", title=t, authors=a, year=2022, venue="arXiv.org", ids=ids),
+        _rec("arxiv", title=t, authors=a, year=2022, ids=ids, is_preprint=True),
+        _rec("dblp", title=t + ".", authors=a, year=2022, venue="CoRR", ids=ids),
+    )
+    title = _by_field(deterministic_field_checks(e, art))["title"]
+    assert title.status == "ok"
+    assert title.sources == ["arxiv", "dblp", "semantic_scholar"]
+
+
+def test_the_vote_stays_within_the_cited_version():
+    # Two sources for a 2025 journal version must not outvote the one record of the cited ICML 2022
+    # paper: the vote is within the first group (kind, year), not across versions.
+    a = ["Dimitris Fotakis", "Alkis Kalavasis", "Eleni Psaroudaki"]
+    t = "Label Ranking through Nonparametric Regression"
+    doi = Identifiers(doi="10.1007/x")
+    e = _entry(title=t, authors=a, venue="ICML", year=2022, ids=Identifiers())
+    art = _pooled(
+        _rec("crossref", title=t, authors=a, venue="Theory of Computing Systems", year=2025, ids=doi),
+        _rec("openalex", title=t, authors=a, venue="Theory of Computing Systems", year=2025, ids=doi),
+        _rec("dblp", title=t + ".", authors=a, venue="ICML", year=2022),
+    )
+    checks = _by_field(deterministic_field_checks(e, art))
+    assert (checks["journal/venue"].status, checks["year"].status) == ("ok", "ok")
+
+
+async def test_the_llm_context_carries_the_title_most_sources_agree_on():
+    seen: list[str] = []
+
+    class CapturingLLM:
+        async def structured(self, system, user, schema_model, schema_name):
+            seen.append(user)
+            return FieldJudgment(classification="error", confidence="high", reason="r")
+
+    t = "Constitutional AI: Harmlessness from AI Feedback"
+    ids = Identifiers(doi="10.48550/arxiv.2212.08073", arxiv_id="2212.08073")
+    e = _entry(title="Constitutional AI: Harmless AI Feedback", authors=["Yuntao Bai"], venue="ICLR",
+               year=2022, ids=Identifiers())
+    art = _pooled(
+        _rec("openalex", title="Affective Coherence Monitoring", authors=["Yuntao Bai"], year=2022,
+             ids=ids, citation_count=900),
+        _rec("semantic_scholar", title=t, authors=["Yuntao Bai"], year=2022, ids=ids),
+        _rec("dblp", title=t, authors=["Yuntao Bai"], year=2022, ids=ids),
+    )
+    await resolve_field_findings(e, art, CapturingLLM(), AuditConfig(model="t"), None)
+    context = seen[0].split("CONTEXT", 1)[1]
+    assert t in context and "Affective" not in context

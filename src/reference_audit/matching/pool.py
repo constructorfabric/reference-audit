@@ -105,6 +105,12 @@ _FIELD_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
 
 _YEAR_SOURCE_PRIORITY = ("publisher", "crossref", "openalex")
 
+# The author list scoring and adjudication see. The citation-richest record is often Semantic
+# Scholar's, whose lists can be defective (a name twice, one missing: Neural Collapse's 'Hung Tran'
+# for Stanley Osher), and the LLM rejected the real paper over it. DBLP and the registration-grade
+# sources keep complete, clean lists; arXiv's is author-supplied.
+_AUTHOR_SOURCE_PRIORITY = ("publisher", "dblp", "crossref", "arxiv", "openalex", "semantic_scholar")
+
 
 def _rank(rec: SourceRecord, priority: tuple[str, ...]) -> int:
     """Priority rank of a record by its best (lowest-rank) underlying source."""
@@ -129,6 +135,14 @@ def _best_field(recs: list[SourceRecord], attr: str, priority: tuple[str, ...]) 
         if value:
             return value
     return ""
+
+
+def _best_authors(recs: list[SourceRecord]) -> list[str]:
+    """The author list of the most reliable source in a same-work group ([] if none has one)."""
+    for r in sorted(recs, key=lambda r: _rank(r, _AUTHOR_SOURCE_PRIORITY)):
+        if r.authors:
+            return list(r.authors)
+    return []
 
 
 def _best_abstract(recs: list[SourceRecord]) -> str:
@@ -253,6 +267,9 @@ def _representative(recs: list[SourceRecord]) -> SourceRecord:
     best_year = _best_year(recs)
     if best_year is not None:
         merged.year = best_year
+    best_authors = _best_authors(recs)
+    if best_authors:
+        merged.authors = best_authors
     best_abstract = _best_abstract(recs)
     if best_abstract:
         merged.abstract = best_abstract
@@ -262,8 +279,22 @@ def _representative(recs: list[SourceRecord]) -> SourceRecord:
         # DOI is kept here so a cited published DOI can still be recognised as this work's.
         "merged_dois": sorted({d for r in recs for d in _member_dois(r)}),
     }
-    merged.members = [m for r in recs for m in _members(r)]
+    merged.members = _distinct([m for r in recs for m in _members(r)])
     return merged
+
+
+def _distinct(members: list[SourceRecord]) -> list[SourceRecord]:
+    """Members without repeats: enrichment re-pools a work with the same sources' by-id records."""
+    seen: set[tuple] = set()
+    out = []
+    for m in members:
+        key = (m.source, m.source_native_id) if m.source_native_id else (
+            m.source, m.ids.doi, m.ids.arxiv_id, m.title.casefold(), m.year
+        )
+        if key not in seen:
+            seen.add(key)
+            out.append(m)
+    return out
 
 
 def _member_dois(rec: SourceRecord) -> list[str]:

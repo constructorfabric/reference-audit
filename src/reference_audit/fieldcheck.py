@@ -122,7 +122,19 @@ def cites_preprint(entry: BibEntry) -> bool:
     return cited_arxiv_id(entry) is not None
 
 
-def _ordered_records(entry: BibEntry, artifact: MatchedArtifact) -> list[SourceRecord]:
+class _Ordered(list):
+    """Records in comparison order. `tiers[i]` is record i's (other kind, other year) group, or None
+    for a pooled fallback record; `_canonical` votes within the first group that has a value."""
+
+    tiers: list
+
+    def where(self, keep) -> _Ordered:
+        out = _Ordered(r for r in self if keep(r))
+        out.tiers = [t for r, t in zip(self, self.tiers, strict=True) if keep(r)]
+        return out
+
+
+def _ordered_records(entry: BibEntry, artifact: MatchedArtifact) -> _Ordered:
     """The matched work's source records, the version the entry cites first.
 
     A pooled record compiles one view across a work's versions, but an entry cites one version: the
@@ -139,7 +151,11 @@ def _ordered_records(entry: BibEntry, artifact: MatchedArtifact) -> list[SourceR
         other_year = entry.year is not None and r.year != entry.year
         return (other_kind, other_year, _SOURCE_RANK.get(r.source, 9))
 
-    return sorted(members, key=key) + [r for r in artifact.records if r.members]
+    keyed = sorted(((key(r), r) for r in members), key=lambda kr: kr[0])
+    fallbacks = [r for r in artifact.records if r.members]
+    out = _Ordered([r for _, r in keyed] + fallbacks)
+    out.tiers = [k[:2] for k, _ in keyed] + [None] * len(fallbacks)
+    return out
 
 
 def _rec_sources(rec: SourceRecord) -> list[str]:
@@ -149,16 +165,32 @@ def _rec_sources(rec: SourceRecord) -> list[str]:
 
 
 def _canonical(records: list[SourceRecord], getter) -> tuple[str, list[str]]:
-    """First non-empty value for a field across the records, plus every source that agrees on it."""
-    carrier = next((r for r in records if (getter(r) or "").strip()), None)
-    if carrier is None:
+    """The canonical value of a field, plus every source that agrees on it.
+
+    Within the first group of records (see `_Ordered`) that has a value, the value most sources agree
+    on wins, the more authoritative one on a tie. One source's defect is outvoted: OpenAlex gives
+    arXiv:2212.08073, Constitutional AI, the title "Affective Coherence Monitoring for
+    Transformer-Based Language Models", where S2, arXiv and DBLP have the real one.
+    """
+    def has(r: SourceRecord) -> bool:
+        return bool((getter(r) or "").strip())
+
+    first = next((i for i, r in enumerate(records) if has(r)), None)
+    if first is None:
         return "", []
-    value = getter(carrier).strip()
-    if carrier.members:  # a pooled fallback record: its own compiled value and merge set
-        return value, _rec_sources(carrier)
-    agree = {
-        r.source for r in records if not r.members and _fold(getter(r)) == _fold(value)
-    }
+    if records[first].members:  # a pooled fallback record: its own compiled value and merge set
+        return getter(records[first]).strip(), _rec_sources(records[first])
+    tiers = getattr(records, "tiers", None)
+    group = [
+        r for i, r in enumerate(records)
+        if has(r) and not r.members and (tiers is None or tiers[i] == tiers[first])
+    ]
+    support: dict[str, set[str]] = {}
+    for r in group:
+        support.setdefault(_fold(getter(r)), set()).add(r.source)
+    best = max(group, key=lambda r: (len(support[_fold(getter(r))]), -group.index(r)))
+    value = getter(best).strip()
+    agree = {r.source for r in records if not r.members and _fold(getter(r)) == _fold(value)}
     return value, sorted(agree)
 
 
@@ -207,13 +239,13 @@ def _string_field(name: str, bib_raw: str, canonical: str, sources: list[str]) -
     return chk
 
 
-def _venue_check(entry: BibEntry, records: list[SourceRecord]) -> _Check | None:
+def _venue_check(entry: BibEntry, records: _Ordered) -> _Check | None:
     if not entry.venue:
         return None
     wants_preprint = cites_preprint(entry)
     # A cited journal or conference is compared against a record that names one; a preprint server
     # is the canonical venue only when no source has anything else.
-    published = [r for r in records if not is_repository_venue(r.venue)]
+    published = records.where(lambda r: not is_repository_venue(r.venue))
     canonical, sources = _canonical(records if wants_preprint else published, lambda r: r.venue)
     if not canonical and not wants_preprint:
         canonical, sources = _canonical(records, lambda r: r.venue)
@@ -245,10 +277,9 @@ def _title_check(entry: BibEntry, records: list[SourceRecord]) -> _Check | None:
 def _year_check(entry: BibEntry, records: list[SourceRecord]) -> _Check | None:
     if entry.year is None:
         return None
-    carrier = next((r for r in records if r.year), None)
-    canonical_year = carrier.year if carrier else None
-    sources = _rec_sources(carrier) if carrier else []
-    chk = _Check("year", str(entry.year), str(canonical_year or ""), sources)
+    value, sources = _canonical(records, lambda r: str(r.year) if r.year else "")
+    canonical_year = int(value) if value else None
+    chk = _Check("year", str(entry.year), value, sources)
     if canonical_year is None:
         chk.status, chk.detail = "unverifiable", "no source returned a year to check against"
         return chk
@@ -479,10 +510,12 @@ async def resolve_field_findings(
     checks = deterministic_field_checks(
         entry, artifact, skip_fields=skip_fields, partial_authors=config.partial_authors
     )
-    # The LLM is shown the matched work as the database records it (the cited version), never the
-    # entry itself: told that the entry's title is the confirmed one, it waved through a different
-    # title as formatting.
-    context = _ordered_records(entry, artifact)[0]
+    # The LLM is shown the matched work as the database records it (the cited version, with the
+    # canonical title), never the entry itself: told that the entry's title is the confirmed one, it
+    # waved through a different title as formatting.
+    records = _ordered_records(entry, artifact)
+    title, _ = _canonical(records, lambda r: r.title)
+    context = next((r for r in records if _fold(r.title) == _fold(title)), records[0])
     escalated = await asyncio.gather(
         *(_judge_field(entry, c, llm, cache, context) for c in checks if c.needs_llm)
     )

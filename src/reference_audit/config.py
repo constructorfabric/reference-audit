@@ -143,7 +143,12 @@ class AuditConfig(BaseSettings):
     #       entry, as context; authors are checked person by person against every source, as an
     #       `author` field finding (with the partial-list option); the cited DOI is checked with the
     #       doi.org Handle API, which answers 404 for an unregistered prefix.
-    pipeline_version: str = "0.22"
+    # 0.23: regressions the 0.22 run exposed. A field's canonical value is the one most sources of the
+    #       cited version agree on (an OpenAlex title defect won on source rank); a pooled record's
+    #       author list comes from the most reliable source, not the citation-richest (S2's defective
+    #       list made the LLM reject a real paper); members are deduplicated; given-name forms
+    #       ('Tim' / 'Timothy') and dropped middle initials match.
+    pipeline_version: str = "0.23"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

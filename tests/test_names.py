@@ -34,6 +34,9 @@ from reference_audit.matching.names import (
         ("Jure Zbontar", "Jure Žbontar"),
         ("Francesco d&apos;Amore", "Francesco d'Amore"),        # an HTML entity
         ("A. B.", "Alice Brown"),                               # initials only
+        ("Tim Mann", "Timothy A. Mann"),                        # a diminutive
+        ("William Fedus", "Liam Fedus"),
+        ("Aleksandar Spiridonov", "Alexander Spiridonov"),      # a transliteration
     ],
 )
 def test_same_person(a, b):
@@ -48,6 +51,8 @@ def test_same_person(a, b):
         ("Wenhan Yang", "Wenhan Wang"),
         ("J. Smith", "Adam Smith"),              # the initial contradicts the given name
         ("Lu Yao", "Wei Chen"),
+        ("Wei Chen", "Wei Cheng"),                # no prefix rule: Chen / Cheng are two surnames
+        ("Peter Schuh", "Parker Schuh"),
     ],
 )
 def test_different_people(a, b):

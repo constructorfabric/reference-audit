@@ -337,6 +337,12 @@ The finding is advisory like every field finding: the verdict is unchanged. Impl
 - Its venue is never a preprint server or repository (`features.is_repository_venue`: arXiv, DBLP's
   `CoRR`, Infoscience, …) while a member names the journal or conference. DBLP joins the venue
   priority after OpenAlex.
+- Its author list, which scoring and the LLM tie-break see, comes from the most reliable source that
+  has one: the publisher, DBLP, Crossref, arXiv, OpenAlex, then Semantic Scholar (pipeline 0.23).
+  The citation-richest record is often Semantic Scholar's, whose lists can be defective. For Neural
+  Collapse it listed one author twice and dropped Stanley Osher, and the LLM rejected the real
+  paper over it.
+- Repeated members (enrichment re-pools a work with the same sources' by-id records) are kept once.
 
 **Field checks compare against the version the entry cites** (`fieldcheck._ordered_records`).
 - The fields are compared against the pooled record's members, in this order:
@@ -344,6 +350,11 @@ The finding is advisory like every field finding: the verdict is unchanged. Impl
     has no venue but an arXiv id; otherwise the journal/conference version;
   - then those from the cited year;
   - then by source authority.
+- Within the first of those groups that has a value, the value most sources agree on wins; authority
+  breaks a tie (pipeline 0.23). One source's defect is outvoted: OpenAlex gives arXiv:2212.08073
+  (Constitutional AI) another paper's title, while S2, arXiv and DBLP have the real one. The vote
+  never crosses groups, so a later journal version's sources cannot outvote the cited conference
+  record.
 - Before, the pooled record's compiled fields stood in for every version. An ICLR paper was compared
   with OpenAlex's arXiv copy: venue `unverifiable` on 168 of 513 HALLMARK VALID entries, and the
   preprint's year and title reported as wrong. A conference paper was compared with its later
@@ -356,7 +367,9 @@ The finding is advisory like every field finding: the verdict is unchanged. Impl
 **Authors are a field finding** (`field = "author"`, `fieldcheck._author_check`).
 - Each cited author is compared person by person (`names.same_person`) with every source's author
   list. The comparison is order-free (`Tian Li` / `Li Tian`) and allows a second surname, initials,
-  hyphens and umlaut transliteration. A near-namesake fails (`Carreira` / `Barreira`).
+  a dropped middle initial, hyphens, umlaut transliteration and listed forms of a given name (`Tim` /
+  `Timothy`, `Liam` / `William`, `Aleksandar` / `Alexander`). A near-namesake fails (`Carreira` /
+  `Barreira`), and so does a mere prefix (`Chen` / `Cheng`).
 - A cited author found on no source is an `error`.
 - When every record is shorter than the citation and is, in order, its leading part, the authors past
   its end are `unverifiable`, since the record may have been cut there.

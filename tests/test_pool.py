@@ -233,3 +233,24 @@ def test_a_record_compatible_with_both_works_does_not_bridge_them():
         assert not any(
             {"ICLR", "IEEE TPAMI"} <= {m.venue for m in p.members or [p]} for p in pooled
         ), order
+
+
+def test_the_pooled_author_list_comes_from_the_most_reliable_source():
+    # Neural Collapse (HALLMARK ddeb46b5809f): the citation-richest record is S2's, which lists Hung
+    # Tran twice and drops Stanley Osher; adjudicated on it, the real paper was rejected.
+    s2 = _rec("semantic_scholar", doi="10.48550/arxiv.2301.00437", arxiv="2301.00437", cites=40,
+              title="Neural Collapse", authors=["Hien Dang", "T. Nguyen", "Tho Tran",
+                                                "Hung The Tran", "Hung Tran", "Nhat Ho"])
+    dblp = _rec("dblp", arxiv="2301.00437", title="Neural Collapse",
+                authors=["Hien Dang", "Tho Tran Huu", "Stanley J. Osher", "Hung Tran-The",
+                         "Nhat Ho", "Tan Minh Nguyen"])
+    (pooled,) = pool_candidates([s2, dblp])
+    assert pooled.source == "semantic_scholar"  # still the representative...
+    assert pooled.authors == dblp.authors        # ...but with DBLP's author list
+
+
+def test_repeated_members_are_kept_once():
+    a = _rec("crossref", doi="10.1/x", cites=5)
+    (first,) = pool_candidates([a, _rec("openalex", doi="10.1/x")])
+    (again,) = pool_candidates([first, _rec("crossref", doi="10.1/x", cites=5)])  # enrichment
+    assert sorted(m.source for m in again.members) == ["crossref", "openalex"]

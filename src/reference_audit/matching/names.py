@@ -99,6 +99,25 @@ def author_subset(query_authors: list[str], item_authors: list[str]) -> bool:
 _NAME_SPLIT_RE = re.compile(r"[\s,.\-‐]+")
 _UMLAUT_RE = re.compile(r"([aou])e")
 
+# Forms of one given name: a diminutive ('Tim Mann' / 'Timothy A. Mann'), and a few spellings and
+# transliterations ('Aleksandar' / 'Alexander'). A prefix or fuzzy rule cannot stand in for this
+# list: it would also equate surnames such as Chen / Cheng or Li / Liang.
+_GIVEN_NAME_FORMS: tuple[frozenset[str], ...] = tuple(frozenset(g) for g in (
+    ("timothy", "tim"), ("thomas", "tom"), ("daniel", "dan", "danny"), ("david", "dave"),
+    ("michael", "mike"), ("william", "will", "bill", "liam"), ("robert", "rob", "bob", "bobby"),
+    ("alexander", "alex", "aleksandar", "aleksander", "alexandre"), ("christopher", "chris"),
+    ("benjamin", "ben"), ("samuel", "sam"), ("nicholas", "nick", "nicolas", "nikolas"),
+    ("matthew", "matt"), ("james", "jim", "jamie"), ("joseph", "joe"),
+    ("stephen", "steve", "steven"), ("edward", "ed", "eddie"), ("andrew", "andy"),
+    ("anthony", "tony"), ("elizabeth", "liz", "beth"), ("katherine", "kate", "katie", "catherine"),
+    ("jennifer", "jen", "jenny"), ("gregory", "greg"), ("jeffrey", "jeff"), ("geoffrey", "geoff"),
+    ("peter", "pete"), ("philip", "phil", "phillip"), ("nathan", "nate", "nathaniel"),
+    ("zachary", "zach"), ("joshua", "josh"), ("jonathan", "jon"), ("kenneth", "ken"),
+    ("ronald", "ron"), ("donald", "don"), ("frederick", "fred"), ("richard", "rich", "rick"),
+    ("charles", "charlie"), ("lawrence", "larry"), ("patrick", "pat"), ("susan", "sue"),
+    ("margaret", "maggie", "meg"), ("rebecca", "becky"),
+))
+
 
 def _name_tokens(name: str, *, join_hyphens: bool = False) -> tuple[list[str], list[str]]:
     """(full tokens, initials) of a name, lower-cased and transliterated; order is not kept.
@@ -114,9 +133,12 @@ def _name_tokens(name: str, *, join_hyphens: bool = False) -> tuple[list[str], l
 
 
 def _token_match(a: str, b: str) -> bool:
-    """Same name token, allowing umlaut transliteration ('mueller' / 'muller') and a one-letter
-    slip in a long token, but not a near-namesake ('carreira' / 'barreira')."""
+    """Same name token, allowing umlaut transliteration ('mueller' / 'muller'), a listed form of a
+    given name ('tim' / 'timothy') and a one-letter slip in a long token, but not a near-namesake
+    ('carreira' / 'barreira')."""
     if a == b or _UMLAUT_RE.sub(r"\1", a) == _UMLAUT_RE.sub(r"\1", b):
+        return True
+    if any(a in forms and b in forms for forms in _GIVEN_NAME_FORMS):
         return True
     return min(len(a), len(b)) >= 5 and fuzz.ratio(a, b) >= 90
 
@@ -140,12 +162,21 @@ def _tokens_agree(a: tuple[list[str], list[str]], b: tuple[list[str], list[str]]
     # An initials-only name ('A. B.') sorts first and agrees when its initials start the other's.
     (short_full, short_init), (long_full, long_init) = sorted((a, b), key=lambda t: len(t[0]))
     long_tokens = long_full + long_init
+    matched: set[str] = set()
     for tok in short_full:
-        if not any(_token_match(tok, other) for other in long_full):
-            # a given name may be an initial on the other side ('David' / 'D.')
-            if not (tok[0] in long_init and len(short_full) > 1):
-                return False
-    return all(any(t.startswith(i) for t in long_tokens) for i in short_init)
+        hit = next((other for other in long_full if _token_match(tok, other)), None)
+        if hit is not None:
+            matched.add(hit)
+        # a given name may be an initial on the other side ('David' / 'D.')
+        elif not (tok[0] in long_init and len(short_full) > 1):
+            return False
+    # An initial must fit the other name ('J.' does not fit 'Adam Smith'), unless every name of the
+    # other is already accounted for: then it is a dropped middle initial ('Timothy A. Mann' /
+    # 'Tim Mann').
+    unaccounted = [t for t in long_full if t not in matched]
+    return all(
+        any(t.startswith(i) for t in long_tokens) or not unaccounted for i in short_init
+    )
 
 
 def check_cited_authors(

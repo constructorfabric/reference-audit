@@ -52,7 +52,9 @@ to an LLM when needed:
    a journal extension that has other authors (CrossFormer at ICLR, CrossFormer++ in TPAMI), not even
    through a one-author supplementary-material DOI that fits both. A pooled record keeps its member
    records, and its venue is never a preprint server (`arXiv`, DBLP's `CoRR`) while a member names
-   the journal or conference.
+   the journal or conference. Its author list, which scoring and the LLM see, comes from the most
+   reliable source that has one (the publisher, then DBLP, Crossref, arXiv, OpenAlex, Semantic
+   Scholar), not from the citation-richest record.
 4. **Score** each candidate with interpretable features (title/author/year/venue similarity,
    identifier agreement, and distinct-work signals). Identifier agreement is likewise set-aware for
    ISBNs — a cite that gives a book's electronic ISBN matches a source record carrying that book's
@@ -69,10 +71,12 @@ to an LLM when needed:
    - Each field is compared against the **version the entry cites**, read from the pooled record's
      members: a citation of the arXiv preprint against the preprint, one of a journal or conference
      against the published paper, and of a conference paper and its later journal version, the one
-     from the cited year.
+     from the cited year. Within that version the value most sources agree on wins, so one source's
+     defect (OpenAlex's corrupted title for Constitutional AI) is outvoted.
    - **Authors** are checked person by person against every source's author list, so name order
-     (`Tian Li` / `Li Tian`), compound surnames and one source's defect do not flag a real author, and
-     a near-namesake does not pass (`Carreira` is not `Barreira`). A cited author on no source is an
+     (`Tian Li` / `Li Tian`), compound surnames, diminutives (`Tim` / `Timothy`) and one source's
+     defect do not flag a real author, and a near-namesake does not pass (`Carreira` is not
+     `Barreira`). A cited author on no source is an
      `error`. A citation that names only some of the work's authors without `and others` is reported
      per `--partial-authors`: `ignore`, `warn` (an `uncertain` finding, the default) or `error`.
    - A difference no rule settles goes to the LLM, which is shown the matched work as the database
@@ -506,9 +510,9 @@ become a not-evaluated prediction with the parser's reason, never a guessed labe
 
 A false positive or miss that HALLMARK itself relabelled (its `relabeled_from` / `relabel_reason`
 fields) carries that history, since a disagreement on a relabelled entry is a candidate label error.
-Seven `dev_public` entries labelled VALID are hallucinated: four cite another paper's DOI, three
-cite authors who are not on the paper. HALLMARK had labelled all seven HALLUCINATED and relabelled
-them on 2026-05-30. The evidence for each, with DOIs and DBLP keys to check it against, is in
+Eight `dev_public` entries labelled VALID are hallucinated: four cite another paper's DOI, three
+cite authors who are not on the paper, and one cites a venue the paper never appeared in. HALLMARK
+had labelled all eight HALLUCINATED and relabelled them on 2026-05-30. The evidence for each, with DOIs and DBLP keys to check it against, is in
 [`benchmarks/hallmark_label_errors.md`](benchmarks/hallmark_label_errors.md).
 
 Every audited entry gets a prediction: `score` stops unless the audited and labelled keys are the

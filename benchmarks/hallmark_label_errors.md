@@ -1,18 +1,18 @@
 # HALLMARK v1.2 `dev_public`: entries labelled VALID that are hallucinated
 
-These seven `dev_public` entries are labelled `VALID` in HALLMARK v1.2 (commit
+These eight `dev_public` entries are labelled `VALID` in HALLMARK v1.2 (commit
 `f774fa40675daa83eca6201637a94c4536b7bb3e`), but each one cites metadata that does not belong to the
-paper. All seven were originally labelled `HALLUCINATED`, and all seven were relabelled `VALID` by
+paper. All eight were originally labelled `HALLUCINATED`, and all eight were relabelled `VALID` by
 `systematic-relabel-2026-05-30` (the `relabeled_by` field). The relabelling heuristic's own notes, in
 `relabel_reason`, show where it went wrong:
 - it accepted an author list as "faithful" at a subset ratio below 1 (0.79, 0.80, 0.92);
-- it did not check whose DOI was cited.
+- it did not check whose DOI was cited;
+- it took "venue not refuted" for confirmed when the only record it had was the arXiv copy.
 
 In every case, the original label was right.
 
-reference-audit flags all seven as metadata errors on a real paper, so the `strict` mapping counts
-each as HALLUCINATED, and HALLMARK scores it as a false positive. They make up 7 of the 32 `strict`
-false positives at pipeline 0.21.
+reference-audit flags all eight as metadata errors on a real paper, so the `strict` mapping counts
+each as HALLUCINATED, and HALLMARK scores it as a false positive.
 
 ## How to check
 
@@ -24,7 +24,8 @@ Every claim below can be checked against public records:
 
 The comparisons here were made with this repository's local OpenAlex and DBLP mirrors. Author names
 were compared person by person, ignoring order and the form of the given name (initials, middle
-names). This is the comparison `reference_audit.matching.names.same_person` makes.
+names, common diminutives such as Liam / William). This is the comparison
+`reference_audit.matching.names.same_person` makes.
 
 ## Summary
 
@@ -35,7 +36,8 @@ names). This is the comparison `reference_audit.matching.names.same_person` make
 | `ff2931c3228f` | An Empirical Study of Training Self-Supervised Vision Transformers (ICCV 2021) | The DOI is another ICCV 2021 paper's |
 | `ded9f5844e90` | TensoRF (ECCV 2022) | The DOI is another ECCV 2022 paper's |
 | `a24129d1c5e5` | Flamingo (NeurIPS 2022) | 4 of 19 cited authors are not authors of the paper |
-| `e9e08922a057` | PaLM, cited as ICML 2022 | 15 of 63 cited authors are not authors of the paper, one author is listed twice, and PaLM did not appear at ICML |
+| `e9e08922a057` | PaLM, cited as ICML 2022 | 13 of 63 cited authors are not authors of the paper, one author is listed twice, and PaLM did not appear at ICML |
+| `b939e55d7555` | PaLM, cited as ICML 2022 | PaLM did not appear at ICML |
 | `c65faf378a95` | OPT, cited as ACL 2022 | 3 of 10 named authors are not authors of the paper, and OPT appeared only on arXiv |
 
 ## The cited DOI belongs to another paper
@@ -65,7 +67,7 @@ proceedings, a few numbers away.
 HALLMARK's relabel notes read "FULLY-CORRECT citation: title exact, authors faithful … venue not
 refuted, year_delta=0". Title, authors, venue and year were compared; the DOI was not.
 
-## Authors who are not authors of the paper
+## Authors who are not authors of the paper, or a venue the paper never appeared in
 
 **`a24129d1c5e5`: Flamingo: a Visual Language Model for Few-Shot Learning (NeurIPS 2022)**
 - The paper has 27 authors, in both DBLP `conf/nips/AlayracDLMBHLMM22` and
@@ -81,15 +83,24 @@ refuted, year_delta=0". Title, authors, venue and year were compared; the DOI wa
 - PaLM has 67 authors (DBLP `journals/jmlr/ChowdheryNDBMRBCSGSSTMRBTSPRDHPBAI23`, JMLR 2023; also
   `journals/corr/abs-2204-02311`). It was published in JMLR in 2023 and as an arXiv preprint in 2022;
   it did not appear at ICML.
-- The entry cites 63 authors. Fifteen are not authors of the paper:
+- The entry cites 63 authors. Thirteen are not authors of the paper:
   - near-namesakes of real authors: Peter Schuh (Parker Schuh), Peter Barnes (Parker Barnes), Trevor
-    Duke (Toju Duke), William Fedus (Liam Fedus), Aleksandar Spiridonov (Alexander Spiridonov),
-    Shachi Agrawal (Shivani Agrawal), Trilok Pillai (Thanumalayan Sankaranarayana Pillai), Nitish
-    Shirish Keskar Rao (Abhishek Rao), Ekin Dogus Cubuk Moreira (Erica Moreira);
+    Duke (Toju Duke), Shachi Agrawal (Shivani Agrawal), Trilok Pillai (Thanumalayan Sankaranarayana
+    Pillai), Nitish Shirish Keskar Rao (Abhishek Rao), Ekin Dogus Cubuk Moreira (Erica Moreira);
   - people with no counterpart: Armand Joulin, Arman Cohan, Yiming Wang, Mostafa Dehghani, Yonghui Wu,
     Ed Chi.
+- Two other names differ from DBLP's, but plausibly name the same people, so they are not counted:
+  William Fedus (DBLP: Liam Fedus) and Aleksandar Spiridonov (DBLP: Alexander Spiridonov).
 - Noam Shazeer is listed twice.
 - HALLMARK's relabel note: "subset=0.9206".
+
+**`b939e55d7555`: PaLM: Scaling Language Modeling with Pathways, cited as ICML 2022**
+- A second PaLM entry. Its ten named authors are PaLM's first ten, followed by `and others`.
+- It cites the venue as ICML 2022, but PaLM appeared in JMLR (2023) and on arXiv (2022), never at
+  ICML (DBLP `journals/jmlr/ChowdheryNDBMRBCSGSSTMRBTSPRDHPBAI23`, `journals/corr/abs-2204-02311`).
+  This is HALLMARK's own `wrong_venue` pattern.
+- HALLMARK's relabel note: "venue not refuted … via datacite (10.48550/arxiv.2204.02311)". The only
+  record it compared the venue with was the arXiv copy, which has no conference.
 
 **`c65faf378a95`: OPT: Open Pre-trained Transformer Language Models, cited as ACL 2022**
 - OPT has 19 authors and was published only as an arXiv report (DBLP `journals/corr/abs-2205-01068`;
