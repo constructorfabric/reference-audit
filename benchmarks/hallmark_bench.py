@@ -8,6 +8,8 @@ per line, keyed by a hex hash. Two commands:
   and keeps one compact record per entry in ``audits.jsonl``.
 * ``score`` maps every compact record to a HALLMARK prediction under two fixed mappings, runs
   HALLMARK's own ``hallmark evaluate`` on each, and writes ``summary.md``.
+* ``submit`` writes the predictions of a full-split run under one mapping as a HALLMARK submission
+  file plus a manifest. It reads no labels, so it works for a split whose labels are withheld.
 
 There are two mappings because the two tools ask different questions. reference-audit's verdict
 answers *does a real document correspond to this entry?* HALLMARK's ``HALLUCINATED`` label also covers
@@ -32,6 +34,7 @@ so the harness can be run from any directory.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 import re
@@ -60,7 +63,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_HALLMARK_DIR = REPO_ROOT / "benchmarks" / ".hallmark"
 DEFAULT_RUNS_DIR = REPO_ROOT / "benchmarks" / "runs" / "hallmark"
 DEFAULT_CACHE = DEFAULT_RUNS_DIR / ".cache" / "cache.db"
+DEFAULT_SUBMISSIONS_DIR = REPO_ROOT / "benchmarks" / "submissions" / "hallmark"
 HALLMARK_VERSION = "v1.2"
+TOOL_NAME = "reference-audit"
 
 # The pipeline's own marker for an entry whose audit raised (`AuditPipeline._audit_entry`).
 AUDIT_FAILED_PREFIX = "audit failed"
@@ -755,6 +760,114 @@ def score(
     summary = build_summary(split, meta, labeled, predictions, results)
     (out / "summary.md").write_text(summary, encoding="utf-8")
     _log(f"wrote {out / 'summary.md'}")
+
+
+# --------------------------------------------------------------------------------------------------
+# submit
+# --------------------------------------------------------------------------------------------------
+
+# The run.json fields a manifest carries over, so a submission names exactly what produced it.
+_MANIFEST_RUN_FIELDS = (
+    "pipeline_version", "model", "llm_enabled", "source_backend", "partial_authors",
+    "reference_audit_sha", "hallmark_sha", "hallmark_version", "started_at", "wall_seconds",
+    "from_cache", "counts",
+)
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _repo_relative(path: Path) -> str:
+    """A path under the repository as a relative one, so a committed manifest names no home dir."""
+    try:
+        return str(path.resolve().relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+@app.command()
+def submit(
+    split: str = typer.Option("dev_public", help="HALLMARK split the run audited."),
+    mapping: str = typer.Option("strict", help="Verdict-to-label mapping: identity | strict."),
+    hallmark_dir: Path = typer.Option(
+        DEFAULT_HALLMARK_DIR, exists=True, file_okay=False, help="HALLMARK checkout."
+    ),
+    hallmark_bin: Path | None = typer.Option(
+        None, help="HALLMARK's CLI in its own env (default: <hallmark-dir>/.venv/bin/hallmark)."
+    ),
+    out: Path | None = typer.Option(
+        None, help="Run directory (default: benchmarks/runs/hallmark/<split>)."
+    ),
+    dest: Path = typer.Option(
+        DEFAULT_SUBMISSIONS_DIR, help="Where the submission file and its manifest are written."
+    ),
+) -> None:
+    """Write a full-split run as a HALLMARK submission: <tool>_<split>_predictions.jsonl + manifest.
+
+    Reads no labels. Every key of the blind split must have exactly one audit record, in split
+    order; a not-audited entry stays UNCERTAIN with ``evaluated=false``. The file is checked with
+    HALLMARK's own ``validate-predictions`` before it replaces an earlier submission.
+    """
+    if mapping not in MAPPINGS:
+        raise typer.BadParameter(f"--mapping must be one of {MAPPINGS}")
+    out = out or DEFAULT_RUNS_DIR / split
+    hallmark_bin = hallmark_bin or hallmark_dir / ".venv" / "bin" / "hallmark"
+    meta = json.loads((out / "run.json").read_text(encoding="utf-8"))
+    if meta["split"] != split:
+        raise typer.BadParameter(f"{out} audited split {meta['split']!r}, not {split!r}")
+    if meta.get("limit"):
+        raise typer.BadParameter(
+            f"{out} audited a --limit {meta['limit']} sample; a submission covers the whole split"
+        )
+    blind_path = hallmark_dir / "data" / HALLMARK_VERSION / f"{split}_blind.jsonl"
+    split_keys = [r.bibtex_key for r in load_records(blind_path)]
+    audits: list[CompactAudit] = _read_jsonl(out / "audits.jsonl", CompactAudit)
+    audit_keys = [a.key for a in audits]
+    if audit_keys != split_keys:
+        missing = sorted(set(split_keys) - set(audit_keys))
+        extra = sorted(set(audit_keys) - set(split_keys))
+        raise typer.BadParameter(
+            f"{out / 'audits.jsonl'} does not cover {blind_path.name} one-to-one in split order: "
+            f"{len(audit_keys)} records for {len(split_keys)} keys, missing {missing[:5]}, "
+            f"extra {extra[:5]}"
+        )
+
+    tool = f"{TOOL_NAME}-{mapping}"
+    dest.mkdir(parents=True, exist_ok=True)
+    pred_path = dest / f"{tool}_{split}_predictions.jsonl"
+    preds = [predict(a, mapping) for a in audits]
+    staged = pred_path.with_suffix(pred_path.suffix + ".tmp")
+    staged.write_text("".join(p.model_dump_json() + "\n" for p in preds), encoding="utf-8")
+    proc = subprocess.run(
+        [str(hallmark_bin), "validate-predictions", "--file", str(staged)],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"hallmark validate-predictions rejected {staged} (exit {proc.returncode}); it is left "
+            f"there for inspection:\n{(proc.stdout + proc.stderr)[-2000:]}"
+        )
+    staged.replace(pred_path)
+
+    labels = Counter(p.label if p.evaluated else "not evaluated" for p in preds)
+    manifest = {
+        "tool_name": tool,
+        "split": split,
+        "mapping": mapping,
+        "predictions_file": pred_path.name,
+        "predictions_sha256": _sha256(pred_path),
+        "blind_split_file": blind_path.name,
+        "blind_split_sha256": _sha256(blind_path),
+        "entries": len(preds),
+        "labels": dict(sorted(labels.items())),
+        **{k: meta.get(k) for k in _MANIFEST_RUN_FIELDS},
+        "run_dir": _repo_relative(out),
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+    manifest_path = dest / f"{tool}_{split}.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    _log(f"wrote {pred_path} ({dict(labels)}) and {manifest_path.name}")
 
 
 if __name__ == "__main__":

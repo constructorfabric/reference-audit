@@ -643,6 +643,9 @@ transient errors are never cached, preserving the error ≠ not-found invariant.
   - `identity` scores the verdict alone.
   - `strict` also counts a confirmed metadata error on an `exactly_one` match as a hallucination.
 
+  `submit` writes a full-split run as a HALLMARK submission file plus a manifest. It reads no labels,
+  and HALLMARK's own validator must accept the file.
+
   The harness is a consumer only. It changes no verdict-producing code, so it does not bump
   `pipeline_version`. It sits outside the traced codebase (`src/reference_audit`), so it is **not**
   `@cpt`-traced. HALLMARK runs from its own environment, because its `bibtexparser>=2` pin conflicts

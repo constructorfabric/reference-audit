@@ -337,3 +337,99 @@ def test_resumed_audit_keeps_its_start_and_adds_up_wall_time(tmp_path, monkeypat
     resumed = run()
     assert resumed["started_at"] == "first-start"
     assert resumed["wall_seconds"] >= 1800  # the resumed invocation adds to, not replaces, the total
+
+
+# --- submit -------------------------------------------------------------------------------------
+
+
+def _submit_run(tmp_path, audits, *, limit=0):
+    """A HALLMARK checkout holding only the blind split, and a finished run directory."""
+    import json
+
+    data = tmp_path / "hallmark" / "data" / hb.HALLMARK_VERSION
+    data.mkdir(parents=True)
+    (data / "dev_public_blind.jsonl").write_text(
+        "".join(r.model_dump_json() + "\n" for r in _records()), encoding="utf-8"
+    )
+    out = tmp_path / "run"
+    out.mkdir()
+    hb._write_jsonl(out / "audits.jsonl", audits)
+    (out / "run.json").write_text(json.dumps({
+        "split": "dev_public", "limit": limit, "pipeline_version": "0", "model": "m",
+        "llm_enabled": True, "source_backend": "api", "partial_authors": "error",
+        "reference_audit_sha": "x", "hallmark_sha": "y", "hallmark_version": hb.HALLMARK_VERSION,
+        "started_at": "s", "wall_seconds": 60, "counts": {},
+    }), encoding="utf-8")
+    return tmp_path / "hallmark", out
+
+
+def _fake_hallmark(tmp_path, exit_code):
+    script = tmp_path / f"hallmark-{exit_code}"
+    script.write_text(f"#!/bin/sh\nexit {exit_code}\n", encoding="utf-8")
+    script.chmod(0o755)
+    return script
+
+
+_TWO_AUDITS = [
+    hb.CompactAudit(key="aaaaaaaaaaaa", status="audited", verdict="none", confidence="high"),
+    hb.not_audited("bbbbbbbbbbbb", "unparsed", "unbalanced braces"),
+]
+
+
+def test_submit_writes_every_key_and_a_manifest_without_labels(tmp_path):
+    import json
+
+    hallmark_dir, out = _submit_run(tmp_path, _TWO_AUDITS)  # no labelled split exists
+    dest = tmp_path / "sub"
+    hb.submit(split="dev_public", mapping="strict", hallmark_dir=hallmark_dir,
+              hallmark_bin=_fake_hallmark(tmp_path, 0), out=out, dest=dest)
+
+    rows = [json.loads(line) for line in
+            (dest / "reference-audit-strict_dev_public_predictions.jsonl").read_text().splitlines()]
+    assert [(r["bibtex_key"], r["label"], r["evaluated"]) for r in rows] == [
+        ("aaaaaaaaaaaa", "HALLUCINATED", True),
+        ("bbbbbbbbbbbb", "UNCERTAIN", False),
+    ]
+    manifest = json.loads((dest / "reference-audit-strict_dev_public.json").read_text())
+    assert manifest["labels"] == {"HALLUCINATED": 1, "not evaluated": 1}
+    assert manifest["partial_authors"] == "error"
+    assert manifest["predictions_sha256"] == hb._sha256(
+        dest / "reference-audit-strict_dev_public_predictions.jsonl"
+    )
+
+
+@pytest.mark.parametrize("audits, limit, why", [
+    (_TWO_AUDITS[:1], 0, "does not cover"),
+    (_TWO_AUDITS[::-1], 0, "split order"),
+    (_TWO_AUDITS, 1, "--limit 1 sample"),
+])
+def test_submit_refuses_a_run_that_is_not_the_whole_split(tmp_path, audits, limit, why):
+    hallmark_dir, out = _submit_run(tmp_path, audits, limit=limit)
+    with pytest.raises(hb.typer.BadParameter, match=why):
+        hb.submit(split="dev_public", mapping="strict", hallmark_dir=hallmark_dir,
+                  hallmark_bin=_fake_hallmark(tmp_path, 0), out=out, dest=tmp_path / "sub")
+    assert not (tmp_path / "sub").exists()
+
+
+def test_submit_keeps_the_previous_file_when_hallmark_rejects_the_new_one(tmp_path):
+    hallmark_dir, out = _submit_run(tmp_path, _TWO_AUDITS)
+    dest = tmp_path / "sub"
+    dest.mkdir()
+    previous = dest / "reference-audit-strict_dev_public_predictions.jsonl"
+    previous.write_text("previous\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="validate-predictions rejected"):
+        hb.submit(split="dev_public", mapping="strict", hallmark_dir=hallmark_dir,
+                  hallmark_bin=_fake_hallmark(tmp_path, 1), out=out, dest=dest)
+    assert previous.read_text() == "previous\n"
+    assert not (dest / "reference-audit-strict_dev_public.json").exists()
+
+
+@pytest.mark.skipif(
+    not _HALLMARK_BIN.exists(),
+    reason="needs the HALLMARK checkout and its venv (README, 'Benchmarking on HALLMARK')",
+)
+def test_submission_passes_hallmarks_own_validator(tmp_path):
+    hallmark_dir, out = _submit_run(tmp_path, _TWO_AUDITS)
+    hb.submit(split="dev_public", mapping="identity", hallmark_dir=hallmark_dir,
+              hallmark_bin=_HALLMARK_BIN, out=out, dest=tmp_path / "sub")
+    assert (tmp_path / "sub" / "reference-audit-identity_dev_public_predictions.jsonl").exists()

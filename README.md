@@ -474,6 +474,7 @@ uv pip install --python benchmarks/.hallmark/.venv/bin/python -e benchmarks/.hal
 
 uv run python benchmarks/hallmark_bench.py audit --split dev_public   # ~45 min on --backend clickhouse,
 uv run python benchmarks/hallmark_bench.py score --split dev_public   #   ~1 h on the APIs
+uv run python benchmarks/hallmark_bench.py submit --split dev_public  # the submission file
 ```
 
 **`audit`** reads only the *blind* split (`<split>_blind.jsonl`), so labels never reach the tool.
@@ -520,6 +521,22 @@ Every audited entry gets a prediction: `score` stops unless the audited and labe
 same set. HALLMARK's own `--strict` is not used for this, because it counts an `evaluated=false`
 prediction as missing, and a not-audited entry must stay a reported non-measurement. HALLMARK reports
 such entries through `response_coverage`.
+
+**`submit`** writes a run as a HALLMARK submission, in HALLMARK's `Prediction` JSONL schema. It writes
+`benchmarks/submissions/hallmark/reference-audit-<mapping>_<split>_predictions.jsonl` and a manifest
+`reference-audit-<mapping>_<split>.json` (`--mapping strict` by default; `--dest` moves them). The
+manifest records the run's settings and commits, the label counts, and the SHA-256 of both the
+predictions and the blind split.
+- It reads no labels, so it also works for a split whose labels are withheld.
+- It refuses a `--limit` sample, and a run whose records are not the blind split's keys one-to-one
+  in split order.
+- A not-audited entry stays `UNCERTAIN` with `evaluated=false`.
+- HALLMARK's own `hallmark validate-predictions` must accept the file before it replaces an earlier
+  submission.
+
+The submissions in the repository use `strict` with `--partial-authors error`, the setting that
+scores the tool the way HALLMARK labels. They cover every split HALLMARK v1.2 ships a blind file for:
+`dev_public`, `test_public` and `stress_test`. `test_hidden` is withheld by HALLMARK.
 
 The two mappings exist because the two tools ask different questions. reference-audit's verdict asks
 whether *any real document* corresponds to the entry. HALLMARK's `HALLUCINATED` also covers real papers
@@ -698,7 +715,8 @@ src/reference_audit/
 architecture/  # governed specification & design (SPEC, PRD, DESIGN, DECOMPOSITION, features)
 benchmarks/
   hallmark_bench.py # HALLMARK harness: audit a blind split, map verdicts to labels, run HALLMARK's
-                    #   evaluator (needs the pinned checkout in benchmarks/.hallmark — see above)
+                    #   evaluator, write submissions (needs the pinned checkout in benchmarks/.hallmark)
+  submissions/hallmark/ # HALLMARK submission files (predictions JSONL + manifest), one per split
   hallmark_label_errors.md # dev_public entries labelled VALID that are hallucinated, with evidence
 tests/
   documents/   # test papers: <paper-title-slug>/<version>.{tex,bib} (initial, polished, …),
