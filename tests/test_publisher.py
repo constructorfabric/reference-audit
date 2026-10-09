@@ -261,6 +261,8 @@ async def test_enrichment_uses_backfilled_doi_to_flag_fabricated_pages(tmp_path)
         (200, {"responseCode": 200, "handle": "10.1109/x"}, True),   # found, no URL value
         # An unregistered prefix: the resolver answers HTTP 500 for it, the Handle API a 100.
         (404, {"responseCode": 100, "handle": "10.8888/ngtbpa.458568"}, False),
+        # A handle prefix the DOI system does not serve: the resolver answers HTTP 400 for it.
+        (400, {"responseCode": 301, "message": "That prefix doesn't live here"}, False),
         (500, {"responseCode": 2, "message": "error"}, None),        # a handle-server error
         (429, None, None),                                           # throttled: undetermined
     ],

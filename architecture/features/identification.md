@@ -308,8 +308,8 @@ a real work passed clean even when its DOI pointed at another paper or at nothin
   (`raw["merged_dois"]`), since the pooled record's own `ids.doi` is one DOI only, often the arXiv
   DataCite DOI of the preprint.
 - `error` when a source's by-id record for the DOI is a different work (named in the finding), or
-  when the doi.org Handle API does not know the DOI (`responseCode` 100). The resolver itself is not
-  asked: for a DOI under a prefix nobody registered (`10.8888/...`) it answers HTTP 500, not 404, which
+  when the doi.org Handle API does not know the DOI: `responseCode` 100, or 301 for a handle prefix
+  the DOI system does not serve (`10.77771/...`). The resolver itself is not asked: for a DOI under a prefix nobody registered (`10.8888/...`) it answers HTTP 500, not 404, which
   read as an outage and left HALLMARK's fabricated DOIs `unverifiable`.
 - `uncertain` when that record has the same title and authors but was not merged, or when doi.org
   knows the DOI but no source has a record for it.

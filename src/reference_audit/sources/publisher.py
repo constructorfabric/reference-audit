@@ -129,9 +129,11 @@ class PublisherAdapter(SourceAdapter):
         The Handle REST API answers this authoritatively, and is asked instead of the resolver: the
         resolver answers HTTP 500, not 404, for a DOI under a prefix nobody registered
         (`10.8888/...`), which read as an outage. The API's `responseCode` decides: 1 (found) or 200
-        (handle found, no URL value) ⇒ registered; 100 (handle not found) ⇒ not registered. A
-        transport error, a 429/5xx or a body without a code returns None — an outage is never read
-        as 'invalid'.
+        (handle found, no URL value) ⇒ registered; 100 (handle not found) ⇒ not registered; 301
+        ("That prefix doesn't live here": a handle prefix the DOI system does not serve, e.g.
+        `10.77771/...`) ⇒ not registered, since every real DOI prefix is homed there. A transport
+        error, a 429/5xx or a body without a code returns None — an outage is never read as
+        'invalid'.
         """
         await self.rate_limiter.acquire()
         try:
@@ -142,7 +144,7 @@ class PublisherAdapter(SourceAdapter):
         code = data.get("responseCode") if isinstance(data, dict) else None
         if code in (1, 200):
             return True
-        if code == 100:
+        if code in (100, 301):
             return False
         return None  # undetermined; never asserted invalid
 

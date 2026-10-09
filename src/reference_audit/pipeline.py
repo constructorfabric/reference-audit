@@ -1091,7 +1091,9 @@ class AuditPipeline:
         resolves = await self._doi_resolves(cited, publisher) if publisher is not None else None
         if resolves is False:
             return finding(
-                "error", f"the cited DOI does not resolve at doi.org (404 DOI Not Found){matched}",
+                "error",
+                f"the cited DOI does not resolve at doi.org: the DOI system has no record of it"
+                f"{matched}",
                 ["doi.org"],
             )
         if resolves is True:
