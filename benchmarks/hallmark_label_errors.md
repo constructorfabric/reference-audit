@@ -11,8 +11,9 @@ paper. All eight were originally labelled `HALLUCINATED`, and all eight were rel
 
 In every case, the original label was right.
 
-reference-audit flags all eight as metadata errors on a real paper, so the `strict` mapping counts
-each as HALLUCINATED, and HALLMARK scores it as a false positive.
+reference-audit flags seven as metadata errors on a real paper and finds no match for the eighth
+(Flamingo), so the `strict` mapping counts each as HALLUCINATED, and HALLMARK scores it as a false
+positive. Flamingo is also the `identity` mapping's one false positive.
 
 ## How to check
 
