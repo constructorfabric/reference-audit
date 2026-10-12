@@ -362,6 +362,9 @@ The finding is advisory like every field finding: the verdict is unchanged. Impl
 - The LLM tie-break is shown the matched work as the database records it. Before, it was shown the
   entry under review, labelled "the same work, confirmed by identifier", so it judged a different
   title to be the same.
+- Source values reach the field check with their HTML character references decoded (pipeline 0.25;
+  see the parsing feature). Before, a source title with `&amp;` folded to the word "amp", so a title
+  equal to the entry's went to the LLM.
 - A substituted content word in a title is an `error`, and so is a different journal or conference
   series (`ACL` vs `ICLR`; pipeline 0.23). The prompt's general advice to prefer `uncertain` when the
   entry is plausibly right had the LLM hedge on both.

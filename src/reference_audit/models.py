@@ -12,7 +12,9 @@ import re
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from reference_audit.parsing.entities import decode_html_entities
 
 
 class EntryType(StrEnum):
@@ -188,6 +190,19 @@ class SourceRecord(BaseModel):
     # without `raw`, `abstract` or members of its own. The pooled fields above are a compilation; the
     # field check reads these to compare an entry against the version it cites. Empty for a leaf.
     members: list[SourceRecord] = Field(default_factory=list)
+
+    @field_validator("title", "venue", "publisher", mode="after")
+    @classmethod
+    def _decode_text(cls, v: str) -> str:
+        """Sources return HTML-escaped text (Crossref's `Allocation &amp; Regularization`). Decoded
+        here, once for every adapter and for records reloaded from the cache, so that the field check
+        compares — and reports — the real value; see `parsing.entities`."""
+        return decode_html_entities(v)
+
+    @field_validator("authors", mode="after")
+    @classmethod
+    def _decode_authors(cls, v: list[str]) -> list[str]:
+        return [decode_html_entities(a) for a in v]
 
 
 class SourceQueryResult(BaseModel):

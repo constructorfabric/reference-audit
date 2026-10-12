@@ -121,10 +121,15 @@ lines' `%` markers removed, since bibtexparser's reading of a `%`-prefixed block
 Text fields (title, authors, venue, publisher, pages) have their `;`-terminated HTML character
 references decoded (`parsing/entities.py`: `d&apos;Amore` → `d'Amore`, `&amp;` → `&`). Web-scraped
 metadata carries them, and left encoded they fail the author check against a source's plain text.
-A bare `&` or a legacy reference without its `;` is left as written. Matching decodes the same way
-when normalizing author names and titles (`matching/names.py`, `matching/features.py`), so a
-source record carrying references compares alike. `raw_fields` keep the text as written. This runs
-inside the `inst-parse-bib` step and is tested (`tests/test_entities.py`); not separately traced.
+A bare `&` or a legacy reference without its `;` is left as written. Source records are decoded the
+same way: `SourceRecord` decodes its title, authors, venue and publisher on construction, so every
+adapter, the ClickHouse backend and records reloaded from the source cache yield plain text, and the
+field check neither sends a title with `&amp;` to the LLM nor reports an encoded canonical value
+(pipeline 0.25). Matching also decodes when normalizing author names and titles
+(`matching/names.py`, `matching/features.py`), and Open Library's title pre-filter decodes the raw
+search results it reads (`sources/openlibrary._fold`). `raw_fields` keep the text as written. This
+runs inside the `inst-parse-bib` step and on source record construction, and is tested
+(`tests/test_entities.py`); not separately traced.
 
 **Input**: Raw `.bib` field strings (doi, isbn, eprint, url).
 
@@ -193,3 +198,5 @@ forms.
 - [x] An entry the BibTeX parser cannot read is reported as unparsed, with its line and reason, and
       is never silently dropped.
 - [x] HTML character references in `.bib` text are decoded, so `d&apos;Amore` matches `d'Amore`.
+- [x] HTML character references in source record text are decoded, so the field check compares and
+      reports plain text.

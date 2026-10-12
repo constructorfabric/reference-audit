@@ -31,9 +31,9 @@ to an LLM when needed:
    ids (an `openalex.org/W…` URL becomes a first-class identifier) and Google Books volume ids (a
    `books.google.…/books?id=…` URL) are normalized identically, and everything below is unchanged.
    HTML character references left by web-scraped metadata (`d&apos;Amore`, `&amp;`) are decoded in
-   the `.bib`'s title, author, venue, publisher and pages, and in the identification step's author
-   and title comparisons, so they match the sources' plain text. (The field check in step 7 does
-   not decode them in source values; a source title with `&amp;` there goes to the LLM.)
+   the `.bib`'s title, author, venue, publisher and pages, and in every source record's title,
+   authors, venue and publisher, so the two compare as plain text in identification and in the field
+   check of step 7, and findings report the decoded value.
 2. **Query** multiple scholarly databases — Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open
    Library, Google Books — by identifier where the source supports it, and by title/author. The
    title/author search is routed by entry type: a `@book`/`@incollection` goes to Open Library,
@@ -659,9 +659,13 @@ on the `doi` field (see [How it works](#how-it-works)). `strict` therefore count
 #### Result: `dev_public`, pipeline 0.23
 
 The results below, and the committed submissions, were measured at pipeline 0.23. The current
-pipeline is 0.24 (bibtexparser 2: `.bib` values are read by the tool itself and LaTeX is decoded with
-pylatexenc, which changes some field values and which entries are unparseable), and it has not been
-re-measured. The harness refuses to resume a 0.23 run directory under 0.24; re-measure into a new
+pipeline is 0.25, and it has not been re-measured:
+- 0.24: bibtexparser 2. `.bib` values are read by the tool itself and LaTeX is decoded with
+  pylatexenc, which changes some field values and which entries are unparseable.
+- 0.25: HTML character references in source values are decoded, so a source title with `&amp;` is
+  settled by rule instead of going to the field-check LLM.
+
+The harness refuses to resume a run directory from another pipeline version; re-measure into a new
 `--out`.
 
 This run was on 2026-10-09 with the ClickHouse backend and `gpt-6-luna`, at HALLMARK `f774fa4` and

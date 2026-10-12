@@ -158,7 +158,11 @@ class AuditConfig(BaseSettings):
     #       an undecodable value now makes only that entry unparsed (v1 failed the whole file on an
     #       undefined `@string` and kept the first of duplicate fields); commented twins are read
     #       from the uncommented text.
-    pipeline_version: str = "0.24"
+    # 0.25: HTML character references in source values are decoded (`SourceRecord`), as they already
+    #       were in `.bib` values: a Crossref title "Allocation &amp; Regularization" no longer folds
+    #       to the word "amp", so it is settled by rule instead of going to the field-check LLM, and
+    #       the canonical value is reported decoded.
+    pipeline_version: str = "0.25"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

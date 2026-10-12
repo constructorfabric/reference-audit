@@ -34,3 +34,44 @@ def test_an_encoded_author_matches_the_decoded_record():
 
 def test_an_encoded_title_matches_the_decoded_record():
     assert title_ratio("Allocation &amp; Regularization", "Allocation & Regularization") == 1.0
+
+
+def test_source_record_fields_are_decoded():
+    from reference_audit.models import SourceRecord
+
+    rec = SourceRecord(
+        source="crossref",
+        title="Allocation &amp; Regularization",
+        authors=["Francesco d&apos;Amore"],
+        venue="Proc. AAAI &amp; IAAI",
+        publisher="Taylor &amp; Francis",
+    )
+    assert rec.title == "Allocation & Regularization"
+    assert rec.authors == ["Francesco d'Amore"]
+    assert rec.venue == "Proc. AAAI & IAAI"
+    assert rec.publisher == "Taylor & Francis"
+    # a record reloaded from the source cache is decoded too
+    cached = '{"source": "crossref", "title": "Allocation &amp; Regularization"}'
+    assert SourceRecord.model_validate_json(cached).title == "Allocation & Regularization"
+
+
+def test_an_encoded_source_title_is_settled_by_the_field_check():
+    from reference_audit.fieldcheck import deterministic_field_checks
+    from reference_audit.models import BibEntry, EntryType, Identifiers, MatchedArtifact, SourceRecord
+
+    entry = BibEntry(
+        key="k", entry_type=EntryType.ARTICLE, title="Parameter Allocation & Regularization",
+        authors=["d'Amore, Francesco"], year=2022, venue="AAAI", ids=Identifiers(doi="10.1/x"),
+    )
+    rec = SourceRecord(source="crossref", title="Parameter Allocation &amp; Regularization",
+                       venue="AAAI")
+    art = MatchedArtifact(records=[rec], versions=[rec], best_record=rec)
+    title = next(c for c in deterministic_field_checks(entry, art) if c.field == "title")
+    assert title.status == "ok" and not title.needs_llm
+    assert title.canonical_value == "Parameter Allocation & Regularization"
+
+
+def test_an_encoded_open_library_title_is_compatible():
+    from reference_audit.sources.openlibrary import _title_compatible
+
+    assert _title_compatible("Fluids & Plasmas", "Fluids &amp; Plasmas")

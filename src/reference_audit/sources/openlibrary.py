@@ -16,6 +16,7 @@ from reference_audit.models import (
     SourceQueryResult,
     SourceRecord,
 )
+from reference_audit.parsing.entities import decode_html_entities
 from reference_audit.sources.base import SourceAdapter
 from reference_audit.sources.http import TransientHTTPError, get_json, new_client
 from reference_audit.sources.normalize import (
@@ -32,7 +33,8 @@ _MAX_WORKS = 6        # Open Library often splits one book across several "work"
 
 
 def _fold(s: str | None) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+    # `doc` titles are raw API text, not a decoded `SourceRecord`: "&amp;" is no word "amp".
+    return re.sub(r"[^a-z0-9]+", " ", decode_html_entities(s or "").lower()).strip()
 
 
 def _title_compatible(entry_title: str, work_title: str | None) -> bool:
