@@ -339,7 +339,10 @@ To bound cost and latency by memoizing slow, metered database and LLM calls.
 
 SQLite-backed memoization of source queries, LLM decisions, whole-entry verdicts, and DOI
 resolutions, gated by `pipeline_version`/`model`. Only successful results are stored — errors are
-never cached, so an outage retries rather than being recorded as a miss. **IMPLEMENTED.**
+never cached, so an outage retries rather than being recorded as a miss. `--fresh` hides rows
+stored before the run from reads (rows written during the run are served, and overwrite the old
+ones) instead of deleting anything, so a cache DB shared by several bibliographies keeps the others'
+results. **IMPLEMENTED.**
 
 ##### Responsibility boundaries
 
@@ -634,7 +637,9 @@ successful results are stored; errors are never cached, so an outage retries.
 | `db_quirks` | — | Notes on database quirks encountered (design principle 2). |
 
 **Constraints**: Only successful (`ok=1`) source results and definitive DOI resolutions are stored;
-transient errors are never cached, preserving the error ≠ not-found invariant.
+transient errors are never cached, preserving the error ≠ not-found invariant. Rows are never
+deleted: `--fresh` filters reads to rows whose timestamp (`fetched_at` / `created_at` /
+`checked_at`, fixed-width ISO-8601 UTC) is not earlier than the run's start.
 
 **Example** (`source_query_cache`):
 

@@ -298,7 +298,7 @@ NO ISSUES (18) — verified, nothing to fix:
 | `--no-network` | Parse only: identifiers + cited/uncited bookkeeping, no database or LLM calls. |
 | `--no-llm` | Formal-only: skip LLM adjudication for fully deterministic output (useful in CI). |
 | `--check-citations` | Advisory: for each in-text citation of a matched reference, check the citing context against the cited work's **abstract** (needs the LLM). See [Citation alignment](#citation-alignment---check-citations). |
-| `--fresh` | Empty the cache DB, then re-query everything. This deletes every cached result in that DB, including other bibliographies' if they share it. |
+| `--fresh` | Ignore results cached before this run and re-query everything; new results overwrite the old ones. Nothing is deleted, so other bibliographies sharing the cache DB keep their cached results. |
 | `--cache PATH` | Cache DB location. Default: `.reference_audit/cache.db` beside the `.bib` (or the `.pdf`). |
 | `--model NAME` | Override the LLM model (default `gpt-6-luna`). |
 | `--grobid URL` | GROBID base URL for PDF input. Default `http://localhost:8070` (or `GROBID_URL`). |

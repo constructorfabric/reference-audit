@@ -1656,9 +1656,8 @@ def _run_sync(
             pipeline_version=config.pipeline_version,
             model=config.model,
             backend=config.source_backend,
+            fresh=fresh,
         )
-        if fresh:
-            cache.clear()
     try:
         return asyncio.run(_run_pipeline(run, config, cache))
     finally:

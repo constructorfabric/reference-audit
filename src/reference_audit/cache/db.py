@@ -61,13 +61,6 @@ CREATE TABLE IF NOT EXISTS db_quirks (
 );
 """
 
-_CACHE_TABLES = (
-    "source_query_cache",
-    "llm_decision_cache",
-    "entry_verdict_cache",
-    "doi_resolution_cache",
-)
-
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """Bring a cache written by an older version up to the current schema, in place.
@@ -113,9 +106,3 @@ def connect(path: str | Path) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     conn.commit()
     return conn
-
-
-def clear(conn: sqlite3.Connection) -> None:
-    for table in _CACHE_TABLES:
-        conn.execute(f"DELETE FROM {table}")
-    conn.commit()

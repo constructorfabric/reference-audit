@@ -1,4 +1,4 @@
-"""Cache behavior: only successes stored, model/pipeline gating, --fresh clears."""
+"""Cache behavior: only successes stored, model/pipeline gating, --fresh ignores old rows."""
 
 from reference_audit.cache.store import AuditCache
 from reference_audit.models import Identifiers, SourceQueryResult, SourceRecord, Verdict
@@ -42,9 +42,37 @@ def test_verdict_gated_by_pipeline_version(tmp_path):
     c2.close()
 
 
-def test_fresh_clears(tmp_path):
-    c = AuditCache(tmp_path / "c.db", model="m")
-    c.put_entry_verdict("h", Verdict(kind="none", confidence="high", rationale="r"))
-    c.clear()
-    assert c.get_entry_verdict("h") is None
+def _fill(c: AuditCache, key: str) -> None:
+    c.put_entry_verdict(key, Verdict(kind="none", confidence="high", rationale="r"))
+    c.put_source_query(key, SourceQueryResult(source="crossref", query_kind="id", records=[]))
+    c.put_llm_decision(key, "k", "{}")
+    c.put_doi_resolution(key, True)
+
+
+def _cached(c: AuditCache, key: str) -> list[bool]:
+    return [
+        c.get_entry_verdict(key) is not None,
+        c.get_source_query(key, "crossref", "id") is not None,
+        c.get_llm_decision(key, "k") is not None,
+        c.get_doi_resolution(key) is not None,
+    ]
+
+
+def test_fresh_ignores_old_rows_without_deleting_them(tmp_path):
+    """--fresh re-queries this run's entries but leaves a shared DB's other results alone (#6)."""
+    path = tmp_path / "c.db"
+    c = AuditCache(path, model="m")
+    _fill(c, "mine")
+    _fill(c, "other")
     c.close()
+
+    fresh = AuditCache(path, model="m", fresh=True)
+    assert _cached(fresh, "mine") == [False] * 4  # rows from before this run are not served
+    _fill(fresh, "mine")
+    assert _cached(fresh, "mine") == [True] * 4  # what this run wrote is
+    fresh.close()
+
+    later = AuditCache(path, model="m")
+    assert _cached(later, "mine") == [True] * 4
+    assert _cached(later, "other") == [True] * 4  # not wiped by the --fresh run
+    later.close()

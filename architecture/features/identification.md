@@ -432,6 +432,10 @@ a matched or backfilled identifier is cached under a probe entry keyed by those 
 otherwise it overwrote the entry's `id` slot, and the next run's identification read the matched
 work's records as the entry's own by-id result.
 
+`--fresh` (`AuditCache(fresh=True)`) **MUST** ignore rows stored before the run (reads only see rows
+written since the cache was opened; writes overwrite as usual) and **MUST NOT** delete anything, so
+other bibliographies sharing the cache DB keep their results.
+
 **Implements**:
 - `cpt-referenceaudit-flow-identification-audit-entry`
 
