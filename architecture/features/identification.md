@@ -70,7 +70,7 @@ the SQLite cache (`cache/`). Each entry is audited in isolation; only successful
 - **Design**: [DESIGN.md](../DESIGN.md)
 - **Dependencies**: `cpt-referenceaudit-feature-parsing`
 - **External benchmark**: [HALLMARK](https://github.com/rpatrik96/hallmark), driven by
-  `benchmarks/hallmark_bench.py` (see README, "Benchmarking on HALLMARK")
+  `benchmarks/hallmark_bench.py` (see `benchmarks/README.md`)
 
 ## 2. Actor Flows (CDSL)
 
@@ -455,4 +455,4 @@ other bibliographies sharing the cache DB keep their results.
       The harness lives outside `src/reference_audit` and is **not** `@cpt`-traced. A record the
       tool could not audit is reported as not evaluated, never given a guessed label. Measured at
       pipeline 0.23; the results, the gaps they exposed and the submission files
-      (`benchmarks/submissions/hallmark/`) are in README, "Benchmarking on HALLMARK".
+      (`benchmarks/submissions/hallmark/`) are in `benchmarks/README.md`.
