@@ -242,8 +242,17 @@ way: a list that says it is shortened is never reported as a partial author list
 A cited OpenAlex Work id (an `openalex.org/W…` URL) is routed to OpenAlex's by-id lookup and treated
 as authoritative identity: when the resolved Work matches the entry's title+author it is pinned as
 the matched artifact (`_apply_openalex_identity`), so the article-centric pooler cannot dissolve the
-explicitly-cited Work into a similar-titled foreign-DOI record and backfill the wrong identifiers. A
-cited Work id whose Work has a mismatched title/author does not confirm the entry.
+explicitly-cited Work into a similar-titled foreign-DOI record and backfill the wrong identifiers.
+OpenAlex's by-id lookup takes the DOI, else the arXiv id, else the Work id, so an entry that cites a
+Work id next to a DOI/arXiv id also has the Work looked up on its own (`_cited_work_query`, cached
+under a probe keyed by the Work id alone). A cited DOI that is another work than the pinned Work is
+reported by the cited-DOI field check. A cited Work id whose Work has a mismatched title/author does
+not confirm the entry; `_check_cited_work` then reports an issue naming the work the id resolves to
+(unless that work is part of the matched artifact), and likewise reports a Work id that resolves to
+nothing or could not be looked up. It runs for every verdict — matched, multiple, none and
+unresolved — and on cached runs, from the cached lookup, without changing the verdict. The Work-id
+lookup and check are implemented and unit-tested (`tests/test_openalex_work_id.py`) but not yet
+`@cpt`-traced.
 
 A cited **Google Books volume id** (a `books.google.…/books?id=…` URL) is handled the same way by
 `_apply_google_books_identity`: the resolved volume, when it matches the entry's title+author, is

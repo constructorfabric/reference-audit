@@ -162,7 +162,12 @@ class AuditConfig(BaseSettings):
     #       were in `.bib` values: a Crossref title "Allocation &amp; Regularization" no longer folds
     #       to the word "amp", so it is settled by rule instead of going to the field-check LLM, and
     #       the canonical value is reported decoded.
-    pipeline_version: str = "0.25"
+    # 0.26: a cited OpenAlex Work id is looked up on its own even when the entry also carries a DOI or
+    #       arXiv id (OpenAlex was queried by those instead, so the Work id was never checked), and
+    #       can then be pinned as the match; a cited DOI that is another Work is reported by the
+    #       cited-DOI check. A cited Work id that resolves to a different work, to nothing, or could
+    #       not be looked up is now reported as an issue, whatever the verdict.
+    pipeline_version: str = "0.26"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

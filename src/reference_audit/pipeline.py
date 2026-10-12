@@ -614,6 +614,8 @@ class AuditPipeline:
                 audit.verdict = cached
                 audit.from_cache = True
                 self._note_snapshot_coverage(audit, cached)
+                # The cited Work id's lookup is in the source-query cache, so this re-reads it.
+                self._check_cited_work(audit, cached, await self._cited_work_query(entry))
                 # Issues/field findings aren't part of the cached verdict; recompute them from the
                 # cached artifact records (all deterministic, and per-field LLM decisions are
                 # themselves cached) so a cached run reports identically to a --fresh one.
@@ -646,12 +648,13 @@ class AuditPipeline:
             audit.verdict = verdict
             if verdict is None:
                 self._record_unresolved(audit, [], [], None)
+            self._check_cited_work(audit, verdict, await self._cited_work_query(entry))
             if self.cache is not None and verdict is not None:
                 self.cache.put_entry_verdict(entry.content_hash, verdict)
             return
 
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-gather
-        records, source_errors = await self._gather_candidates(entry, route)
+        records, source_errors, cited_work = await self._gather_candidates(entry, route)
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-gather
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-assess
         pooled = pool_candidates(records)
@@ -686,8 +689,9 @@ class AuditPipeline:
         # OpenAlex Work id: a cited openalex.org Work URL is authoritative identity (the author
         # pointed us at the exact Work). When the by-id lookup returns that Work and it matches the
         # entry's title+author, pin it — never let the article-centric pooler dissolve it into a
-        # similar-titled foreign-DOI record and backfill the wrong identifiers.
-        verdict = self._apply_openalex_identity(verdict, entry, records)
+        # similar-titled foreign-DOI record and backfill the wrong identifiers. A cited DOI that is
+        # another Work is then reported by the cited-DOI field check.
+        verdict = self._apply_openalex_identity(verdict, entry, cited_work)
 
         # Google Books volume id: a cited books.google.…/books?id=… is likewise author-supplied,
         # authoritative identity for a trade/book title. Pin it when the by-id lookup confirms it, so
@@ -719,6 +723,7 @@ class AuditPipeline:
         if self.cache is not None and verdict is not None:
             self.cache.put_entry_verdict(entry.content_hash, verdict)
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-cache-store
+        self._check_cited_work(audit, verdict, cited_work)
         await self._check_fields(audit, verdict)
         await self._report_book(audit, book)
         await self._check_alignment(audit, verdict)
@@ -736,37 +741,77 @@ class AuditPipeline:
         return build_verdict(audit.candidates, artifacts, errored=errored or cluster_errored)
         # @cpt-end:cpt-referenceaudit-algo-identification-verdict:p1:inst-build
 
-    async def _gather_candidates(self, entry, route) -> tuple[list[SourceRecord], list[str]]:
-        """Query the routed adapters (cached). Returns the records and one line per failed query,
-        naming the source, so an unresolved entry can say which source it could not reach."""
+    async def _query(self, entry: BibEntry, adapter: SourceAdapter, kind: str) -> SourceQueryResult:
+        """One adapter query for `entry` (by id or by metadata), cached under the entry's hash."""
+        cached = (
+            self.cache.get_source_query(entry.content_hash, adapter.cache_source, kind)
+            if self.cache is not None
+            else None
+        )
+        if cached is not None:
+            return cached
+        result = (
+            await adapter.lookup_by_id(entry.ids)
+            if kind == "id"
+            else await adapter.search_by_metadata(entry)
+        )
+        if self.cache is not None:
+            self.cache.put_source_query(entry.content_hash, result, source=adapter.cache_source)
+        return result
 
-        async def one(adapter: SourceAdapter, kind: str) -> SourceQueryResult:
-            cached = (
-                self.cache.get_source_query(entry.content_hash, adapter.cache_source, kind)
-                if self.cache is not None
-                else None
-            )
-            if cached is not None:
-                return cached
-            result = (
-                await adapter.lookup_by_id(entry.ids)
-                if kind == "id"
-                else await adapter.search_by_metadata(entry)
-            )
-            if self.cache is not None:
-                self.cache.put_source_query(entry.content_hash, result, source=adapter.cache_source)
-            return result
-
-        tasks = [one(a, "id") for a in route.id_adapters]
-        tasks += [one(a, "metadata") for a in route.metadata_adapters]
+    async def _gather_candidates(
+        self, entry, route
+    ) -> tuple[list[SourceRecord], list[str], SourceQueryResult | None]:
+        """Query the routed adapters (cached). Returns the records, one line per failed query (naming
+        the source, so an unresolved entry can say which source it could not reach), and the cited
+        OpenAlex Work id's own lookup (`_cited_work_query`; None when the entry cites no Work id)."""
+        queries = [(a, "id") for a in route.id_adapters]
+        queries += [(a, "metadata") for a in route.metadata_adapters]
+        tasks = [self._query(entry, a, kind) for a, kind in queries]
+        # The OpenAlex by-id lookup takes the DOI, else the arXiv id, else the Work id — so an entry
+        # citing a Work id next to a DOI/arXiv id needs the Work looked up on its own as well.
+        probe_work = bool(entry.ids.openalex and (entry.ids.doi or entry.ids.arxiv_id))
+        if probe_work:
+            tasks.append(self._cited_work_query(entry))
         results = await asyncio.gather(*tasks)
         records: list[SourceRecord] = []
         errors: list[str] = []
         for res in results:
+            if res is None:
+                continue
             if res.error:
                 errors.append(f"{res.source} {res.query_kind} query failed: {res.error}")
             records.extend(res.records)
-        return records, errors
+        if probe_work:
+            cited_work = results[-1]
+        else:
+            cited_work = next(
+                (
+                    res for (a, kind), res in zip(queries, results)
+                    if entry.ids.openalex and a.name == "openalex" and kind == "id"
+                ),
+                None,
+            )
+        return records, errors, cited_work
+
+    async def _cited_work_query(self, entry: BibEntry) -> SourceQueryResult | None:
+        """The OpenAlex lookup of the entry's cited Work id on its own (cached), or None when the entry
+        cites no Work id or OpenAlex is not configured.
+
+        An entry citing only a Work id is looked up by it directly (the routed by-id query). One that
+        also carries a DOI/arXiv id is probed with the Work id alone, cached under that probe's own
+        hash, so the DOI-keyed lookup — and responses cached before this probe existed — never stand
+        in for the Work.
+        """
+        adapter = next((a for a in self.adapters if a.name == "openalex"), None)
+        if not entry.ids.openalex or adapter is None:
+            return None
+        if entry.ids.doi or entry.ids.arxiv_id:
+            entry = BibEntry(
+                key=entry.key, entry_type=entry.entry_type,
+                ids=Identifiers(openalex=entry.ids.openalex),
+            )
+        return await self._query(entry, adapter, "id")
 
     def _note_snapshot_coverage(self, audit: EntryAudit, verdict: Verdict | None) -> None:
         """Caveat a `none` verdict reached on local snapshots that may predate the cited work.
@@ -1341,7 +1386,21 @@ class AuditPipeline:
             backfilled_isbn=(matched.ids.isbn13 if (backfilled and matched) else None),
         )
 
-    def _apply_openalex_identity(self, verdict, entry: BibEntry, records: list[SourceRecord]):
+    def _cited_work(self, entry: BibEntry, cited_work: SourceQueryResult | None):
+        """The record the cited Work id resolves to (OpenAlex answers a merged id with the Work it was
+        merged into), and whether it passes the title+author gate. (None, False) when there is none."""
+        if not entry.ids.openalex or cited_work is None or not cited_work.records:
+            return None, False
+        rec = next(
+            (r for r in cited_work.records if r.ids.openalex == entry.ids.openalex),
+            cited_work.records[0],
+        )
+        features = compute_features(
+            entry, rec, tail_threshold=self.config.prefix_trap_tail_jaccard
+        )
+        return rec, bucket(features, self.config, entry_has_id=True) == "auto_accept"
+
+    def _apply_openalex_identity(self, verdict, entry: BibEntry, cited_work):
         """Pin the matched artifact to the cited OpenAlex Work when its by-id lookup confirms it.
 
         A cited openalex.org Work id is an author-supplied identifier, as authoritative as a DOI/ISBN:
@@ -1349,19 +1408,12 @@ class AuditPipeline:
         the identity. We override here so the explicitly-cited Work — not a similar-titled foreign-DOI
         record the title pooler may have merged it into — represents the entry (which keeps a wrong
         DOI/ISBN from being backfilled). A cited id whose Work has a mismatched title/author does NOT
-        confirm (it scores below auto_accept) and is left to the generic verdict.
+        confirm (it scores below auto_accept) and is left to the generic verdict;
+        `_check_cited_work` reports it.
         """
-        if not entry.ids.openalex:
-            return verdict
-        rec = next(
-            (r for r in records if r.ids.openalex and r.ids.openalex == entry.ids.openalex), None
-        )
-        if rec is None:
-            return verdict  # the lookup errored or returned nothing — never read as a confirmation
-        features = compute_features(
-            entry, rec, tail_threshold=self.config.prefix_trap_tail_jaccard
-        )
-        if bucket(features, self.config, entry_has_id=True) != "auto_accept":
+        rec, confirmed = self._cited_work(entry, cited_work)
+        if rec is None or not confirmed:
+            # The lookup errored, found nothing, or found another work — never a confirmation.
             return verdict
         artifact = MatchedArtifact(
             records=[rec], versions=[rec], best_record=rec, merged_ids=rec.ids
@@ -1371,6 +1423,57 @@ class AuditPipeline:
             artifacts=[artifact],
             confidence="high",
             rationale="confirmed via OpenAlex (cited Work id resolved)",
+        )
+
+    def _check_cited_work(
+        self, audit: EntryAudit, verdict, cited_work: SourceQueryResult | None
+    ) -> None:
+        """Report a cited OpenAlex Work id that is not the entry's work, or could not be checked.
+
+        Runs for every verdict: the Work id is the author's own identifier, so whether the entry came
+        out matched to another record, ambiguous, unmatched or unresolved, a Work id that resolves to
+        a different work (or to nothing) is reported, naming the Work. The verdict is not changed.
+        """
+        work_id = audit.entry.ids.openalex
+        if not work_id:
+            return
+        if cited_work is None:
+            audit.issues.append(
+                f"could not check the cited OpenAlex Work id {work_id}: OpenAlex is not among the "
+                "configured sources"
+            )
+            return
+        if cited_work.error:
+            audit.issues.append(
+                f"could not check the cited OpenAlex Work id {work_id}: the OpenAlex lookup failed "
+                f"({cited_work.error})"
+            )
+            return
+        rec, confirmed = self._cited_work(audit.entry, cited_work)
+        if rec is None:
+            audit.issues.append(
+                f"the cited OpenAlex Work id {work_id} does not resolve: OpenAlex has no such Work"
+            )
+            return
+        matched_ids = {
+            r.ids.openalex
+            for a in (verdict.artifacts if verdict is not None else [])
+            for r in [*a.records, *a.versions, *([a.best_record] if a.best_record else [])]
+            if r.ids.openalex
+        }
+        if confirmed or rec.ids.openalex in matched_ids:
+            return
+        year = f", {rec.year}" if rec.year else ""
+        authors = ""
+        if rec.authors:
+            more = " et al." if len(rec.authors) > 3 else ""
+            authors = f" by {', '.join(rec.authors[:3])}{more}"
+        merged = (
+            f" (as {rec.ids.openalex})" if rec.ids.openalex and rec.ids.openalex != work_id else ""
+        )
+        audit.issues.append(
+            f"the cited OpenAlex Work id {work_id} belongs to a different work{merged}: "
+            f"'{rec.title}'{authors}{year}"
         )
 
     def _apply_google_books_identity(self, verdict, entry: BibEntry, records: list[SourceRecord]):

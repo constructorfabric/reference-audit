@@ -124,12 +124,15 @@ If no headless browser is available, or rendering fails, the entry is reported a
 
 A reference that cites an **OpenAlex Work id** (an `openalex.org/W…` URL, common for books and other
 titles the article-centric search and Crossref/Open Library miss) is resolved directly to that Work,
-unless the entry also carries a DOI or arXiv id, by which OpenAlex is then queried instead.
+also when the entry carries a DOI or arXiv id (OpenAlex is then queried by both).
 When the Work matches the entry's title and authors it is pinned as the match — the author-supplied
 Work id is treated as authoritative identity, so a similar-titled foreign-DOI record is never merged
-in and its identifiers are never backfilled onto the entry. A cited Work id whose Work has a
-mismatched title/author does not confirm the entry; the entry gets whatever verdict the other
-candidates support, with no finding specific to the Work id.
+in and its identifiers are never backfilled onto the entry. A cited DOI that belongs to another work
+is then reported by the cited-DOI check (a `doi` field finding naming that work). A cited Work id
+whose Work has a mismatched title/author does not confirm the entry; the entry gets whatever verdict
+the other candidates support, and an issue names the work the id resolves to. A Work id that resolves
+to nothing, or whose lookup failed, is reported too. These Work-id issues are reported for every
+verdict, including an unresolved entry.
 
 For **books**, Open Library is the authority of record for identity: it is edition-aware, so it can
 confirm a real book the article-centric matcher rejected (e.g. a 1976 original whose only DOI-bearing
@@ -659,11 +662,13 @@ on the `doi` field (see [How it works](#how-it-works)). `strict` therefore count
 #### Result: `dev_public`, pipeline 0.23
 
 The results below, and the committed submissions, were measured at pipeline 0.23. The current
-pipeline is 0.25, and it has not been re-measured:
+pipeline is 0.26, and it has not been re-measured:
 - 0.24: bibtexparser 2. `.bib` values are read by the tool itself and LaTeX is decoded with
   pylatexenc, which changes some field values and which entries are unparseable.
 - 0.25: HTML character references in source values are decoded, so a source title with `&amp;` is
   settled by rule instead of going to the field-check LLM.
+- 0.26: a cited OpenAlex Work id is looked up even when the entry also has a DOI or arXiv id, and a
+  Work id that is another work, resolves to nothing or could not be looked up is reported.
 
 The harness refuses to resume a run directory from another pipeline version; re-measure into a new
 `--out`.

@@ -200,6 +200,11 @@ async def test_cited_openalex_id_with_mismatched_work_is_not_confirmed(tmp_path)
     assert audit.verdict is None or audit.verdict.rationale != (
         "confirmed via OpenAlex (cited Work id resolved)"
     )
+    # ...and the Work id is reported, naming the work it resolves to (issue #4).
+    assert any(
+        "OpenAlex Work id W3034344071 belongs to a different work" in i and "Beekeeping" in i
+        for i in audit.issues
+    )
 
 
 @respx.mock
