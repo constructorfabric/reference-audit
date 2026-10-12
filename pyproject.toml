@@ -9,7 +9,6 @@ dependencies = [
     "beautifulsoup4>=4.15.0",
     "bibtexparser>=2.1",
     "clickhouse-connect>=0.8",
-    "constructor-studio",
     "curl-cffi>=0.7",
     "httpx>=0.28.1",
     "loguru>=0.7.3",
@@ -33,9 +32,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reference_audit"]
-
-[tool.uv.sources]
-constructor-studio = { git = "https://github.com/constructorfabric/studio.git" }
 
 [dependency-groups]
 dev = [

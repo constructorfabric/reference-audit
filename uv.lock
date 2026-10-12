@@ -150,11 +150,6 @@ wheels = [
 ]
 
 [[package]]
-name = "constructor-studio"
-version = "1.5.10.dev30"
-source = { git = "https://github.com/constructorfabric/studio.git#68e4e867acc4c30a0013c7ce11cddab8d9811923" }
-
-[[package]]
 name = "curl-cffi"
 version = "0.15.0"
 source = { registry = "https://pypi.org/simple" }
@@ -555,7 +550,6 @@ dependencies = [
     { name = "beautifulsoup4" },
     { name = "bibtexparser" },
     { name = "clickhouse-connect" },
-    { name = "constructor-studio" },
     { name = "curl-cffi" },
     { name = "httpx" },
     { name = "loguru" },
@@ -583,7 +577,6 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.15.0" },
     { name = "bibtexparser", specifier = ">=2.1" },
     { name = "clickhouse-connect", specifier = ">=0.8" },
-    { name = "constructor-studio", git = "https://github.com/constructorfabric/studio.git" },
     { name = "curl-cffi", specifier = ">=0.7" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "loguru", specifier = ">=0.7.3" },
