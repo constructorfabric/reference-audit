@@ -26,9 +26,10 @@ from reference_audit.sources.http import (
     post_multipart,
 )
 
-GROBID_IMAGE = "docker.io/grobid/grobid:0.8.2.1-crf"
+GROBID_IMAGE = "docker.io/grobid/grobid:0.9.1-crf"
 GROBID_START_HINT = (
-    f"podman run -d --name grobid -p 8070:8070 {GROBID_IMAGE}\n"
+    # `--replace` swaps out an existing `grobid` container, e.g. one left from an older image.
+    f"podman run -d --replace --name grobid -p 8070:8070 {GROBID_IMAGE}\n"
     "  (first start takes ~30 s while the models load; then re-run this command)"
 )
 

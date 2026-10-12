@@ -1,9 +1,9 @@
 GENERATED — provenance for initial.tei.xml. Do not edit either file by hand.
 
   source    : tests/documents/directing-open-ended-evolution/initial.tex + initial.bib -> xelatex/bibtex
-  grobid    : docker.io/grobid/grobid:0.8.2.1-crf (reported version 0.8.2)
+  grobid    : docker.io/grobid/grobid:0.9.1-crf (reported version 0.9.1)
   endpoint  : /api/processFulltextDocument consolidateCitations=0 consolidateHeader=0 includeRawCitations=1
-  texlive   : pdfTeX 3.141592653-2.6-1.40.29 (TeX Live 2026)
+  texlive   : pdfTeX 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian)
   figures   : 13 figure(s) replaced by generated placeholders — page layout
             differs from the published article, which does not affect reference extraction
             (the bibliography is its own trailing section)

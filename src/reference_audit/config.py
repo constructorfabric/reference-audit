@@ -108,7 +108,7 @@ class AuditConfig(BaseSettings):
     # --- PDF input (GROBID) ---
     # The service is NOT managed by this package. Point this at a running instance; a PDF input with
     # no reachable GROBID is a reported failure, never a silently empty reference list.
-    #   podman run -d --name grobid -p 8070:8070 docker.io/grobid/grobid:0.8.2.1-crf
+    #   podman run -d --replace --name grobid -p 8070:8070 docker.io/grobid/grobid:0.9.1-crf
     # Intentionally NOT declared with alias="GROBID_URL": a non-aliased field already reads its
     # upper-cased env var, whereas an aliased one silently ignores by-name construction here
     # (`populate_by_name` is not set), which would make AuditConfig(grobid_url=...) a no-op in tests.

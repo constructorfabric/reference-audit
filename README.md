@@ -145,9 +145,11 @@ network or LLM calls. A transient outage never counts as "no match".
 - An OpenAI API key (for the LLM adjudication step)
 - **For PDF input only:** a running GROBID. It is not managed by this tool — start one with:
   ```bash
-  podman run -d --name grobid -p 8070:8070 docker.io/grobid/grobid:0.8.2.1-crf
+  podman run -d --replace --name grobid -p 8070:8070 docker.io/grobid/grobid:0.9.1-crf
   ```
-  The first start takes ~30 s while the models load. `docker run` works the same way.
+  The first start takes ~30 s while the models load. `--replace` swaps out an existing `grobid`
+  container (e.g. one from an older image). Docker has no `--replace`: run `docker rm -f grobid`
+  first, then the same command with `docker` instead of `podman` and without `--replace`.
 
 ## Setup
 
@@ -391,7 +393,7 @@ identification verdict. The JSON report carries the full per-citation `alignment
 ### Auditing a PDF
 
 ```bash
-podman run -d --name grobid -p 8070:8070 docker.io/grobid/grobid:0.8.2.1-crf   # wait ~30 s
+podman run -d --replace --name grobid -p 8070:8070 docker.io/grobid/grobid:0.9.1-crf   # wait ~30 s
 uv run reference-audit audit paper.pdf
 ```
 

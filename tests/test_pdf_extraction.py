@@ -24,7 +24,14 @@ import pytest
 from reference_audit.matching.features import title_ratio
 from reference_audit.parsing.tex import parse_citation_contexts
 from reference_audit.pdf.tei import parse_tei
-from pdf_fixtures import BUILD_DIRNAME, compile_pdf, fetch_tei, preflight
+from pdf_fixtures import (
+    BUILD_DIRNAME,
+    compile_pdf,
+    fetch_tei,
+    live_grobid_version,
+    preflight,
+    tei_grobid_version,
+)
 from pdf_oracle import compare, ground_truth
 
 pytestmark = [pytest.mark.pdf_build, pytest.mark.grobid]
@@ -34,8 +41,8 @@ pytestmark = [pytest.mark.pdf_build, pytest.mark.grobid]
 class Expected:
     """Regression floors for one document version.
 
-    Observed 2026-08-02 with GROBID docker.io/grobid/grobid:0.8.2.1-crf and TeX Live 2026
-    (pdfTeX 1.40.29), figures replaced by generated placeholders. Recorded values are in the comment
+    Observed 2026-10-12 with GROBID docker.io/grobid/grobid:0.9.1-crf and TeX Live 2023
+    (pdfTeX 1.40.25; TeX Live 2023/Debian), figures replaced by generated placeholders. Recorded values are in the comment
     on each field; the pinned bound leaves ~2% of N of headroom so a CRF that is not bit-stable does
     not turn a harmless change into a red build.
     """
@@ -97,9 +104,9 @@ EXPECTED = [
         doi_unexpected_max=1,
         year_wrong_max=6,            # observed 4 — GROBID reading a year out of a DOI string
         year_missing_max=48,         # observed 40 — benign: the field check reports it as unverified
-        linked_keys_min=52,          # observed 56
-        context_agreement_min=0.90,  # observed 55/56
-        positional_min=None,         # observed 22/107; two-column reading order, not a quality signal
+        linked_keys_min=54,          # observed 58 (56 on 0.8.2.1)
+        context_agreement_min=0.90,  # observed 58/58
+        positional_min=None,         # observed 23/107; two-column reading order, not a quality signal
     ),
     Expected(
         slug="position-align-ai-to-aspirations",
@@ -112,8 +119,8 @@ EXPECTED = [
         doi_unexpected_max=0,        # observed 0
         year_wrong_max=5,            # observed 3
         year_missing_max=42,         # observed 34
-        linked_keys_min=64,          # observed 68
-        context_agreement_min=0.90,  # observed 66/68
+        linked_keys_min=69,          # observed 73 (68 on 0.8.2.1)
+        context_agreement_min=0.90,  # observed 72/73
         positional_min=None,         # observed 70/125
     ),
 ]
@@ -138,7 +145,10 @@ def _oracle(exp: Expected, grobid_url: str, cache: dict):
     if not pdf.is_file():
         pdf = compile_pdf(plan)
     tei_cache = build / f"{doc.version}.tei.xml"
-    if not tei_cache.is_file():
+    # A TEI from another GROBID version would measure that version, not the running one.
+    if not tei_cache.is_file() or tei_grobid_version(
+        tei_cache.read_text(encoding="utf-8")
+    ) != live_grobid_version(grobid_url):
         tei_cache.write_text(fetch_tei(pdf, grobid_url), encoding="utf-8")
 
     refs = parse_tei(tei_cache.read_text(encoding="utf-8"))

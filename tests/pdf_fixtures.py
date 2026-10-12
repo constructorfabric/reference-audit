@@ -488,9 +488,19 @@ def fetch_tei(pdf: Path, grobid_url: str) -> str:
     return asyncio.run(go())
 
 
-def _grobid_version(tei: str) -> str:
+def tei_grobid_version(tei: str) -> str:
+    """The GROBID version a TEI was produced by, as its header records it."""
     m = re.search(r'<application[^>]*\bversion="([^"]+)"', tei)
     return m.group(1) if m else "unknown"
+
+
+def live_grobid_version(grobid_url: str) -> str:
+    """The version the GROBID service at `grobid_url` reports (`/api/version`)."""
+    import json
+    from urllib.request import urlopen
+
+    with urlopen(f"{grobid_url.rstrip('/')}/api/version", timeout=10) as resp:
+        return json.load(resp)["version"]
 
 
 def provenance_text(plan: BuildPlan, tei: str, texlive: str) -> str:
@@ -514,7 +524,7 @@ def provenance_text(plan: BuildPlan, tei: str, texlive: str) -> str:
         f"\n"
         f"  source    : tests/documents/{plan.doc.slug}/{plan.doc.version}.tex"
         f" + {plan.doc.version}.bib -> {plan.compiler}/bibtex\n"
-        f"  grobid    : {GROBID_IMAGE} (reported version {_grobid_version(tei)})\n"
+        f"  grobid    : {GROBID_IMAGE} (reported version {tei_grobid_version(tei)})\n"
         f"  endpoint  : {FULLTEXT_ENDPOINT} {params}\n"
         f"  texlive   : {texlive}\n"
         f"  figures   : {figures}\n"

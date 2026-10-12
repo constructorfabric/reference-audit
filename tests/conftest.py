@@ -14,6 +14,8 @@ from urllib.request import urlopen
 
 import pytest
 
+from reference_audit.pdf.grobid import GROBID_START_HINT
+
 TESTS_DIR = Path(__file__).parent
 DOCUMENTS_DIR = TESTS_DIR / "documents"
 
@@ -79,8 +81,7 @@ GROBID_ENV_VAR = "GROBID_URL"
 DEFAULT_GROBID_URL = "http://localhost:8070"
 
 _ENABLE_HINT = (
-    f"set {LIVE_ENV_VAR}=1 to require these tests, and start GROBID with:\n"
-    "  podman run -d --name grobid -p 8070:8070 docker.io/grobid/grobid:0.8.2.1-crf"
+    f"set {LIVE_ENV_VAR}=1 to require these tests, and start GROBID with:\n  {GROBID_START_HINT}"
 )
 
 

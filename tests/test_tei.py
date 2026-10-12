@@ -425,7 +425,9 @@ def test_real_tei_maps_the_whole_pilot_bibliography():
     assert refs.extraction_failures == {}
     assert refs.dangling_targets == []
     assert refs.unresolved_markers == 0
-    assert refs.markers_seen == 63
+    # 62 since GROBID 0.9.1. 0.8.2.1 also tagged `Equation~\eqref{eq:windowed-H}` (rendered "(11)",
+    # section3.tex) as a citation of reference [11]; that marker was never a citation.
+    assert refs.markers_seen == 62
     # Every reference is cited in the text, so every one should carry at least one context.
     assert len(refs.linked_keys()) == 28
     assert all(c.text and c.command == "bibr" for g in refs.contexts.values() for c in g)
