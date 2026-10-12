@@ -105,6 +105,18 @@ def test_cli_rejects_an_unknown_fail_on_verdict_before_the_audit_runs(tmp_path, 
     assert "--fail-on must be" in result.output
 
 
+def test_cli_rejects_fail_on_with_no_network(tmp_path):
+    # The parse-only report has no verdicts, so --fail-on would always pass.
+    tex, bib = tmp_path / "p.tex", tmp_path / "p.bib"
+    tex.write_text("\\cite{k}", encoding="utf-8")
+    bib.write_text("@article{k, title={T}}", encoding="utf-8")
+    result = CliRunner().invoke(
+        app, ["audit", str(tex), str(bib), "--no-network", "--fail-on", "hallucinated"]
+    )
+    assert result.exit_code == 2
+    assert "--fail-on cannot be combined with --no-network" in result.output
+
+
 def test_a_full_length_list_with_a_spelling_variant_omits_nobody():
     # HALLMARK c96d1587797e (VALID): the record writes 'Brandon RichardWebster'. Under
     # --partial-authors error this was reported as an omission and scored as a hallucination.

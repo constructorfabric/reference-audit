@@ -105,6 +105,13 @@ def audit(
         raise typer.BadParameter("--partial-authors must be 'ignore', 'warn' or 'error'")
     if fail_on not in (None, "hallucinated", "multiple"):
         raise typer.BadParameter("--fail-on must be 'hallucinated' or 'multiple'")
+    if fail_on and no_network:
+        # The parse-only report has no verdicts, so the gate could never trip: a CI job relying on
+        # it would always pass. Reject the combination rather than pass silently.
+        raise typer.BadParameter(
+            "--fail-on cannot be combined with --no-network: the parse-only report has no verdicts "
+            "to check"
+        )
 
     try:
         source = resolve_input(document, bib)

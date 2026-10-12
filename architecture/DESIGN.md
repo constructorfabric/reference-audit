@@ -363,7 +363,8 @@ To present the `AuditReport` to humans and machines and to provide the program e
 nits, clean); `cli.py` (Typer) parses arguments and runs either the parse-only or the full audit.
 The options with a fixed set of values (`--format`, `--backend`, `--partial-authors`, `--fail-on`)
 are checked before any input is read or any source is queried, so a typo fails fast instead of
-after a full run. **IMPLEMENTED.**
+after a full run. `--fail-on` with `--no-network` is rejected too: the parse-only report has no
+verdicts, so the gate could never trip. **IMPLEMENTED.**
 
 ##### Responsibility boundaries
 

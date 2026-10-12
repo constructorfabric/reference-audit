@@ -304,7 +304,7 @@ NO ISSUES (18) — verified, nothing to fix:
 | `--grobid URL` | GROBID base URL for PDF input. Default `http://localhost:8070` (or `GROBID_URL`). |
 | `--ignore-embedded` | For a PDF that embeds the BibTeX records of its cited works, extract the references with GROBID anyway. See [PDFs that embed their references](#pdfs-that-embed-their-references). |
 | `--backend api\|clickhouse` | Where Semantic Scholar, OpenAlex and DBLP are read from: their public APIs, or a local ClickHouse mirror. Default `SOURCE_BACKEND`, else `api`. See [Local ClickHouse backend](#local-clickhouse-backend). |
-| `--fail-on hallucinated\|multiple` | Exit non-zero if any entry gets that verdict — for gating submissions in CI. Any other value is rejected before the audit starts. |
+| `--fail-on hallucinated\|multiple` | Exit non-zero if any entry gets that verdict — for gating submissions in CI. Any other value is rejected before the audit starts, and so is combining it with `--no-network` (the parse-only report has no verdicts to check). |
 | `--partial-authors ignore\|warn\|error` | How to report a cited author list that names only some of the work's authors without `and others`: not at all, as `uncertain` (default), or as an `error`. Default `PARTIAL_AUTHORS`, else `warn`. |
 
 `--no-network` applies to `.tex` + `.bib` input, and to a PDF that embeds the BibTeX records of its
