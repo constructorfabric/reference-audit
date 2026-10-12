@@ -7,6 +7,7 @@ real authors look fabricated and let a fabricated one pass.
 import pytest
 from typer.testing import CliRunner
 
+from reference_audit import cli
 from reference_audit.cli import app
 from reference_audit.matching.names import (
     authors_compatible,
@@ -88,6 +89,20 @@ def test_cli_rejects_an_unknown_partial_authors_mode(tmp_path):
     result = CliRunner().invoke(app, ["audit", str(tex), str(bib), "--partial-authors", "maybe"])
     assert result.exit_code != 0
     assert "--partial-authors must be" in result.output
+
+
+def test_cli_rejects_an_unknown_fail_on_verdict_before_the_audit_runs(tmp_path, monkeypatch):
+    # A typo in --fail-on must not cost a full audit run before it is reported (issue #5).
+    def no_audit(*args, **kwargs):
+        raise AssertionError("the audit ran before --fail-on was validated")
+
+    monkeypatch.setattr(cli, "run_audit", no_audit)
+    tex, bib = tmp_path / "p.tex", tmp_path / "p.bib"
+    tex.write_text("\\cite{k}", encoding="utf-8")
+    bib.write_text("@article{k, title={T}}", encoding="utf-8")
+    result = CliRunner().invoke(app, ["audit", str(tex), str(bib), "--fail-on", "halucinated"])
+    assert result.exit_code == 2
+    assert "--fail-on must be" in result.output
 
 
 def test_a_full_length_list_with_a_spelling_variant_omits_nobody():

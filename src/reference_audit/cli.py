@@ -103,6 +103,8 @@ def audit(
         raise typer.BadParameter("--backend must be 'api' or 'clickhouse'")
     if partial_authors not in (None, "ignore", "warn", "error"):
         raise typer.BadParameter("--partial-authors must be 'ignore', 'warn' or 'error'")
+    if fail_on not in (None, "hallucinated", "multiple"):
+        raise typer.BadParameter("--fail-on must be 'hallucinated' or 'multiple'")
 
     try:
         source = resolve_input(document, bib)
@@ -172,9 +174,7 @@ def audit(
 
     if fail_on:
         verdicts = report.summary.get("verdicts", {})
-        trigger = {"hallucinated": "none", "multiple": "multiple"}.get(fail_on)
-        if trigger is None:
-            raise typer.BadParameter("--fail-on must be 'hallucinated' or 'multiple'")
+        trigger = {"hallucinated": "none", "multiple": "multiple"}[fail_on]
         if verdicts.get(trigger, 0) > 0:
             raise typer.Exit(code=1)
 

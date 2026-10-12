@@ -361,7 +361,9 @@ To present the `AuditReport` to humans and machines and to provide the program e
 
 `report.py` renders JSON/text (verdict-aware categories: capital offences, unable-to-verify, issues,
 nits, clean); `cli.py` (Typer) parses arguments and runs either the parse-only or the full audit.
-**IMPLEMENTED.**
+The options with a fixed set of values (`--format`, `--backend`, `--partial-authors`, `--fail-on`)
+are checked before any input is read or any source is queried, so a typo fails fast instead of
+after a full run. **IMPLEMENTED.**
 
 ##### Responsibility boundaries
 
