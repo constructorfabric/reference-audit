@@ -9,11 +9,8 @@ from __future__ import annotations
 
 import re
 
-import bibtexparser
-from bibtexparser.bparser import BibTexParser
-from bibtexparser.customization import convert_to_unicode
-
 from reference_audit.models import Identifiers, SourceRecord
+from reference_audit.parsing.bib import read_bib_records
 from reference_audit.parsing.identifiers import (
     extract_arxiv_id,
     normalize_doi,
@@ -349,17 +346,11 @@ def publisher_bibtex_to_record(bibtex: str, *, source: str = "publisher") -> Sou
     null but the export carries `pages={131}`). Returns None when the text is not BibTeX (e.g. a
     bot-challenge HTML page), so the caller reports a clean gap instead of a guess.
     """
-    parser = BibTexParser(common_strings=True)
-    parser.customization = convert_to_unicode
-    parser.ignore_nonstandard_types = False
-    try:
-        db = bibtexparser.loads(bibtex, parser)
-    except Exception:  # noqa: BLE001 — malformed/HTML payload is a clean "not retrievable"
+    read = read_bib_records(bibtex)
+    # An HTML payload holds no entry; an export whose entry cannot be read is no authority either.
+    if not read.records or read.failed:
         return None
-    if not db.entries:
-        return None
-    rec = db.entries[0]
-    f = {k.lower(): v for k, v in rec.items() if k not in ("ID", "ENTRYTYPE")}
+    f = read.records[0].fields
     doi = normalize_doi(f.get("doi")) or normalize_doi(f.get("url"))
     volume = _bib_clean(f.get("volume"))
     if volume and not _NUMERICISH_VOLUME.match(volume):

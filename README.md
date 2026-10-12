@@ -363,9 +363,11 @@ The remaining entries (at least one match found) are then split into `ISSUES`,
   citation, etc.
 - The header also lists **cited-but-missing** citations (a `\cite` with no `.bib` entry) and
   **uncited** entries.
-- **`UNPARSEABLE .bib ENTRIES`** — entries the BibTeX parser could not read (an unbalanced brace, most
-  often), with their line and the reason. They are not checked at all, and a `\cite` of one is not
-  counted as missing. The JSON lists them under `unparsed`.
+- **`UNPARSEABLE .bib ENTRIES`** — entries that could not be read, with their line and the reason:
+  an unbalanced brace (most often), another syntax error bibtexparser reports, a reference to an
+  undefined `@string`, a duplicate field, no fields at all, or a value whose LaTeX cannot be decoded.
+  They are not checked at all, and a `\cite` of one is not counted as missing. The JSON lists them
+  under `unparsed`.
 
 ### Citation alignment (`--check-citations`)
 
@@ -496,8 +498,8 @@ set of standalone BibTeX entries labelled `VALID` or `HALLUCINATED`, spanning 14
 3 difficulty tiers. `benchmarks/hallmark_bench.py` runs the full pipeline (network + LLM) on a split and
 scores it with HALLMARK's own evaluator.
 
-HALLMARK pins `bibtexparser>=2` and this project pins `<2`, so HALLMARK gets its own checkout and venv.
-Pin the commit so results stay reproducible:
+HALLMARK gets its own checkout and venv; the harness calls its CLI (`--hallmark-bin`) and never imports
+it. Pin the commit so results stay reproducible:
 
 ```bash
 git clone https://github.com/rpatrik96/hallmark benchmarks/.hallmark
@@ -769,7 +771,8 @@ uv run cfs update            # update studio (kits are left alone unless you pas
 
 ```
 src/reference_audit/
-  parsing/     # .bib / .tex / identifier parsing; context.py = the shared sentence definition
+  parsing/     # .bib / .tex / identifier parsing; latex.py = LaTeX → Unicode for .bib values;
+               #   context.py = the shared sentence definition
   pdf/         # PDF input: grobid.py (the only network module — one client, one named error per
                #   failure mode) + tei.py (pure TEI -> BibEntry / CitationContext mapping) +
                #   embedded.py (the BibTeX records a PDF embeds, and the printed-title check)

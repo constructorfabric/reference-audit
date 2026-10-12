@@ -197,9 +197,11 @@ identifiers) so every downstream stage works against models instead of LaTeX/Bib
 
 ##### Responsibility scope
 
-Parse `.bib` into `BibEntry`s (`parsing/bib.py`), extract cited keys and resolve includes from
-`.tex` (`parsing/tex.py`), and normalize DOI/ISBN/arXiv/OpenAlex-Work-id/Google-Books-volume-id
-identifiers (`parsing/identifiers.py`).
+Parse `.bib` into `BibEntry`s (`parsing/bib.py`: bibtexparser 2 splits the blocks; `@string`
+references, `#` concatenation and month macros are resolved here, and LaTeX is decoded to Unicode by
+`parsing/latex.py` on pylatexenc, keeping `%`, `&`, `~` and `--` literal), extract cited keys and
+resolve includes from `.tex` (`parsing/tex.py`), and normalize
+DOI/ISBN/arXiv/OpenAlex-Work-id/Google-Books-volume-id identifiers (`parsing/identifiers.py`).
 Detect commented preprint twins. **IMPLEMENTED (M1).**
 
 ##### Responsibility boundaries
@@ -470,7 +472,8 @@ External libraries and services this module interacts with.
 
 | Dependency Module | Interface Used | Purpose |
 |-------------------|---------------|---------|
-| bibtexparser | `loads` / `db.entries` | Parse `.bib` source |
+| bibtexparser (2.x) | `parse_string(raw, parse_stack=[])` / `Library.blocks` | Split `.bib` source into entry, `@string` and failed blocks |
+| pylatexenc | `LatexWalker` / `LatexNodes2Text` | Decode LaTeX markup in `.bib` values to Unicode |
 | pydantic / pydantic-settings | `BaseModel` / `BaseSettings` | Validated domain models + config |
 | httpx / curl-cffi | async HTTP clients | Source queries; bot-walled publisher fetch |
 | beautifulsoup4 | HTML parsing | Web/publisher page metadata extraction |
@@ -652,8 +655,8 @@ transient errors are never cached, preserving the error ≠ not-found invariant.
 
   The harness is a consumer only. It changes no verdict-producing code, so it does not bump
   `pipeline_version`. It sits outside the traced codebase (`src/reference_audit`), so it is **not**
-  `@cpt`-traced. HALLMARK runs from its own environment, because its `bibtexparser>=2` pin conflicts
-  with this project's `<2`.
+  `@cpt`-traced. HALLMARK runs from its own checkout and environment, and the harness only calls its
+  CLI.
 
 ## 5. Traceability
 

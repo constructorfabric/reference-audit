@@ -152,7 +152,13 @@ class AuditConfig(BaseSettings):
     #       list made the LLM reject a real paper); members are deduplicated; given-name forms
     #       ('Tim' / 'Timothy') and dropped middle initials match; the field-check prompt calls a
     #       different journal or conference series an error (the LLM hedged on ACL vs ICLR).
-    pipeline_version: str = "0.23"
+    # 0.24: bibtexparser 2. Field values are read by `parsing.bib` itself and LaTeX is decoded with
+    #       pylatexenc (`parsing.latex`), so some values change: `\url{x}` is `x` (v1: `r̆lx`),
+    #       `\textit{X}` is `X`, `\href{u}{X}` is `X <u>`. An undefined `@string`, a duplicate field or
+    #       an undecodable value now makes only that entry unparsed (v1 failed the whole file on an
+    #       undefined `@string` and kept the first of duplicate fields); commented twins are read
+    #       from the uncommented text.
+    pipeline_version: str = "0.24"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

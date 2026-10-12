@@ -12,6 +12,7 @@
   - [Build parse report](#build-parse-report)
 - [3. Processes / Business Logic (CDSL)](#3-processes--business-logic-cdsl)
   - [Normalize identifiers](#normalize-identifiers)
+  - [Read field values](#read-field-values)
 - [4. States (CDSL)](#4-states-cdsl)
   - [Entry citation status](#entry-citation-status)
 - [5. Definitions of Done](#5-definitions-of-done)
@@ -70,10 +71,14 @@ User-facing interaction: an author requests a parse-only audit and receives an `
 
 **Error Scenarios**:
 - Missing `\input`/`\include` targets are reported, not fatal.
-- An entry the BibTeX parser cannot read (bibtexparser 1.x skips it without a word; most often an
-  unbalanced brace) is reported as an `UnparsedEntry` with its line and reason, never silently
-  dropped. Its neighbours are parsed normally, and a `\cite` of its key is not counted as
-  cited-but-missing. A `.bib` whose only entries are unparseable names them in the error.
+- An entry that cannot be read is reported as an `UnparsedEntry` with its line and reason, never
+  silently dropped: a block bibtexparser cannot split (most often an unbalanced brace), a reference to
+  an undefined `@string`, a duplicate field (`title` and `Title` count as one), an entry with no
+  fields, or a value pylatexenc cannot decode. Its neighbours are parsed normally, and a `\cite` of
+  its key is not counted as cited-but-missing. A `.bib` whose only entries are unparseable names them
+  in the error.
+- A repeated entry key is not an error: bibtexparser sets the later entry aside, and both entries are
+  audited as written.
 
 **Steps**:
 1. [x] - `p1` - Parse the `.bib` into entries, commented twins and unparseable entries (`parse_bib`) - `inst-parse-bib`
@@ -95,6 +100,23 @@ first-class `Identifiers.openalex` Work id (and dropped from `url`, so it is not
 web page); a bare `W…` token with no `openalex.org` host is not trusted. A `books.google.…/books?id=…`
 URL likewise yields a first-class `Identifiers.google_books` volume id (the `url` is kept, as it is a
 real landing page); a bare token with no Google Books host is not trusted.
+
+### Read field values
+
+bibtexparser 2 only splits the `.bib` text into blocks (`parse_string` with an empty parse stack);
+`parsing/bib.py` (`read_bib_records`) reads the values. A value is a `#` concatenation of braced or
+quoted literals, numbers and `@string` names. Names are case-insensitive and include BibTeX's month
+macros (`jul` → `July`). `@string`s resolve in file order, and a redefinition wins. The resolved text
+is LaTeX-decoded (`parsing/latex.py`, on pylatexenc): accents (`{\'e}` → é), text macros
+(`\textit{X}` → X, `\url{x}` → x, `\href{x}{X}` → `X <x>`) and math symbols (`$\alpha$` → `$α$`).
+`%`, `&`, `~`, `#` and `--` stay literal, so a URL with `%20`, an HTML reference such as `&amp;` and a
+page range `65--92` reach the next steps as written. pylatexenc's default decoder treats them as
+LaTeX: it would cut the URL at its `%`, space out the `&` and turn `--` into a dash. A value that
+cannot be resolved or decoded makes the entry unparsed rather than guessed. The same reader serves
+publisher citation exports (`sources/normalize.py`). A commented twin is read from its block with the
+lines' `%` markers removed, since bibtexparser's reading of a `%`-prefixed block depends on where the
+`@` falls. This runs inside the `inst-parse-bib` step and is tested (`tests/test_bib.py`,
+`tests/test_latex.py`); it is not separately `@cpt`-traced.
 
 Text fields (title, authors, venue, publisher, pages) have their `;`-terminated HTML character
 references decoded (`parsing/entities.py`: `d&apos;Amore` → `d'Amore`, `&amp;` → `&`). Web-scraped
@@ -133,9 +155,11 @@ commented-twins / missing-includes / unparsed counts are correct for the parsed 
 
 `parse_bib` finds the dropped entries by comparing every live `@type{key` header in the raw text
 (not `@string`, `@preamble`, `@comment`, nor a `%`-commented twin) with the keys bibtexparser
-returned. The reason is "unbalanced braces" when the entry's block does not balance, and otherwise
-the generic "could not parse"; the fields are never reconstructed, since any check of a guessed
-entry would be a guess.
+returned. The reason is "unbalanced braces" when the entry's block does not balance, otherwise
+bibtexparser's own reason for the failed block at that line, or the generic "could not parse". An
+entry bibtexparser did split but whose values cannot be read (see "Read field values") carries that
+reason instead. The fields are never reconstructed, since any check of a guessed entry would be a
+guess.
 
 **Implements**:
 - `cpt-referenceaudit-flow-parsing-build-report`

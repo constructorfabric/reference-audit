@@ -126,3 +126,97 @@ def test_a_bib_whose_only_entry_is_unparseable_names_it(tmp_path):
     bib.write_text("@article{bad, title={Broken, year={2021}}\n", encoding="utf-8")
     with pytest.raises(EmptyBibliographyError, match=r"1 unparseable entry: bad \(line 1\)"):
         build_parse_report(None, bib)
+
+
+def _parse(raw):
+    from reference_audit.parsing.bib import parse_bib_text
+
+    return parse_bib_text(raw)
+
+
+def test_string_references_concatenation_and_month_macros_are_resolved():
+    entries, _, unparsed = _parse(
+        '@string{conf = "Proc. of " # {ICML}}\n'
+        '@string{ICMLYEAR = {2020}}\n'
+        '@inproceedings{a, title={T}, booktitle = conf # " " # icmlyear, month = jul, year = 2020}\n'
+    )
+    assert unparsed == []
+    (a,) = entries
+    assert a.venue == "Proc. of ICML 2020"
+    assert a.raw_fields["month"] == "July"
+    assert a.year == 2020
+
+
+def test_an_undefined_string_makes_only_its_entry_unparsed():
+    entries, _, unparsed = _parse(
+        "@article{a, title={One}, journal = nosuch}\n@article{b, title={Two}}\n"
+    )
+    assert [e.key for e in entries] == ["b"]
+    (u,) = unparsed
+    assert (u.key, u.line) == ("a", 1)
+    assert "field `journal`: undefined @string `nosuch`" in u.reason
+    assert "not checked" in u.reason
+
+
+def test_a_duplicate_field_is_not_resolved_by_picking_one():
+    entries, _, unparsed = _parse(
+        "@article{a, title={One}, Title={Two}}\n@article{b, title={X}, title={Y}}\n"
+    )
+    assert entries == []
+    assert [(u.key, u.reason.split(";")[0]) for u in unparsed] == [
+        ("a", "duplicate field `title`"),
+        ("b", "duplicate field `title`"),
+    ]
+
+
+def test_a_repeated_key_audits_both_entries():
+    entries, _, unparsed = _parse("@article{a, title={One}}\n@article{a, title={Two}}\n")
+    assert [(e.key, e.title) for e in entries] == [("a", "One"), ("a", "Two")]
+    assert unparsed == []
+
+
+def test_a_balanced_but_malformed_entry_carries_the_parser_reason():
+    entries, _, unparsed = _parse("@article{k title={X}}\n@article{ok, title={Y}}\n")
+    assert [e.key for e in entries] == ["ok"]
+    (u,) = unparsed
+    assert u.key == "k"
+    assert "Expected comma after entry key" in u.reason
+
+
+def test_bibtex_literals_survive_latex_decoding():
+    (e,), _, _ = _parse(
+        "@article{a, title = {Allocation &amp; {GAN}s for d&apos;Amore},"
+        " author = {M{\\\"u}ller, J. and Garc{\\'\\i}a, M.},"
+        " pages = {65--92},"
+        " url = {https://x.org/~u/a%20b?q=1#f},"
+        " note = {\\url{https://y.org} and \\href{https://z.org}{Zed}}}\n"
+    )
+    assert e.title == "Allocation & GANs for d'Amore"
+    assert e.authors == ["Müller, J.", "García, M."]
+    assert e.pages == "65--92"
+    assert e.ids.url == "https://x.org/~u/a%20b?q=1#f"
+    assert e.raw_fields["note"] == "https://y.org and Zed <https://z.org>"
+
+
+def test_commented_twins_are_read_from_the_uncommented_text():
+    entries, twins, unparsed = _parse(
+        "@misc{x, title={x}}\n"
+        "%@misc{full,\n%  title={Commented {\\'E}cole},\n%  year={2001}\n%}\n"
+        "%@misc{single, title={Single line}}\n"
+        "@misc{w, title={w}}\n"
+    )
+    assert [e.key for e in entries] == ["x", "w"]
+    assert [(t.key, t.title, t.is_commented) for t in twins] == [
+        ("full", "Commented École", True),
+        ("single", "Single line", True),
+    ]
+    assert twins[0].year == 2001
+    assert unparsed == []
+
+
+def test_an_entry_without_fields_is_unparsed():
+    entries, _, unparsed = _parse("@article{key}\n@article{ok, title={x}}\n")
+    assert [e.key for e in entries] == ["ok"]
+    (u,) = unparsed
+    assert u.key == "key"
+    assert u.reason.startswith("the entry has no fields")

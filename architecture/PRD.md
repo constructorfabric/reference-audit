@@ -450,7 +450,8 @@ Contracts this library expects from external systems.
 
 | Dependency | Description | Criticality |
 |------------|-------------|-------------|
-| bibtexparser | `.bib` parsing | p1 |
+| bibtexparser (2.x) | `.bib` parsing | p1 |
+| pylatexenc | LaTeX → Unicode for `.bib` values | p1 |
 | pydantic | Data models | p1 |
 | Scholarly databases | Identification (Crossref, OpenAlex, S2, arXiv, Open Library, Google Books) | p2 |
 | openai | LLM adjudication of ambiguous matches | p2 |

@@ -27,8 +27,7 @@ actually audit (the ``.bib`` round-trip changed it, or its audit raised) is UNCE
 ``evaluated=false``. That marks a reported non-measurement, never a guessed label. Confidences come from
 a fixed table and are not fitted to the labels.
 
-HALLMARK pins ``bibtexparser>=2`` and this project pins ``<2``, so HALLMARK runs from its own
-environment (``--hallmark-bin``) and is never imported here. ``.env`` is read from the repository root,
+HALLMARK runs from its own checkout and environment (``--hallmark-bin``) and is never imported here. ``.env`` is read from the repository root,
 so the harness can be run from any directory.
 """
 
@@ -49,14 +48,16 @@ from typing import Literal
 import bibtexparser
 import typer
 from anyascii import anyascii
-from bibtexparser.bibdatabase import BibDatabase
-from bibtexparser.bwriter import BibTexWriter
-from bibtexparser.customization import convert_to_unicode
+from bibtexparser.library import Library
+from bibtexparser.model import Entry
+from bibtexparser.model import Field as BibField
+from bibtexparser.writer import BibtexFormat
 from pydantic import BaseModel, Field
 
 from reference_audit.config import AuditConfig
 from reference_audit.models import EntryAudit, FieldFinding
 from reference_audit.parsing.bib import parse_bib
+from reference_audit.parsing.latex import LatexDecodeError, decode_latex
 from reference_audit.pipeline import run_audit
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -148,14 +149,13 @@ def load_records(path: Path) -> list[HallmarkRecord]:
 
 
 def write_bib(records: list[HallmarkRecord], path: Path) -> None:
-    db = BibDatabase()
-    db.entries = [
-        {"ID": r.bibtex_key, "ENTRYTYPE": r.bibtex_type, **r.fields} for r in records
-    ]
-    writer = BibTexWriter()
-    writer.order_entries_by = None  # keep split order
-    writer.indent = "  "
-    path.write_text(bibtexparser.dumps(db, writer), encoding="utf-8")
+    library = Library([
+        Entry(r.bibtex_type, r.bibtex_key, [BibField(k, v) for k, v in r.fields.items()])
+        for r in records
+    ])
+    fmt = BibtexFormat()
+    fmt.indent = "  "
+    path.write_text(bibtexparser.write_string(library, bibtex_format=fmt), encoding="utf-8")
 
 
 def write_stub_tex(bib_path: Path) -> Path:
@@ -178,8 +178,8 @@ def round_trip(
 ) -> tuple[list[HallmarkRecord], dict[str, str]]:
     """Split records into those a ``.bib`` write -> `parse_bib` read leaves intact, and the rest.
 
-    A field survives when what `parse_bib` read back equals what bibtexparser's own LaTeX decode makes
-    of the original value. Anything else (an unbalanced brace that swallows the next field, a key that
+    A field survives when what `parse_bib` read back equals what `decode_latex` makes of the original
+    value. Anything else (an unbalanced brace that swallows the next field, a key that
     does not parse) would make reference-audit audit a different entry than HALLMARK labelled. Such a
     record is returned with its reason instead of being audited, so it is never silently dropped.
     """
@@ -213,11 +213,14 @@ def round_trip(
         if entry.is_commented:
             broken[r.bibtex_key] = ".bib round-trip: entry parsed back as commented-out"
             continue
-        expected = convert_to_unicode({"ID": r.bibtex_key, **r.fields})
-        changed = [
-            k for k in r.fields
-            if _fold(entry.raw_fields.get(k.lower(), "")) != _fold(expected[k])
-        ]
+        try:
+            changed = [
+                k for k, v in r.fields.items()
+                if _fold(entry.raw_fields.get(k.lower(), "")) != _fold(decode_latex(v))
+            ]
+        except LatexDecodeError as e:
+            broken[r.bibtex_key] = f".bib round-trip: an original field value is unreadable: {e}"
+            continue
         if changed:
             broken[r.bibtex_key] = f".bib round-trip changed field(s): {', '.join(changed)}"
             continue
