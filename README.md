@@ -95,8 +95,18 @@ to an LLM when needed:
      `error`. A citation that names only some of the work's authors without `and others` is reported
      per `--partial-authors`: `ignore`, `warn` (an `uncertain` finding, the default) or `error`.
    - A difference no rule settles goes to the LLM, which is shown the matched work as the database
-     records it, never the entry under review. A substituted title word, or a different journal or
-     conference series, is an error.
+     records it, never the entry under review. A substituted title word is an error. A different
+     venue is an error only with evidence tied to the cited published artifact or a complete
+     catalogue covering the claimed venue, year and track. Another version's publication venue,
+     an arXiv DOI, an unsuccessful search or a missing website cannot establish non-publication;
+     inconclusive claims stay `uncertain` / `unverifiable`, with the reason reported.
+   - A publisher or Crossref record for the **cited published DOI** supplies positive venue
+     evidence and takes precedence over other versions' venue values. JSON venue errors carry
+     `venue_evidence` (source URLs and the bounded scope). Source adapters may supply typed
+     `VenueCatalogue` inventories with an authority-declared total and coverage URL; incomplete,
+     wrong-year or ambiguous-track inventories and possible identity/title/author matches cannot
+     establish absence. Existing top-k adapters do not supply complete inventories; automatic
+     exhaustive proceedings retrieval is not implemented. These checks never change `exactly_one`.
    - The **cited DOI** is checked too (except for a book, which is legitimately cited by a chapter
      DOI, and an arXiv DataCite DOI): when the matched work does not carry it, the DOI's own records
      are looked up. A DOI that belongs to a different paper, or that the doi.org Handle API does not
@@ -491,15 +501,33 @@ cannot be read from, goes to GROBID too, with the reason in `INPUT NOTES`.
 ```bash
 uv run pytest          # unit + integration tests (databases & LLM are mocked)
 REFERENCE_AUDIT_LIVE=1 uv run pytest -m clickhouse   # the live check of the local ClickHouse mirror
+REFERENCE_AUDIT_HALLMARK_LIVE=1 uv run pytest tests/test_hallmark_live.py -q # full public corpus
 cfs validate           # validate the governance artifacts and code traceability
 ```
 
 The unit and integration tests mock all database and LLM calls, so they are fast and offline. The
 live tests (markers `clickhouse`, `grobid`, `pdf_build`) are not deselected by default: they run when
 their service or toolchain is reachable and skip otherwise, unless `REFERENCE_AUDIT_LIVE=1` makes them
-required. Add `-m "not clickhouse and not grobid and not pdf_build"` for a strictly offline run. When the tool gets a case
+required. Use `USE_LLM=false uv run pytest -m "not clickhouse and not grobid and not pdf_build and not hallmark_live"`
+for a strictly offline run, also disabling live LLM settings inherited from `.env`. When the tool gets a case
 wrong, the fix is captured as a new test with the recorded response (see
 [`architecture/SPEC.md`](architecture/SPEC.md), "General Design Principles").
+
+The suite includes all 1,950 HALLMARK v1.2 `dev_public` and `test_public` examples, copied into
+[`tests/fixtures/hallmark/v1.2`](tests/fixtures/hallmark/v1.2/README.md) with commit/checksum provenance,
+credit to Patrik Reizinger and Wieland Brendel, and the original MIT license. HALLMARK is not a test
+dependency. Every record exercises parsing offline, including nine malformed records that must be
+reported without hiding their neighbours. Twelve reviewed cases have independent recorded-source
+regressions. Original data and label reviews stay separate from `native_expectations.json`, which
+expresses evidence-backed identity and field expectations in reference-audit's vocabulary. The
+`hallmark_live` tests require the separate opt-in above (network + LLM, potentially an hour or more).
+They check the native reporting contract: reasoned unresolved/failed/multiple outcomes and unverified
+metadata are legitimate results; unexplained outcomes, unsupported venue errors and violations of
+independent expectations fail. Binary label comparisons, including disputed labels, are diagnostics
+in `diagnostics.json`, not assertions. Records without an independent oracle get consistency and
+reporting checks only; a passing run does not mean independently proven corpus-wide accuracy.
+Use `-s` to see result counts and output paths, or set `REFERENCE_AUDIT_HALLMARK_CACHE` to reuse a
+source/LLM cache (whole-entry verdicts still require the current pipeline version).
 
 ### The PDF extraction oracle
 
@@ -661,6 +689,7 @@ src/reference_audit/
   alignmentcheck.py # --check-citations: citing context vs. the cited work's abstract
   bookcheck.py # Open Library edition resolution (cited vs. latest edition)
   fieldcheck.py# per-field correctness / formatting findings for an exactly-one match
+  venuecheck.py# bounded artifact / complete-catalogue evidence for venue contradictions
   versioning.py# better-version detection (published > preprint)
   pipeline.py  # async orchestration
   report.py    # text / JSON rendering
@@ -681,6 +710,10 @@ tests/
   fixtures/tei/# recorded GROBID output + provenance, so the mapper is verifiable offline
   fixtures/embedded/ # an AI4X-template PDF that embeds its references' BibTeX records, + its sources
   fixtures/dblp/     # a recorded DBLP SPARQL response + provenance
+  fixtures/hallmark/v1.2/ # copied public corpus, MIT license, provenance, label reviews, source snapshots
+  hallmark_cases.py # validated corpus loader; strips labels before an audit
+  test_hallmark_corpus.py # offline parsing of every public example + independent-source corrections
+  test_hallmark_live.py # opt-in full-pipeline public-corpus tests (network + LLM)
   pdf_fixtures.py # not a test: preflight + compile + TEI capture, runnable by hand
   pdf_oracle.py   # matches extracted references to printed ones and scores the difference
   *.py         # mocked unit/integration tests, plus the live ClickHouse / PDF tests (skipped when

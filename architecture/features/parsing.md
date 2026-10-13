@@ -192,6 +192,12 @@ forms.
 
 ## 6. Acceptance Criteria
 
+`tests/test_hallmark_corpus.py` adds offline parsing coverage for every copied HALLMARK v1.2
+`dev_public` / `test_public` record, individually and as complete split inputs. Nine truncated,
+unbalanced entries must be reported with a reason, leave their neighbours intact and produce
+not-evaluated predictions. The corpus carries pinned provenance, attribution and the upstream
+MIT license. This test infrastructure is implemented but not separately `@cpt`-traced.
+
 - [x] Parse-only audit returns correct cited/uncited/missing-include counts for the pilot fixture.
 - [x] DOI/ISBN/arXiv identifiers are normalized to canonical forms.
 - [x] Commented preprint twins are routed to an informational list, never the audited list.

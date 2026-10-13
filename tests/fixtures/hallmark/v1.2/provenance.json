@@ -1,0 +1,21 @@
+{
+  "repository": "https://github.com/rpatrik96/hallmark",
+  "commit": "f774fa40675daa83eca6201637a94c4536b7bb3e",
+  "version": "v1.2",
+  "files": {
+    "dev_public.jsonl": {
+      "upstream_path": "data/v1.2/dev_public.jsonl",
+      "sha256": "0f75d390f95a086aaf39b627369af2bd03a5eb87cd3bf4cea5d5025e203bb09e",
+      "records": 1119
+    },
+    "test_public.jsonl": {
+      "upstream_path": "data/v1.2/test_public.jsonl",
+      "sha256": "0637ffc80747c36f3e010cd613f16481dcb916f944874122b2e2d3f872429973",
+      "records": 831
+    },
+    "LICENSE": {
+      "upstream_path": "LICENSE",
+      "sha256": "bafef485d0aafc08cbadb6cbb0b2c8745ffd9ea20a61fe74597dddb1ab0369f8"
+    }
+  }
+}

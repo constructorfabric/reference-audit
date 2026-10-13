@@ -1151,12 +1151,14 @@ class AuditPipeline:
                 audit.issues.append(finding_note(f))
         # Collapse the (often several) could-not-verify fields into a single line to keep the report
         # readable while still reporting the gap (reliability: never silently pass an unchecked field).
-        # An unverifiable DOI has its own cause (no record, doi.org unreachable), not a missing field.
+        # DOI and venue checks have their own causes (unreachable resolver or insufficiently scoped
+        # publication evidence), which must not be described merely as missing metadata.
         for f in findings:
-            if f.field == "doi" and f.status == "unverifiable":
+            if f.field in {"doi", "journal/venue"} and f.status == "unverifiable":
                 audit.issues.append(finding_note(f))
         unverifiable = [
-            f.field for f in findings if f.status == "unverifiable" and f.field != "doi"
+            f.field for f in findings
+            if f.status == "unverifiable" and f.field not in {"doi", "journal/venue"}
         ]
         if unverifiable:
             # Name the sources we actually consulted — never claim universal absence (a null field on

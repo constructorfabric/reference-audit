@@ -5,6 +5,14 @@ set of standalone BibTeX entries labelled `VALID` or `HALLUCINATED`, spanning 14
 3 difficulty tiers. `benchmarks/hallmark_bench.py` runs the full pipeline (network + LLM) on a split and
 scores it with HALLMARK's own evaluator.
 
+The pytest regression corpus is independent of this external-evaluator setup: both public v1.2
+splits are copied under [`tests/fixtures/hallmark/v1.2`](../tests/fixtures/hallmark/v1.2/README.md),
+with the MIT license, author credit, pinned provenance and separate evidence-backed label reviews.
+It has offline parsing/source regressions and opt-in live audits, and needs no HALLMARK installation.
+The tests use native identity/metadata expectations and accept explicitly reported uncertainty;
+binary labels, twelve proposed corrections and a historical-title dispute are diagnostic only.
+This harness continues to report metrics against unchanged upstream labels.
+
 HALLMARK gets its own checkout and venv (`--hallmark-dir`, default `benchmarks/.hallmark`). `score` and
 `submit` call its CLI (`--hallmark-bin`, default `<hallmark-dir>/.venv/bin/hallmark`); the harness never
 imports it. Every subcommand takes `--split` (default `dev_public`) and `--out`, the run directory
@@ -188,13 +196,16 @@ on the `doi` field (see [How it works](../README.md#how-it-works)). `strict` the
 ## Result: `dev_public`, pipeline 0.23
 
 The results below, and the committed submissions, were measured at pipeline 0.23. The current
-pipeline is 0.26, and it has not been re-measured:
+pipeline is 0.27, and it has not been re-measured with this evaluator:
 - 0.24: bibtexparser 2. `.bib` values are read by the tool itself and LaTeX is decoded with
   pylatexenc, which changes some field values and which entries are unparseable.
 - 0.25: HTML character references in source values are decoded, so a source title with `&amp;` is
   settled by rule instead of going to the field-check LLM.
 - 0.26: a cited OpenAlex Work id is looked up even when the entry also has a DOI or arXiv id, and a
   Work id that is another work, resolves to nothing or could not be looked up is reported.
+- 0.27: venue contradictions require evidence bound to the cited published artifact or a complete,
+  explicitly scoped catalogue. A different version's venue alone stays unverified. Consequently the
+  historical strict metrics and label-error proposals are not current field-check expectations.
 
 The harness refuses to resume a run directory from another pipeline version; re-measure into a new
 `--out`.

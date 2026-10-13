@@ -61,7 +61,8 @@ FIELD_CHECK_SYSTEM = (
     "- If the database VENUE is a preprint server, institutional repository, or aggregator "
     "('arXiv', 'bioRxiv', 'medRxiv', 'SSRN', 'ResearchGate', 'Radboud Repository', 'HAL', a "
     "university or 'Technical Reports Server') while the entry names a journal or conference, the "
-    "database simply indexed a different copy — classify 'formatting_variant', not 'error'.\n"
+    "database simply indexed a different copy — classify 'uncertain', not 'error' or "
+    "'formatting_variant'; a repository is not a conference venue.\n"
     "- If the database value looks like a TRUNCATION or substring of the entry's value (e.g. "
     "database 'Complex' vs entry 'Complexity'), the entry is the fuller, correct form — classify "
     "'formatting_variant' or 'uncertain', never 'error'.\n"
@@ -69,8 +70,11 @@ FIELD_CHECK_SYSTEM = (
     "word ('Robust' vs 'Resilient', 'towards' vs 'for', 'Self-supervised' vs 'Unsupervised') is an "
     "'error': the identifier already fixed the work, so its title is known.\n"
     "- A VENUE that names a different journal or conference series than the database venue ('ACL' vs "
-    "'ICLR', 'UAI' vs 'ICML') is an 'error': the database records where the identified work "
-    "appeared (this does not apply to a preprint server or repository, above).\n"
+    "'ICLR', 'UAI' vs 'ICML') is a substantive difference, but another version's venue does not "
+    "prove non-publication at the cited venue. Call it an 'error' only when the evidence scope "
+    "explicitly binds the authoritative value to the cited published artifact. Otherwise use "
+    "'uncertain'. Never infer a venue's non-existence from lack of online presence, or absence "
+    "from a top-k search. Main-conference proceedings do not cover workshops.\n"
     "If the entry's value is plausibly correct and the database merely differs, prefer 'uncertain' "
     "over 'error'. Use 'uncertain' whenever you cannot affirmatively decide. Respond in strict JSON."
 )
@@ -112,7 +116,8 @@ def citation_alignment_user(entry: BibEntry, context_text: str, abstract: str) -
 
 
 def field_check_user(
-    field: str, bib_value: str, canonical_value: str, sources: list[str], work: SourceRecord
+    field: str, bib_value: str, canonical_value: str, sources: list[str], work: SourceRecord,
+    evidence_scope: str = "",
 ) -> str:
     """`work` is the matched work as the database records it, never the entry under review."""
     src = ", ".join(sources) if sources else "database"
@@ -121,6 +126,7 @@ def field_check_user(
         f"FIELD UNDER REVIEW: {field}\n"
         f"  citation (.bib) value:  {bib_value or '(empty)'}\n"
         f"  authoritative value:    {canonical_value or '(empty)'}   [source: {src}]\n\n"
+        f"  evidence scope: {evidence_scope or 'no specific-artifact or complete-catalogue proof'}\n\n"
         "CONTEXT — the matched work as the database records it (for grounding only):\n"
         f"  title:   {work.title or '(none)'}\n"
         f"  authors: {authors or '(none)'}\n"

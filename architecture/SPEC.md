@@ -77,6 +77,19 @@ verdict of step 1.
 4. Maintain a DB of checks so repeated runs on the same `.bib` file won't trigger unnecessary LLM &
    DB calls.
 
+Regression coverage includes copied HALLMARK v1.2 `dev_public` and `test_public` data with pinned
+provenance, attribution and license, without a HALLMARK dependency. Binary benchmark labels are
+diagnostic only; native expectations require independent evidence. Report malformed, ambiguous,
+failed and uncheckable records independently, with reasons, rather than force binary agreement.
+All records exercise offline parsing; reviewed cases use recorded independent source metadata,
+and full-pipeline contract checks are explicitly opt-in. See `tests/fixtures/hallmark/v1.2/README.md`. This test infrastructure
+is implemented but not separately `@cpt`-traced.
+
+A venue error must be grounded in the specific cited published artifact or absence from a
+demonstrably complete catalogue covering the claimed venue/year/track. Another version's venue,
+an arXiv DOI, search silence or an inaccessible event website cannot establish non-publication.
+When that evidence is unavailable, retain the identified work and report the venue as unverified.
+
 ## Software Design
 
 1. The overall system is based on [Constructor Studio](https://github.com/constructorfabric/studio)

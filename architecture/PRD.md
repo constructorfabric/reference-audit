@@ -158,6 +158,19 @@ editions against Open Library, backfills missing DOIs/ISBNs, and reports the can
 
 > **Testing strategy**: All requirements verified via automated tests (unit, integration, e2e) targeting 90%+ code coverage unless otherwise specified.
 
+The regression suite vendors all 1,950 HALLMARK v1.2 public dev/test examples with original labels,
+MIT license, attribution and checksum provenance. Offline tests cover every record's parsing and
+independently recorded sources for twelve reviewed cases. Nine malformed inputs remain explicit
+non-measurements. Full-pipeline checks, gated by `REFERENCE_AUDIT_HALLMARK_LIVE=1`, use native
+identity/metadata expectations and reporting invariants; reasoned unresolved, failed, multiple and
+unverified outcomes are legitimate. Missing LLM configuration, unexplained outcomes, unsupported
+venue errors and violations of independent expectations fail. Binary labels and disputed labels
+are diagnostic only. This test infrastructure is implemented but not separately `@cpt`-traced.
+
+Venue mistakes require scoped evidence tied to the cited published artifact or an explicitly
+complete venue/year/track catalogue. Lack of corroboration must remain unverified, with a reason,
+and must never change the already-established identity verdict.
+
 Functional requirements define WHAT the system must do.
 
 ### 5.1 Parsing & Bookkeeping (implemented)

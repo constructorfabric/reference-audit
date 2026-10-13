@@ -418,7 +418,7 @@ async def _resolve(entry, artifact, llm, cache=None):
 
 async def test_llm_classifies_dropped_word_as_error():
     e = _entry(venue="Annual Review Condensed Matter Physics")
-    art = _artifact(_rec(venue="Annual Review of Condensed Matter Physics"))
+    art = _artifact(_rec(venue="Annual Review of Condensed Matter Physics", ids=e.ids))
     llm = FakeLLM(FieldJudgment(classification="error", confidence="high", reason="dropped 'of'"))
     findings = {f.field: f for f in await _resolve(e, art, llm)}
     assert findings["journal/venue"].status == "error"

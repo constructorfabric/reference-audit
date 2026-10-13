@@ -43,9 +43,11 @@ from reference_audit.models import (
     FieldJudgment,
     MatchedArtifact,
     SourceRecord,
+    VenueEvidence,
 )
 from reference_audit.parsing.identifiers import arxiv_submission_year
 from reference_audit.versioning import cited_arxiv_id
+from reference_audit.venuecheck import catalogue_venue_check, specific_artifact_evidence
 
 _BOOK_TYPES = {EntryType.BOOK, EntryType.INCOLLECTION}
 
@@ -209,6 +211,7 @@ class _Check:
     status: str = "ok"  # ok | formatting | error | unverifiable | needs_llm
     detail: str = ""
     needs_llm: bool = False
+    venue_evidence: VenueEvidence | None = None
 
     def finding(self, *, via_llm: bool = False) -> FieldFinding:
         return FieldFinding(
@@ -219,6 +222,7 @@ class _Check:
             status="uncertain" if self.status == "needs_llm" else self.status,
             detail=self.detail,
             via_llm=via_llm,
+            venue_evidence=self.venue_evidence,
         )
 
 
@@ -243,10 +247,21 @@ def _venue_check(entry: BibEntry, records: _Ordered) -> _Check | None:
     if not entry.venue:
         return None
     wants_preprint = cites_preprint(entry)
+    if not wants_preprint:
+        for record in records:
+            for catalogue in record.venue_catalogues:
+                if finding := catalogue_venue_check(entry, records, catalogue):
+                    return _Check(
+                        finding.field, finding.bib_value, finding.canonical_value, finding.sources,
+                        status=finding.status, detail=finding.detail,
+                        venue_evidence=finding.venue_evidence,
+                    )
     # A cited journal or conference is compared against a record that names one; a preprint server
     # is the canonical venue only when no source has anything else.
     published = records.where(lambda r: not is_repository_venue(r.venue))
-    canonical, sources = _canonical(records if wants_preprint else published, lambda r: r.venue)
+    bound = records.where(lambda r: specific_artifact_evidence(entry, r) is not None)
+    comparable = bound if bound else (records if wants_preprint else published)
+    canonical, sources = _canonical(comparable, lambda r: r.venue)
     if not canonical and not wants_preprint:
         canonical, sources = _canonical(records, lambda r: r.venue)
         if canonical:
@@ -257,7 +272,15 @@ def _venue_check(entry: BibEntry, records: _Ordered) -> _Check | None:
                 "venue could not be confirmed"
             )
             return chk
-    return _string_field("journal/venue", entry.venue, canonical, sources)
+    check = _string_field("journal/venue", entry.venue, canonical, sources)
+    # A later journal version, a backfilled DOI or an aggregator cannot bind the canonical venue
+    # to the specific published artifact cited by this entry.
+    for record in records:
+        if _fold(record.venue) == _fold(canonical):
+            if evidence := specific_artifact_evidence(entry, record):
+                check.venue_evidence = evidence
+                break
+    return check
 
 
 def _title_check(entry: BibEntry, records: list[SourceRecord]) -> _Check | None:
@@ -459,7 +482,18 @@ def _apply_judgment(chk: _Check, judgment: FieldJudgment) -> FieldFinding:
     if judgment.classification == "formatting_variant":
         finding.status = "formatting"
     elif judgment.classification == "error" and judgment.confidence in ("high", "medium"):
-        finding.status = "error"
+        if chk.field == "journal/venue" and chk.venue_evidence is None:
+            finding.status = "unverifiable"
+            finding.detail = (
+                f"the sources report '{chk.canonical_value}', but no publisher/registrant record "
+                "bound to the cited published artifact or complete catalogue covering the claimed "
+                f"venue/year/track establishes a contradiction; the work may have another version. "
+                f"Venue comparison: {judgment.reason}"
+            )
+        else:
+            finding.status = "error"
+            if chk.venue_evidence is not None:
+                finding.detail += f"; evidence scope: {chk.venue_evidence.scope}"
     else:  # low-confidence error or explicit uncertain → don't over-claim
         finding.status = "uncertain"
     return finding
@@ -479,7 +513,10 @@ async def _judge_field(
             f"differs from canonical '{chk.canonical_value}'; LLM unavailable, verify manually"
         )
         return finding
-    user = field_check_user(chk.field, chk.bib_value, chk.canonical_value, chk.sources, context)
+    user = field_check_user(
+        chk.field, chk.bib_value, chk.canonical_value, chk.sources, context,
+        evidence_scope=chk.venue_evidence.scope if chk.venue_evidence else "",
+    )
     p_hash = prompt_hash(FIELD_CHECK_SYSTEM + "\n" + user)
     if cache is not None:
         cached = cache.get_llm_decision(p_hash, "field_check")

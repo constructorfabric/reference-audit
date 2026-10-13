@@ -649,6 +649,25 @@ deleted: `--fresh` filters reads to rows whose timestamp (`fetched_at` / `create
 
 ## 4. Additional context
 
+The public-corpus tests consume unchanged HALLMARK v1.2 JSONL under `tests/fixtures/hallmark/v1.2`.
+`tests/hallmark_cases.py` validates separate label reviews and native expectations, rejects duplicate,
+stale or orphaned reviews, and strips labels before auditing. Offline tests cover all 1,950 records
+and twelve reviewed cases against DBLP/Crossref snapshots; nine malformed records remain unparsed.
+Live tests assert native identity/metadata reporting invariants and independently grounded
+expectations. Reasoned uncertainty, failure and multiple matches are legitimate results; unexplained
+outcomes and unsupported venue errors fail. Binary differences remain visible in `diagnostics.json`.
+The run cache is temporary unless `REFERENCE_AUDIT_HALLMARK_CACHE` selects an existing cache.
+This test infrastructure is implemented but not separately `@cpt`-traced.
+
+`venuecheck.py` provides bounded publication evidence. `fieldcheck.py` prefers publisher/Crossref
+leaf records bound to the cited published DOI and blocks ungrounded LLM venue errors. Sources may
+attach Pydantic `VenueCatalogue` inventories with declared count, year, track and coverage provenance;
+incomplete, duplicate, mismatched-scope or possibly matching inventories cannot prove absence.
+`FieldFinding.venue_evidence` retains the scope and URLs, and `_check_fields` reports the actual
+unverifiable-venue reason while preserving identity. Default top-k adapters do not supply inventories;
+automatic exhaustive proceedings retrieval is not implemented. Pipeline 0.27 invalidates whole-entry
+verdicts produced under the previous policy. Implemented and tested, not separately `@cpt`-traced.
+
 - PRD: [PRD.md](./PRD.md)
 - Decomposition: [DECOMPOSITION.md](./DECOMPOSITION.md)
 - **Measured accuracy (HALLMARK).** Verdict accuracy is measured on the external

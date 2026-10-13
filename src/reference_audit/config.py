@@ -167,7 +167,10 @@ class AuditConfig(BaseSettings):
     #       can then be pinned as the match; a cited DOI that is another Work is reported by the
     #       cited-DOI check. A cited Work id that resolves to a different work, to nothing, or could
     #       not be looked up is now reported as an issue, whatever the verdict.
-    pipeline_version: str = "0.26"
+    # 0.27: venue errors require evidence bound to the cited published artifact or an explicitly
+    #       complete venue/year/track catalogue. Another version's venue or an LLM guess cannot
+    #       establish non-publication. Venue findings retain the evidence's source and scope.
+    pipeline_version: str = "0.27"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

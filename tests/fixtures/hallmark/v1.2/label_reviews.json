@@ -1,0 +1,173 @@
+[
+  {
+    "split": "dev_public",
+    "bibtex_key": "d0f7f9c72c33",
+    "upstream_label": "VALID",
+    "expected_label": "HALLUCINATED",
+    "disposition": "correction",
+    "reason": "The cited DOI 10.1109/cvpr46437.2021.00469 identifies 'Delving into Localization Errors for Monocular 3D Object Detection'; the cited work has DOI 10.1109/cvpr46437.2021.00466.",
+    "evidence": [
+      "https://dblp.org/rec/conf/cvpr/WangWGSZBMSF21",
+      "https://api.crossref.org/works/10.1109/cvpr46437.2021.00469",
+      "https://doi.org/10.1109/cvpr46437.2021.00466"
+    ],
+    "error_field": "doi"
+  },
+  {
+    "split": "dev_public",
+    "bibtex_key": "f802800935ef",
+    "upstream_label": "VALID",
+    "expected_label": "HALLUCINATED",
+    "disposition": "correction",
+    "reason": "The cited DOI 10.1109/cvpr52729.2023.02141 identifies 'Spatial-Frequency Mutual Learning for Face Super-Resolution'; the cited work has DOI 10.1109/cvpr52729.2023.01457.",
+    "evidence": [
+      "https://dblp.org/rec/conf/cvpr/GirdharELSAJM23",
+      "https://api.crossref.org/works/10.1109/cvpr52729.2023.02141",
+      "https://doi.org/10.1109/cvpr52729.2023.01457"
+    ],
+    "error_field": "doi"
+  },
+  {
+    "split": "dev_public",
+    "bibtex_key": "ff2931c3228f",
+    "upstream_label": "VALID",
+    "expected_label": "HALLUCINATED",
+    "disposition": "correction",
+    "reason": "The cited DOI 10.1109/iccv48922.2021.00952 identifies 'Do Image Classifiers Generalize Across Time?'; the cited work has DOI 10.1109/iccv48922.2021.00950.",
+    "evidence": [
+      "https://dblp.org/rec/conf/iccv/ChenXH21",
+      "https://api.crossref.org/works/10.1109/iccv48922.2021.00952",
+      "https://doi.org/10.1109/iccv48922.2021.00950"
+    ],
+    "error_field": "doi"
+  },
+  {
+    "split": "dev_public",
+    "bibtex_key": "ded9f5844e90",
+    "upstream_label": "VALID",
+    "expected_label": "HALLUCINATED",
+    "disposition": "correction",
+    "reason": "The cited DOI 10.1007/978-3-031-19830-4_20 identifies 'ESS: Learning Event-Based Semantic Segmentation from\\xa0Still Images'; the cited work has DOI 10.1007/978-3-031-19824-3_20.",
+    "evidence": [
+      "https://dblp.org/rec/conf/eccv/ChenXGYS22",
+      "https://api.crossref.org/works/10.1007/978-3-031-19830-4_20",
+      "https://doi.org/10.1007/978-3-031-19824-3_20"
+    ],
+    "error_field": "doi"
+  },
+  {
+    "split": "dev_public",
+    "bibtex_key": "a24129d1c5e5",
+    "upstream_label": "VALID",
+    "expected_label": "HALLUCINATED",
+    "disposition": "correction",
+    "reason": "Flamingo names Skanda Koppula, Michal Valko, Ludovic Denoyer and Joao Carreira, who are absent from its 27-author list.",
+    "evidence": [
+      "https://dblp.org/rec/conf/nips/AlayracDLMBHLMM22"
+    ],
+    "error_field": "author"
+  },
+  {
+    "split": "dev_public",
+    "bibtex_key": "e9e08922a057",
+    "upstream_label": "VALID",
+    "expected_label": "HALLUCINATED",
+    "disposition": "correction",
+    "reason": "PaLM includes unrelated authors (including Armand Joulin and Arman Cohan) and also invents an ICML publication.",
+    "evidence": [
+      "https://dblp.org/rec/journals/jmlr/ChowdheryNDBMRBCSGSSTMRBTSPRDHPBAI23"
+    ],
+    "error_field": "author"
+  },
+  {
+    "split": "dev_public",
+    "bibtex_key": "b939e55d7555",
+    "upstream_label": "VALID",
+    "expected_label": "HALLUCINATED",
+    "disposition": "correction",
+    "reason": "PaLM was an arXiv preprint in 2022 and a JMLR paper in 2023; the entry invents an ICML publication.",
+    "evidence": [
+      "https://dblp.org/rec/journals/jmlr/ChowdheryNDBMRBCSGSSTMRBTSPRDHPBAI23"
+    ],
+    "error_field": "journal/venue"
+  },
+  {
+    "split": "dev_public",
+    "bibtex_key": "c65faf378a95",
+    "upstream_label": "VALID",
+    "expected_label": "HALLUCINATED",
+    "disposition": "correction",
+    "reason": "OPT names Mona Dewan, Emily Dinan and Zhiguo Du, who are absent from its 19-author list; it also invents an ACL publication.",
+    "evidence": [
+      "https://dblp.org/rec/journals/corr/abs-2205-01068"
+    ],
+    "error_field": "author"
+  },
+  {
+    "split": "test_public",
+    "bibtex_key": "eae03804fd48",
+    "upstream_label": "VALID",
+    "expected_label": "HALLUCINATED",
+    "disposition": "correction",
+    "reason": "The cited DOI 10.1109/iccv48922.2021.00582 identifies 'Baking Neural Radiance Fields for Real-Time View Synthesis'; the cited work has DOI 10.1109/iccv48922.2021.00580.",
+    "evidence": [
+      "https://dblp.org/rec/conf/iccv/BarronMTHMS21",
+      "https://api.crossref.org/works/10.1109/iccv48922.2021.00582",
+      "https://doi.org/10.1109/iccv48922.2021.00580"
+    ],
+    "error_field": "doi"
+  },
+  {
+    "split": "test_public",
+    "bibtex_key": "e8e1379d3939",
+    "upstream_label": "VALID",
+    "expected_label": "HALLUCINATED",
+    "disposition": "correction",
+    "reason": "The cited DOI 10.1109/cvpr52688.2022.01552 identifies 'Motion-from-Blur: 3D Shape and Motion Estimation of Motion-blurred Objects in Videos'; the cited work has DOI 10.1109/cvpr52688.2022.01553.",
+    "evidence": [
+      "https://dblp.org/rec/conf/cvpr/HeCXLDG22",
+      "https://api.crossref.org/works/10.1109/cvpr52688.2022.01552",
+      "https://doi.org/10.1109/cvpr52688.2022.01553"
+    ],
+    "error_field": "doi"
+  },
+  {
+    "split": "test_public",
+    "bibtex_key": "d87ce678eb11",
+    "upstream_label": "VALID",
+    "expected_label": "HALLUCINATED",
+    "disposition": "correction",
+    "reason": "Llama 2 includes unrelated authors, including Amanpreet Chhabra, Andy Cooper, Jade Copet and Piotr Czapla; the paper names Soumya Batra rather than Siddharth Batra.",
+    "evidence": [
+      "https://dblp.org/rec/journals/corr/abs-2307-09288",
+      "https://arxiv.org/abs/2307.09288"
+    ],
+    "error_field": "author"
+  },
+  {
+    "split": "test_public",
+    "bibtex_key": "e7e5083fa94f",
+    "upstream_label": "VALID",
+    "expected_label": "HALLUCINATED",
+    "disposition": "correction",
+    "reason": "MiniGPT-4 cites CVPR 2023, but its published version is an ICLR 2024 paper (the arXiv preprint is from 2023).",
+    "evidence": [
+      "https://dblp.org/rec/conf/iclr/Zhu0SLE24",
+      "https://openreview.net/forum?id=1tZbq88f27",
+      "https://proceedings.iclr.cc/paper_files/paper/2024/file/50623630a2372839c078474efa6c0cb8-Paper-Conference.pdf"
+    ],
+    "error_field": "journal/venue"
+  },
+  {
+    "split": "dev_public",
+    "bibtex_key": "a0527a7c2d1b",
+    "upstream_label": "VALID",
+    "expected_label": null,
+    "disposition": "disputed",
+    "reason": "The arXiv title changed after the cited version. Current metadata alone does not establish whether the historical title was wrong; quarantine the label assertion until historical evidence is available.",
+    "evidence": [
+      "https://arxiv.org/abs/2602.12124v1",
+      "../../../../benchmarks/README.md"
+    ]
+  }
+]

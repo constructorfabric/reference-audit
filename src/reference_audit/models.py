@@ -165,6 +165,38 @@ class UnparsedEntry(BaseModel):
     reason: str
 
 
+class VenueEvidence(BaseModel):
+    """The bounded evidence permitting a venue contradiction, never an unrestricted negative."""
+
+    kind: Literal["specific_artifact", "complete_catalogue"]
+    source_urls: list[str] = Field(min_length=1)
+    scope: str = Field(min_length=1)
+
+
+class VenueCatalogueEntry(BaseModel):
+    title: str = Field(min_length=1)
+    authors: list[str] = Field(min_length=1)
+    ids: Identifiers = Field(default_factory=Identifiers)
+
+
+class VenueCatalogue(BaseModel):
+    """Source-supplied inventory. A top-k search is never a complete catalogue.
+
+    `completeness_url` cites the authority's coverage declaration; `expected_count` is the
+    authority's total, not inferred from downloaded records. Adapters must leave `complete` false
+    if any page, relevant track or identity-bearing metadata is missing.
+    """
+
+    venue: str = Field(min_length=1)
+    year: int
+    scope: Literal["main_conference", "all_publications"]
+    source_url: str = Field(min_length=1)
+    completeness_url: str = Field(min_length=1)
+    expected_count: int = Field(gt=0)
+    complete: bool = False
+    entries: list[VenueCatalogueEntry] = Field(default_factory=list)
+
+
 class SourceRecord(BaseModel):
     """One candidate, normalized across sources."""
 
@@ -190,6 +222,9 @@ class SourceRecord(BaseModel):
     # without `raw`, `abstract` or members of its own. The pooled fields above are a compilation; the
     # field check reads these to compare an entry against the version it cites. Empty for a leaf.
     members: list[SourceRecord] = Field(default_factory=list)
+    # Optional scoped inventories from authoritative adapters. Existing top-k adapters do not
+    # declare completeness, so an empty list supplies no negative evidence.
+    venue_catalogues: list[VenueCatalogue] = Field(default_factory=list)
 
     @field_validator("title", "venue", "publisher", mode="after")
     @classmethod
@@ -301,7 +336,9 @@ class FieldFinding(BaseModel):
       - ``formatting``   differs only in formatting/style — not a mistake, a cosmetic fix at most.
       - ``error``        a genuine mistake (wrong, garbled, or empty/placeholder value).
       - ``uncertain``    could not be classified confidently — surfaced for manual review.
-      - ``unverifiable`` the .bib has a value but no source returned this field to check it against.
+      - ``unverifiable`` the .bib has a value but sources supply no adequate evidence to verify it.
+        A different version's venue does not refute the cited publication claim. Venue errors retain
+        `venue_evidence`, identifying the specific artifact or complete catalogue scope.
     """
 
     field: str
@@ -311,6 +348,7 @@ class FieldFinding(BaseModel):
     status: Literal["ok", "formatting", "error", "uncertain", "unverifiable"]
     detail: str = ""
     via_llm: bool = False
+    venue_evidence: VenueEvidence | None = None
 
 
 class CitationContext(BaseModel):

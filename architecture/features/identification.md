@@ -374,9 +374,17 @@ The finding is advisory like every field finding: the verdict is unchanged. Impl
 - Source values reach the field check with their HTML character references decoded (pipeline 0.25;
   see the parsing feature). Before, a source title with `&amp;` folded to the word "amp", so a title
   equal to the entry's went to the LLM.
-- A substituted content word in a title is an `error`, and so is a different journal or conference
-  series (`ACL` vs `ICLR`; pipeline 0.23). The prompt's general advice to prefer `uncertain` when the
-  entry is plausibly right had the LLM hedge on both.
+- A substituted content word in a title is an `error`. Since pipeline 0.27, a different venue
+  requires evidence bound to the cited published artifact or a complete catalogue covering the
+  claimed venue/year/track. A publisher/Crossref leaf for the cited published DOI takes precedence
+  over other versions' votes. Another version's venue, an arXiv DOI or an LLM assertion alone
+  cannot establish non-publication; such claims remain uncertain/unverifiable and retain the reason.
+- `venuecheck.py` accepts typed `SourceRecord.venue_catalogues` with declared counts and provenance.
+  Incomplete retrieval, duplicate records, ambiguous main-conference/workshop scope, wrong year,
+  known title variants or possible identifier/author matches block absence proof. Venue errors carry
+  `FieldFinding.venue_evidence` (source URLs and bounded scope). Existing adapters provide top-k
+  searches, not complete inventories; automatic catalogue retrieval is not implemented. These
+  advisory checks preserve identity. Implemented and tested, not separately `@cpt`-traced.
 
 **Authors are a field finding** (`field = "author"`, `fieldcheck._author_check`).
 - Each cited author is compared person by person (`names.same_person`) with every source's author
@@ -444,6 +452,16 @@ other bibliographies sharing the cache DB keep their results.
 - Data: `cpt-referenceaudit-dbtable-response-cache`
 
 ## 6. Acceptance Criteria
+
+The copied HALLMARK v1.2 public corpus also supports `tests/test_hallmark_live.py`, enabled only by
+`REFERENCE_AUDIT_HALLMARK_LIVE=1`, with native identity/metadata expectations and the configured
+partial-author policy (default `warn`).
+Twelve reviewed cases use independent DBLP/Crossref source regressions. Reasoned unresolved, failed,
+multiple and unverified outcomes are accepted; unsupported venue errors, unexplained outcomes and
+violations of independent native expectations fail. Binary label differences and a historical-title
+dispute are diagnostic, not an oracle. Labels never reach the pipeline, no HALLMARK dependency is added,
+and the benchmark evaluator's upstream scoring is unchanged. This test infrastructure is
+implemented but not separately `@cpt`-traced.
 
 - [x] A real reference is matched and reported with an `exactly_one` verdict.
 - [x] A fabricated reference with no real match returns a `none` verdict.

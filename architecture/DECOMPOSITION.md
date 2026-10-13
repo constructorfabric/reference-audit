@@ -46,6 +46,9 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
 
 - **Scope**:
   - Parse `.bib` into `BibEntry`s and detect commented preprint twins
+  - Offline regression coverage over all 1,950 copied HALLMARK v1.2 public examples, including
+    explicit reporting and neighbour preservation for nine malformed inputs. Test infrastructure
+    is implemented but not separately `@cpt`-traced.
   - Extract cited keys, resolve includes, report missing includes
   - Normalize DOI / ISBN / arXiv identifiers
   - Compute cited / uncited / cited-but-missing bookkeeping and per-entry issues
@@ -107,6 +110,11 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
   - Feature scoring and the SAME-OBJECT clustering rule (formal + LLM tie-break)
   - 3-way verdict, hallucination screening, URL-only `@misc` web verification, Open Library book /
     edition resolution, DOI/ISBN backfill, best-version + canonical field output
+  - Independent-source regressions for twelve reviewed HALLMARK cases and opt-in native-contract
+    checks. Reasoned uncertainty is accepted; binary labels and disputes are diagnostic only.
+  - Scoped venue evidence tied to a cited published DOI or a source-provided complete catalogue;
+    unverified claims preserve identity. Automatic catalogue retrieval is not implemented.
+    Test infrastructure is implemented but not separately `@cpt`-traced.
 
 - **Out of scope**:
   - Manuscript body rewriting
