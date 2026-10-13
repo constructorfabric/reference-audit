@@ -17,7 +17,7 @@
 The Reference Audit DESIGN is decomposed by pipeline stage. The **Parsing** feature (offline
 `.bib` + `.tex` parsing and identifier normalization) is the foundation every later stage builds
 on. The downstream stages — identification against databases, the same-object matching rule and
-3-way verdict, LLM adjudication, SQLite caching, web/book verification, and best-version/canonical
+four-way verdict, LLM adjudication, SQLite caching, web/book verification, and best-version/canonical
 output — are implemented in code and governed by the dedicated **Identification & Verdict**
 feature spec ([features/identification.md](features/identification.md)), which carries
 instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cache/`.
@@ -98,7 +98,7 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
 - [x] `p1` - **ID**: `cpt-referenceaudit-feature-identification`
 
 - **Purpose**: Query bibliographic databases, score candidates with the SAME-OBJECT disambiguation
-  rule, and return the 3-way verdict plus the canonical best version.
+  rule, and return the four-way verdict plus the canonical best version.
 
 - **Depends On**: `cpt-referenceaudit-feature-parsing`
 
@@ -108,7 +108,13 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
   - A local ClickHouse backend for Semantic Scholar, OpenAlex and DBLP, selected per run
     (`source_backend`), with backend-scoped caching
   - Feature scoring and the SAME-OBJECT clustering rule (formal + LLM tie-break)
-  - 3-way verdict, hallucination screening, URL-only `@misc` web verification, Open Library book /
+  - Traced hard paper ID consistency checking: `contradiction` retains resolved targets and
+    definitive field conflicts, takes precedence over metadata matches, and preserves evidence
+    through caching (pipeline 0.28). Inconclusive ID checks retry; decisive fields participate in
+    the entry hash, and confirmed related versions use the cited-version policy. Omitted co-authors
+    remain field-completeness findings independent of identity. CLI/report/benchmark consumers are implemented and tested,
+    not separately `@cpt`-traced.
+  - four-way verdict, hallucination screening, URL-only `@misc` web verification, Open Library book /
     edition resolution, DOI/ISBN backfill, best-version + canonical field output
   - Independent-source regressions for twelve reviewed HALLMARK cases and opt-in native-contract
     checks. Reasoned uncertainty is accepted; binary labels and disputes are diagnostic only.

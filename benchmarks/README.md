@@ -56,6 +56,10 @@ that does not survive it is reported, never audited as something else. In HALLMA
 values truncated inside a brace, such as `Man{\'e`, which `parse_bib` reports as unparseable. They
 become a not-evaluated prediction with the parser's reason, never a guessed label.
 
+A native `contradiction` (resolved paper ID with conflicting citation fields) maps to
+HALLUCINATED in `strict` and UNCERTAIN in `identity`. It retains the resolved target and evidence;
+prior stored submissions remain historical results from their recorded pipeline version.
+
 **`score`** writes `predictions.identity.jsonl` and `predictions.strict.jsonl`. It runs
 `hallmark evaluate --eval-mode both` on each, restricted to the audited entries, and writes
 `summary.md` with:

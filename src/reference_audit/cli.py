@@ -82,7 +82,7 @@ def audit(
              "the references with GROBID anyway.",
     ),
     fail_on: str | None = typer.Option(
-        None, "--fail-on", help="Exit non-zero if any verdict matches: hallucinated | multiple."
+        None, "--fail-on", help="Exit non-zero if any verdict matches: hallucinated | multiple | contradiction."
     ),
     partial_authors: str | None = typer.Option(
         None, "--partial-authors",
@@ -103,8 +103,8 @@ def audit(
         raise typer.BadParameter("--backend must be 'api' or 'clickhouse'")
     if partial_authors not in (None, "ignore", "warn", "error"):
         raise typer.BadParameter("--partial-authors must be 'ignore', 'warn' or 'error'")
-    if fail_on not in (None, "hallucinated", "multiple"):
-        raise typer.BadParameter("--fail-on must be 'hallucinated' or 'multiple'")
+    if fail_on not in (None, "hallucinated", "multiple", "contradiction"):
+        raise typer.BadParameter("--fail-on must be 'hallucinated', 'multiple' or 'contradiction'")
     if fail_on and no_network:
         # The parse-only report has no verdicts, so the gate could never trip: a CI job relying on
         # it would always pass. Reject the combination rather than pass silently.
@@ -181,7 +181,7 @@ def audit(
 
     if fail_on:
         verdicts = report.summary.get("verdicts", {})
-        trigger = {"hallucinated": "none", "multiple": "multiple"}[fail_on]
+        trigger = {"hallucinated": "none", "multiple": "multiple", "contradiction": "contradiction"}[fail_on]
         if verdicts.get(trigger, 0) > 0:
             raise typer.Exit(code=1)
 

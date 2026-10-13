@@ -197,12 +197,12 @@ async def test_end_to_end_a_wrong_doi_is_reported_and_strict_scores_it_hallucina
     report = await pipe.run(None, bib)
     await pipe.aclose()
     (audit,) = report.entries
-    assert audit.verdict.kind == "exactly_one"
-    (doi,) = [f for f in audit.field_findings if f.field == "doi"]
-    assert doi.status == "error"
-    assert any("field 'doi' looks wrong" in i for i in audit.issues)
+    assert audit.verdict.kind == "contradiction"
+    assert audit.verdict.artifacts[0].best_record.title == frogs.title
+    assert any(f.field == "author" and f.status == "error" for f in audit.field_findings)
+    assert any("Hard ID doi:" in i for i in audit.issues)
     compact = hb.compact(audit)
-    assert hb.predict(compact, "identity").label == "VALID"
+    assert hb.predict(compact, "identity").label == "UNCERTAIN"
     assert hb.predict(compact, "strict").label == "HALLUCINATED"
 
 

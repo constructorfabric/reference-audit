@@ -11,7 +11,7 @@ from hallmark_cases import CASES, DATA, SPLITS, UNPARSEABLE, LabelReview, load_c
 from reference_audit.config import AuditConfig
 from reference_audit.fieldcheck import deterministic_field_checks, resolve_field_findings
 from reference_audit.models import (
-    EntryAudit, EntryType, FieldJudgment, MatchedArtifact, SourceQueryResult, SourceRecord, Verdict,
+    AuditReport, EntryAudit, EntryType, FieldJudgment, MatchedArtifact, SourceQueryResult, SourceRecord, Verdict,
 )
 from reference_audit.parsing.bib import parse_bib
 from reference_audit.pipeline import AuditPipeline, build_parse_report
@@ -197,3 +197,30 @@ async def test_label_correction_against_recorded_independent_sources(case, tmp_p
     audit = EntryAudit(entry=entry, field_findings=findings,
                        verdict=Verdict(kind="exactly_one", artifacts=[artifact], confidence="high"))
     assert audit.verdict.kind == "exactly_one"
+
+
+@pytest.mark.parametrize("case", [c for c in CASES if c.review and c.review.error_field == "doi"],
+                         ids=lambda c: c.id)
+async def test_reviewed_doi_contradictions_keep_the_resolved_paper(case, tmp_path):
+    from hallmark_cases import assert_native_outcome
+
+    snapshots = json.loads((DATA / "recorded_sources.json").read_text())
+    other = SourceRecord.model_validate(snapshots[case.record.bibtex_key]["cited_doi_record"])
+    hb.write_bib([case.record], tmp_path / "entry.bib")
+    (entry,), _, _ = parse_bib(tmp_path / "entry.bib")
+
+    class RecordedIDSource(RecordedCrossref):
+        async def search_by_metadata(self, entry, limit=10):
+            return SourceQueryResult(source=self.name, query_kind="metadata", records=[])
+
+    pipe = AuditPipeline(AuditConfig(_env_file=None, use_llm=False),
+                         adapters=[RecordedIDSource(other)])
+    try:
+        report = await pipe._audit_all(AuditReport(entries=[EntryAudit(entry=entry)]), progress=False)
+    finally:
+        await pipe.aclose()
+    (audit,) = report.entries
+    assert audit.verdict.kind == "contradiction"
+    assert audit.verdict.artifacts[0].best_record.title == other.title
+    assert audit.verdict.artifacts[0].best_record.ids.doi == entry.ids.doi
+    assert_native_outcome(case, hb.compact(audit))

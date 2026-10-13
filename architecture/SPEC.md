@@ -41,10 +41,23 @@ The general plan is:
 4. If there are multiple plausible records, use formal, code-based filters (where we are able to
    derive them) to check whether they correspond to the same object — again using an LLM as the
    final step.
-5. The end result is a very robust and reliable output, one of three:
+5. The end result is a very robust and reliable output, one of four:
    1. The `.bib` entry doesn't match a real document.
    2. The `.bib` entry matches exactly one real document.
-   3. The `.bib` entry matches multiple real documents.
+   3. The `.bib` entry has multiple accepted candidate groups after same-work clustering.
+   4. A hard paper identifier resolves to a real paper, but supplied citation fields contradict
+      the resolved paper: `contradiction`. The ID target and conflict evidence must be retained.
+
+A contradiction requires a successful by-ID record carrying the cited DOI, arXiv ID, PMID, bibcode
+or OpenAlex Work ID (where supported), and a definitive field error. It takes precedence over
+metadata-based matches, no-match and ambiguity. Missing/placeholder fields, cosmetic variants, uncertain
+judgments, outages, and DOI registration without paper metadata do not prove contradiction.
+An omitted co-author is a field-completeness issue, not an identity contradiction, regardless of
+the optional partial-author severity policy. Confirmed related versions are compared against the version cited. Inconclusive LLM comparisons
+and failed ID lookups are reported and retried when no other field definitively establishes
+contradiction, never memoized as a settled consistency result.
+This identity consistency check runs even if optional field reporting is disabled. Books and
+chapters keep their edition-aware identification policy.
 
 ### 2. Is there a better version of the same artifact?
 

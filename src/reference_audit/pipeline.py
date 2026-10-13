@@ -24,6 +24,7 @@ from reference_audit.matching.pool import pool_candidates
 from reference_audit.matching.sameobject import cluster_accepted
 from reference_audit.matching.scoring import bucket
 from reference_audit.matching.verdict import build_verdict
+from reference_audit.matching.contradiction import PAPER_ID_KINDS, check_id_contradiction
 from reference_audit.matching.webcheck import check_web_reference
 from reference_audit.pdf.embedded import (
     ATTACHMENT_NAME,
@@ -382,7 +383,7 @@ def build_embedded_parse_report(pdf_path: str | Path, bib_text: str) -> AuditRep
 
 
 def _verdict_summary(report: AuditReport) -> dict[str, int]:
-    counts = {"none": 0, "exactly_one": 0, "multiple": 0, "unresolved": 0}
+    counts = {"none": 0, "exactly_one": 0, "multiple": 0, "contradiction": 0, "unresolved": 0}
     for a in report.entries:
         counts["unresolved" if a.verdict is None else a.verdict.kind] += 1
     return counts
@@ -435,7 +436,7 @@ class AuditPipeline:
     """Async audit pipeline.
 
     M3: parse → route → (id-lookup + metadata-search, concurrent & cached) → pool candidates by
-    identifier/version-edge → score (full feature vector) → 3-way verdict; backfills missing
+    identifier/version-edge → score (full feature vector) → ID consistency → four-way verdict; backfills missing
     DOIs/ISBNs. The LLM funnel over the *adjudicate* bucket (M4) and the full SAME-OBJECT rule +
     LLM tie-break (M5) extend `_audit_entry` / `build_verdict` later.
     """
@@ -613,6 +614,10 @@ class AuditPipeline:
             if cached is not None:
                 audit.verdict = cached
                 audit.from_cache = True
+                if cached.kind == "contradiction":
+                    self._report_contradiction(audit, cached)
+                    self._check_cited_work(audit, cached, await self._cited_work_query(entry))
+                    return
                 self._note_snapshot_coverage(audit, cached)
                 # The cited Work id's lookup is in the source-query cache, so this re-reads it.
                 self._check_cited_work(audit, cached, await self._cited_work_query(entry))
@@ -654,7 +659,7 @@ class AuditPipeline:
             return
 
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-gather
-        records, source_errors, cited_work = await self._gather_candidates(entry, route)
+        records, source_errors, cited_work, id_records = await self._gather_candidates(entry, route)
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-gather
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-assess
         pooled = pool_candidates(records)
@@ -665,8 +670,21 @@ class AuditPipeline:
         entry_has_id = entry.ids.has_strong_id()
         audit.candidates = [self._assess(entry, r, entry_has_id=entry_has_id) for r in pooled]
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-assess
+        # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-id-consistency
+        id_consistency = await check_id_contradiction(
+            audit, id_records, records, self.config, self.llm, self.cache
+        )
+        if id_consistency.verdict is None and entry.entry_type not in _NEEDS_ISBN and any(
+            getattr(entry.ids, kind) for kind in PAPER_ID_KINDS
+        ):
+            id_consistency.incomplete_reasons.extend(
+                f"hard ID consistency check incomplete: {e}" for e in source_errors
+                if " id query failed:" in e
+            )
+        audit.issues.extend(id_consistency.incomplete_reasons)
+        # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-id-consistency
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-verdict
-        verdict = await self._verdict(audit, errored=bool(source_errors))
+        verdict = id_consistency.verdict or await self._verdict(audit, errored=bool(source_errors))
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-verdict
 
         # README: "unless a returned record is a 100% match, use an LLM to filter results one by
@@ -720,9 +738,13 @@ class AuditPipeline:
         if verdict is None:
             self._record_unresolved(audit, source_errors, llm_errors, book)
         self._note_snapshot_coverage(audit, verdict)
-        if self.cache is not None and verdict is not None:
+        if self.cache is not None and verdict is not None and not id_consistency.incomplete_reasons:
             self.cache.put_entry_verdict(entry.content_hash, verdict)
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-cache-store
+        if verdict is not None and verdict.kind == "contradiction":
+            self._report_contradiction(audit, verdict)
+            self._check_cited_work(audit, verdict, cited_work)
+            return
         self._check_cited_work(audit, verdict, cited_work)
         await self._check_fields(audit, verdict)
         await self._report_book(audit, book)
@@ -761,10 +783,11 @@ class AuditPipeline:
 
     async def _gather_candidates(
         self, entry, route
-    ) -> tuple[list[SourceRecord], list[str], SourceQueryResult | None]:
+    ) -> tuple[list[SourceRecord], list[str], SourceQueryResult | None, list[SourceRecord]]:
         """Query the routed adapters (cached). Returns the records, one line per failed query (naming
         the source, so an unresolved entry can say which source it could not reach), and the cited
-        OpenAlex Work id's own lookup (`_cited_work_query`; None when the entry cites no Work id)."""
+        OpenAlex Work id's own lookup (`_cited_work_query`; None when the entry cites no Work id),
+        and the unpooled records from successful by-ID queries."""
         queries = [(a, "id") for a in route.id_adapters]
         queries += [(a, "metadata") for a in route.metadata_adapters]
         tasks = [self._query(entry, a, kind) for a, kind in queries]
@@ -792,7 +815,18 @@ class AuditPipeline:
                 ),
                 None,
             )
-        return records, errors, cited_work
+        id_records = [r for (_, kind), res in zip(queries, results)
+                      if kind == "id" and not res.error for r in res.records]
+        if probe_work and cited_work is not None and not cited_work.error:
+            id_records.extend(cited_work.records)
+        return records, errors, cited_work, id_records
+
+    def _report_contradiction(self, audit: EntryAudit, verdict: Verdict) -> None:
+        """Restore the ID-bound evidence on fresh and cached contradictions identically."""
+        audit.field_findings = list(verdict.contradiction_findings)
+        audit.issues.append(verdict.rationale)
+        audit.issues.extend(finding_note(f) for f in audit.field_findings
+                            if f.status in {"error", "uncertain", "unverifiable"})
 
     async def _cited_work_query(self, entry: BibEntry) -> SourceQueryResult | None:
         """The OpenAlex lookup of the entry's cited Work id on its own (cached), or None when the entry
@@ -1413,6 +1447,8 @@ class AuditPipeline:
         confirm (it scores below auto_accept) and is left to the generic verdict;
         `_check_cited_work` reports it.
         """
+        if verdict is not None and verdict.kind == "contradiction":
+            return verdict
         rec, confirmed = self._cited_work(entry, cited_work)
         if rec is None or not confirmed:
             # The lookup errored, found nothing, or found another work — never a confirmation.
@@ -1487,6 +1523,8 @@ class AuditPipeline:
         review carries the book's title+authors AND a DOI, which would be wrongly backfilled onto a
         @book). A volume whose title/author mismatches scores below auto_accept and is left alone.
         """
+        if verdict is not None and verdict.kind == "contradiction":
+            return verdict
         if not entry.ids.google_books:
             return verdict
         rec = next(

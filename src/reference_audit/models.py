@@ -8,6 +8,7 @@ with an explicit `Identifiers` value object and a version graph (`version_links`
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from enum import StrEnum
 from typing import Literal
@@ -112,10 +113,13 @@ class Identifiers(BaseModel):
 
 
 def compute_content_hash(
-    title: str, authors: list[str], year: int | None, venue: str, ids: Identifiers
+    title: str, authors: list[str], year: int | None, venue: str, ids: Identifiers,
+    *, entry_type: EntryType = EntryType.UNKNOWN, publisher: str = "", pages: str = "",
+    raw_fields: dict[str, str] | None = None,
 ) -> str:
     """sha256 over normalized identifying fields. Cosmetic edits don't bust the cache;
-    a real metadata change does."""
+    a real metadata change does. Include every field used by hard-ID consistency checks,
+    so fixing or introducing a contradiction cannot reuse a stale whole-entry verdict."""
     parts = [
         _norm_token_string(title),
         "|".join(sorted(_norm_token_string(a) for a in authors)),
@@ -125,6 +129,15 @@ def compute_content_hash(
         ids.arxiv_id or "",
         ids.isbn13 or "",
         ids.openalex or "",
+        ids.pmid or "",
+        ids.bibcode or "",
+        ids.google_books or "",
+        "|".join(sorted(ids.all_isbn13())),
+        entry_type.value,
+        publisher.strip(),
+        pages.strip(),
+        json.dumps({k: raw_fields[k] for k in ("volume", "number", "issue")
+                    if raw_fields is not None and k in raw_fields}, sort_keys=True),
     ]
     return hashlib.sha256("␟".join(parts).encode("utf-8")).hexdigest()
 
@@ -150,7 +163,9 @@ class BibEntry(BaseModel):
     def _fill_hash(self) -> BibEntry:
         if not self.content_hash:
             self.content_hash = compute_content_hash(
-                self.title, self.authors, self.year, self.venue, self.ids
+                self.title, self.authors, self.year, self.venue, self.ids,
+                entry_type=self.entry_type, publisher=self.publisher, pages=self.pages,
+                raw_fields=self.raw_fields,
             )
         return self
 
@@ -330,8 +345,9 @@ class CitationAlignmentResult(BaseModel):
 class FieldFinding(BaseModel):
     """Step-3 correctness check of one .bib field against the identified canonical record.
 
-    Runs only on an `exactly_one` match (the artifact is confirmed to be the cited work), so a
-    difference is a property of the *field*, not evidence about identity. `status`:
+    Used for matched-work reporting and for identity consistency against a resolved hard-ID
+    target. Definitive conflicts in supplied values can establish `contradiction`; missing or
+    placeholder values are only field issues. `status`:
       - ``ok``           value agrees with the canonical record (after normalization).
       - ``formatting``   differs only in formatting/style — not a mistake, a cosmetic fix at most.
       - ``error``        a genuine mistake (wrong, garbled, or empty/placeholder value).
@@ -404,10 +420,11 @@ class MatchedArtifact(BaseModel):
 
 
 class Verdict(BaseModel):
-    """README 5.1 / 5.2 / 5.3."""
+    """Identification result; contradictions retain the resolved ID target and field evidence."""
 
-    kind: Literal["none", "exactly_one", "multiple"]
+    kind: Literal["none", "exactly_one", "multiple", "contradiction"]
     artifacts: list[MatchedArtifact] = Field(default_factory=list)
+    contradiction_findings: list[FieldFinding] = Field(default_factory=list)
     confidence: Literal["high", "medium", "low"] = "low"
     rationale: str = ""
 

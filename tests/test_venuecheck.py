@@ -201,6 +201,6 @@ async def test_unverified_venue_keeps_identity_and_reports_its_actual_reason(tmp
     try:
         cache.put_entry_verdict(entry.content_hash, verdict)
         cache.pipeline_version = AuditConfig(_env_file=None).pipeline_version
-        assert cache.pipeline_version == "0.27" and cache.get_entry_verdict(entry.content_hash) is None
+        assert cache.pipeline_version == "0.28" and cache.get_entry_verdict(entry.content_hash) is None
     finally:
         cache.close()

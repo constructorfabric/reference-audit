@@ -12,11 +12,12 @@
 - [3. Processes / Business Logic (CDSL)](#3-processes--business-logic-cdsl)
   - [Score and bucket a candidate](#score-and-bucket-a-candidate)
   - [Cluster accepted candidates into a verdict](#cluster-accepted-candidates-into-a-verdict)
+  - [Check resolved paper identifiers for contradictions](#check-resolved-paper-identifiers-for-contradictions)
 - [4. States (CDSL)](#4-states-cdsl)
   - [Entry resolution status](#entry-resolution-status)
 - [5. Definitions of Done](#5-definitions-of-done)
   - [Identify the artifact behind a reference](#identify-the-artifact-behind-a-reference)
-  - [Three-way identification verdict](#three-way-identification-verdict)
+  - [Four-way identification verdict](#four-way-identification-verdict)
   - [Hallucination screening](#hallucination-screening)
   - [Best version and canonical output](#best-version-and-canonical-output)
   - [Cache database and LLM calls](#cache-database-and-llm-calls)
@@ -34,7 +35,7 @@
 
 The implemented networked audit slice layered on top of [Parsing](parsing.md): for each parsed
 entry, query the bibliographic databases, score and cluster the candidates with the SAME-OBJECT
-rule, and return the 3-way verdict plus the canonical best version — caching every successful
+rule, and return the four-way verdict plus the canonical best version — caching every successful
 result so repeated runs are cheap.
 
 ### 1.2 Purpose
@@ -74,7 +75,7 @@ the SQLite cache (`cache/`). Each entry is audited in isolation; only successful
 
 ## 2. Actor Flows (CDSL)
 
-User-facing interaction: an actor requests a full audit of a reference and receives a 3-way verdict
+User-facing interaction: an actor requests a full audit of a reference and receives a four-way verdict
 plus, for an `exactly_one` match, the canonical best version.
 
 **Use cases**: `cpt-referenceaudit-usecase-networked-audit`
@@ -103,15 +104,16 @@ plus, for an `exactly_one` match, the canonical best version.
 2. [x] - `p1` - Route the entry to its id / metadata source adapters (`route_entry`) - `inst-route`
 3. [x] - `p1` - API: query the routed sources for candidate records (concurrent, cached) - `inst-gather`
 4. [x] - `p1` - **FOR EACH** pooled candidate compute features and bucket it (`_assess`) - `inst-assess`
-5. [x] - `p1` - Cluster the accepted candidates and count them into a 3-way verdict - `inst-verdict`
-6. [x] - `p1` - **IF** still unresolved **AND** an LLM is configured, run the per-candidate funnel - `inst-llm-adjudicate`
-7. [x] - `p1` - Verify a URL-only `@misc` against its own cited page (`_resolve_web`) - `inst-web`
+5. [x] - `p1` - Check resolved hard paper identifiers for contradictory citation fields - `inst-id-consistency`
+6. [x] - `p1` - Cluster the accepted candidates and count them into a four-way verdict - `inst-verdict`
+7. [x] - `p1` - **IF** still unresolved **AND** an LLM is configured, run the per-candidate funnel - `inst-llm-adjudicate`
+8. [x] - `p1` - Verify a URL-only `@misc` against its own cited page (`_resolve_web`) - `inst-web`
    (the fetcher detects a JavaScript single-page-app shell and re-fetches it via a headless browser
    before judging; a shell that cannot be rendered — no browser, or empty after rendering — is left
    unresolved, never read as a wrong/`none` URL. Implemented within this step; not separately traced.)
-8. [x] - `p1` - Confirm a book's cited edition against Open Library (`_resolve_book`) - `inst-book`
-9. [x] - `p1` - Backfill identifiers, note a better version, and enrich the canonical record - `inst-best-output`
-10. [x] - `p1` - **IF** the verdict resolved, cache it (success only) - `inst-cache-store`
+9. [x] - `p1` - Confirm a book's cited edition against Open Library (`_resolve_book`) - `inst-book`
+10. [x] - `p1` - Backfill identifiers, note a better version, and enrich the canonical record - `inst-best-output`
+11. [x] - `p1` - **IF** the verdict resolved, cache it (success only) - `inst-cache-store`
 
 ## 3. Processes / Business Logic (CDSL)
 
@@ -143,31 +145,64 @@ forced to LLM adjudication.
 - [x] `p1` - **ID**: `cpt-referenceaudit-algo-identification-verdict`
 
 Cluster the accepted candidates by the SAME-OBJECT rule into distinct works, then count them into
-the 3-way verdict. Called by the audit flow's `inst-verdict` step.
+the count-based verdict; a proven hard-ID contradiction takes precedence. Called by the audit flow's `inst-verdict` step.
 
 **Input**: The entry's `CandidateAssessment`s and the `errored` flag.
 
-**Output**: A `Verdict` (`none` / `exactly_one` / `multiple`) or `None` (unresolved).
+**Output**: A `Verdict` (`none` / `exactly_one` / `multiple` / `contradiction`) or `None` (unresolved).
 
 **Steps**:
 1. [x] - `p1` - Cluster the `auto_accept` candidates (SAME-OBJECT, `cluster_accepted`) - `inst-cluster`
-2. [x] - `p1` - **RETURN** the counted 3-way verdict (`build_verdict`) - `inst-build`
+2. [x] - `p1` - **RETURN** the counted verdict (`build_verdict`) - `inst-build`
+
+### Check resolved paper identifiers for contradictions
+
+- [x] `p1` - **ID**: `cpt-referenceaudit-algo-identification-contradiction`
+
+**Input**: The citation, successful by-ID source records (before pooling), related candidate records, configuration and optional LLM/cache.
+
+**Output**: A `contradiction` verdict retaining the resolved ID target and supporting field findings,
+or no override when no substantive conflict is established.
+
+**Steps**:
+1. [x] - `p1` - Identify successful exact by-ID targets and include only their confirmed same-work versions - `inst-targets`
+2. [x] - `p1` - Compare supplied fields against each resolved target using version-aware field checks - `inst-fields`
+3. [x] - `p1` - **IF** a definitive field error exists, return `contradiction` with the target and evidence; otherwise keep the existing verdict - `inst-result`
+
+Hard paper identifiers are DOI (including arXiv DOIs), arXiv ID, PMID, bibcode, and OpenAlex Work ID,
+where a configured adapter supports resolution. A URL alone is excluded. ISBN/Google Books and
+book/chapter edition handling retain their existing policy. A metadata-search hit or DOI registration
+alone does not prove resolution to a particular paper. Missing/placeholder fields, cosmetic variants,
+uncertain checks, unavailable metadata and failed queries never establish a contradiction.
+The consistency check runs even when optional field reporting is disabled. Author omissions remain
+ordinary field-completeness findings; the consistency check ignores the `PARTIAL_AUTHORS` severity
+policy and requires that every named author belongs to the resolved paper. It takes precedence over
+`none`, `multiple`, and metadata-based `exactly_one` matches; identifier conflicts are not repaired by
+silently choosing a different paper. Cached contradictions preserve their supporting findings. Inconclusive LLM comparisons and failed
+ID lookups are reported and prevent caching an unproven consistency result. A definitive field
+conflict already proves contradiction even if another comparison remains uncertain. The content hash includes all decisive
+citation inputs, including entry type, pages, publisher, volume/issue and every hard identifier.
+Confirmed related versions are grouped for field comparison while the raw resolved target remains
+the artifact’s `best_record`. With no explicit venue a published DOI selects the published version
+even when an arXiv ID is supplied. PMID lookup is routed through Semantic Scholar; bundled
+adapters do not resolve bibcodes. These routing/version/hash additions are implemented and tested,
+not separately `@cpt`-traced.
 
 ## 4. States (CDSL)
 
 ### Entry resolution status
 
 Each `EntryAudit` carries a `verdict` that is `None` (unresolved) until the audit flow settles it to
-a `Verdict` of kind `none`, `exactly_one`, or `multiple`. The lifecycle is documented here for
+a `Verdict` of kind `none`, `exactly_one`, `multiple`, or `contradiction`. The lifecycle is documented here for
 completeness; it is not modeled as a standalone, traced state machine in this slice. The crucial
 invariant is that a source/LLM failure leaves the status `unresolved`, never `none` — an error is
 not a "not found".
 
-**States**: UNRESOLVED, NONE, EXACTLY_ONE, MULTIPLE
+**States**: UNRESOLVED, NONE, EXACTLY_ONE, MULTIPLE, CONTRADICTION
 
 **Initial State**: UNRESOLVED
 
-**Transition**: UNRESOLVED → {NONE, EXACTLY_ONE, MULTIPLE} when the flow produces a `Verdict`;
+**Transition**: UNRESOLVED → {NONE, EXACTLY_ONE, MULTIPLE, CONTRADICTION} when the flow produces a `Verdict`;
 UNRESOLVED is retained (and retried next run) on any transient failure.
 
 ## 5. Definitions of Done
@@ -271,11 +306,11 @@ by tests but are not yet separately `@cpt`-traced flow instructions (they run al
 - API: `reference_audit.pipeline.run_audit(...)` / `AuditPipeline.run(...)`
 - Entities: `SourceRecord`, `CandidateAssessment`, `MatchedArtifact`
 
-### Three-way identification verdict
+### Four-way identification verdict
 
 - [x] `p1` - **ID**: `cpt-referenceaudit-dod-identification-three-way-verdict`
 
-The system **MUST** return exactly one of `none`, `exactly_one`, or `multiple` per resolved
+The system **MUST** return exactly one of `none`, `exactly_one`, `multiple`, or `contradiction` per resolved
 reference, or leave it `unresolved` on transient failure.
 
 **Implements**:
@@ -312,7 +347,9 @@ identically. This runs in the `inst-book` step.
 A **cited DOI** that the matched work does not carry is checked on every `exactly_one` match
 (`_check_cited_doi`, run with the field checks). Without it, an entry whose title and authors match
 a real work passed clean even when its DOI pointed at another paper or at nothing, which is the
-`fabricated_doi` pattern. The result is a `FieldFinding` on the `doi` field:
+`fabricated_doi` pattern. A DOI resolved to contradictory paper metadata now yields the pipeline 0.28 `contradiction`
+verdict before this advisory step. The advisory DOI check still covers unresolved/unregistered
+DOIs on otherwise matched references. Its result is a `FieldFinding` on the `doi` field:
 - `ok` when the matched work carries the DOI. Pooling keeps every member record's DOI
   (`raw["merged_dois"]`), since the pooled record's own `ids.doi` is one DOI only, often the arXiv
   DataCite DOI of the preprint.
@@ -465,6 +502,10 @@ implemented but not separately `@cpt`-traced.
 
 - [x] A real reference is matched and reported with an `exactly_one` verdict.
 - [x] A fabricated reference with no real match returns a `none` verdict.
+- [x] A resolved paper ID with substantive field errors yields `contradiction`; it retains the
+      ID target and evidence, survives caching, and cannot be overwritten by metadata identity.
+      Evidence: `tests/test_contradiction.py` and six recorded HALLMARK DOI regressions in
+      `tests/test_hallmark_corpus.py`. Test infrastructure is not separately `@cpt`-traced.
 - [x] A source/LLM failure leaves the entry `unresolved`, never `none`, and is not cached.
 - [x] Repeated audits of the same inputs reuse the SQLite cache instead of re-querying.
 - [x] A preprint with a published version (or a book with a later edition) reports the better version.

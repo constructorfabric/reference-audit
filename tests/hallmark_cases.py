@@ -78,7 +78,7 @@ class NativeExpectation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     split: Literal["dev_public", "test_public"]
     bibtex_key: str
-    identity: Literal["none", "exactly_one"] | None = None
+    identity: Literal["none", "exactly_one", "contradiction"] | None = None
     fields: dict[str, list[Literal["ok", "formatting", "error", "uncertain", "unverifiable"]]]
     reason: str = Field(min_length=1)
     evidence: list[str] = Field(min_length=1)
@@ -116,6 +116,11 @@ def assert_native_outcome(case: Case, audit: hb.CompactAudit) -> None:
         assert not audit.findings, "metadata checks must not claim an identified artifact"
         return
     assert audit.matched_title.strip() and audit.matched_source.strip(), case.id
+    if audit.verdict == "contradiction":
+        assert any(f.status == "error" for f in audit.findings), (
+            f"{case.id}: contradiction has no substantive field evidence"
+        )
+        assert audit.issues, f"{case.id}: contradiction was not reported"
     for finding in audit.findings:
         if finding.status in {"error", "uncertain", "unverifiable"}:
             assert finding.detail.strip(), f"{case.id}: {finding.field} has no reason"

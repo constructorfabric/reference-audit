@@ -84,7 +84,7 @@ async def _run(tmp_path, bib_text: str, cache: AuditCache | None = None):
 
 
 @respx.mock
-async def test_work_id_next_to_a_doi_is_looked_up_and_wins(tmp_path):
+async def test_work_id_next_to_a_wrong_doi_is_looked_up_and_reports_contradiction(tmp_path):
     # Issue #3: OpenAlex used to be queried by the DOI only, so the Work id was never checked and
     # this real paper (cited with another paper's DOI) came out NO MATCH.
     _mock_common()
@@ -94,13 +94,10 @@ async def test_work_id_next_to_a_doi_is_looked_up_and_wins(tmp_path):
     audit = await _run(tmp_path, _BIB)
 
     assert work.called
-    assert audit.verdict.kind == "exactly_one"
-    assert audit.verdict.artifacts[0].best_record.ids.openalex == _WORK_ID
-    # The DOI/Work-id disagreement is reported, naming the work the DOI belongs to.
-    doi = next(f for f in audit.field_findings if f.field == "doi")
-    assert doi.status == "error"
-    assert "different work" in doi.detail and "Beekeeping" in doi.detail
-    assert any("cited DOI belongs to a different work" in i for i in audit.issues)
+    assert audit.verdict.kind == "contradiction"
+    assert audit.verdict.artifacts[0].best_record.ids.doi == _CR_DOI_ITEM["DOI"]
+    assert "Beekeeping" in audit.verdict.rationale
+    assert any(f.field == "author" and f.status == "error" for f in audit.field_findings)
     assert not any("OpenAlex Work id" in i for i in audit.issues)
 
 
@@ -137,13 +134,13 @@ async def test_work_id_of_another_work_is_reported_also_from_cache(tmp_path):
     finally:
         cache.close()
 
-    assert fresh.verdict.kind == "exactly_one"
-    assert fresh.verdict.artifacts[0].best_record.ids.openalex == _WORK_ID
+    assert fresh.verdict.kind == "contradiction"
+    assert fresh.verdict.artifacts[0].best_record.ids.openalex == "W4242"
     assert cached.from_cache
     for audit in (fresh, cached):
-        notes = [i for i in audit.issues if "OpenAlex Work id W4242" in i]
+        notes = [i for i in audit.issues if "Hard ID openalex:W4242" in i]
         assert len(notes) == 1
-        assert "belongs to a different work: 'An Entirely Unrelated Treatise" in notes[0]
+        assert "resolves to 'An Entirely Unrelated Treatise" in notes[0]
 
 
 @respx.mock

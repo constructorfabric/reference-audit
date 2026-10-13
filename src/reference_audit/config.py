@@ -170,7 +170,7 @@ class AuditConfig(BaseSettings):
     # 0.27: venue errors require evidence bound to the cited published artifact or an explicitly
     #       complete venue/year/track catalogue. Another version's venue or an LLM guess cannot
     #       establish non-publication. Venue findings retain the evidence's source and scope.
-    pipeline_version: str = "0.27"
+    pipeline_version: str = "0.28"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

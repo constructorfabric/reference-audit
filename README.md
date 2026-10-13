@@ -4,12 +4,14 @@ Audit the references in a paper. Given a `.bib` bibliography and the `.tex` that
 the paper's **PDF** — `reference-audit` figures out **which real-world document each reference
 actually points to** and flags ones that don't match anything real (hallucinated references).
 
-For every entry it returns one of three verdicts:
+For every entry it returns one of four verdicts:
 
 - **exactly one match** — the reference resolves to a single real document (with its DOI/ISBN/URL,
   and any preprint↔published versions merged).
 - **no match** — no real document corresponds to the entry (a likely hallucination).
-- **multiple matches** — the entry is ambiguous and matches more than one distinct document.
+- **multiple matches** — several accepted candidate groups remain after same-work clustering.
+- **contradiction** — a hard paper identifier resolves to a real paper, but supplied citation fields
+  substantively disagree with that paper. The report preserves the ID target and conflict evidence.
 
 It also backfills missing DOIs/ISBNs, normalizes malformed identifiers, and reports dangling or
 uncited citations.
@@ -79,9 +81,26 @@ to an LLM when needed:
    whether it can correspond to the entry; a second LLM check decides whether two strong candidates
    are the *same* work. At most `llm_max_candidates` (8) candidates, the best-scoring, are
    adjudicated per entry; an entry with more is left unresolved and says so.
-6. **Verdict** — count the distinct works and report none / exactly one / multiple. An entry left
+6. **Verdict** — check resolved hard paper identifiers for contradictions, then count the accepted
+   work groups and report none / exactly one / multiple / contradiction. An entry left
    without a verdict says why: the source that failed, the LLM call that failed, or the candidates
    that stayed undecided.
+   The ID consistency check uses successful by-ID records before pooling: DOI (including arXiv
+   DOIs), arXiv ID, PMID, bibcode, and OpenAlex Work ID, where an adapter supports resolution.
+   Confirmed errors in supplied title, authors, year, venue, volume, issue, pages or publisher yield
+   `contradiction`, even with `CHECK_FIELDS=false`. Missing/placeholder values, cosmetic differences, uncertain
+   judgments and lookup failures do not establish a contradiction. Inconclusive LLM comparisons
+   and failed ID lookups are reported and prevent caching an unproven consistency result, so the
+   next run retries them. A contradiction established by another definitive field error is conclusive. A bare URL is excluded; books and
+   chapters retain their edition-aware policy. DOI registration alone is insufficient.
+   Confirmed related versions are compared against the cited version; with no explicit venue,
+   a published DOI takes precedence over an accompanying arXiv ID. A PMID is queried through
+   Semantic Scholar; no bundled adapter resolves bibcodes.
+   Pipeline **0.28** invalidates older cached verdicts; cached contradictions retain their field evidence.
+   Omitting co-authors remains an ordinary field finding under `PARTIAL_AUTHORS`; it does not
+   contradict the ID when all named authors belong to its paper.
+   Entry hashes include all verdict-producing citation fields (including pages, publisher, volume,
+   issue and entry type), so correcting a conflict forces a new verdict.
 7. **Check the fields** of an exactly-one match (title, authors, venue, year, volume, pages, …).
    - Each field is compared against the **version the entry cites**, read from the pooled record's
      members: a citation of the arXiv preprint against the preprint, one of a journal or conference
@@ -268,7 +287,7 @@ Reference audit
 
 CAPITAL OFFENCES — No hallucinated citations
 
-UNABLE TO VERIFY — For all other references at least one matching artifact was positively identified
+UNABLE TO VERIFY — No unresolved references
 
 ISSUES (7) — other problems to review:
 
@@ -314,7 +333,7 @@ NO ISSUES (18) — verified, nothing to fix:
 | `--grobid URL` | GROBID base URL for PDF input. Default `http://localhost:8070` (or `GROBID_URL`). |
 | `--ignore-embedded` | For a PDF that embeds the BibTeX records of its cited works, extract the references with GROBID anyway. See [PDFs that embed their references](#pdfs-that-embed-their-references). |
 | `--backend api\|clickhouse` | Where Semantic Scholar, OpenAlex and DBLP are read from: their public APIs, or a local ClickHouse mirror. Default `SOURCE_BACKEND`, else `api`. See [Local ClickHouse backend](#local-clickhouse-backend). |
-| `--fail-on hallucinated\|multiple` | Exit non-zero if any entry gets that verdict — for gating submissions in CI. Any other value is rejected before the audit starts, and so is combining it with `--no-network` (the parse-only report has no verdicts to check). |
+| `--fail-on hallucinated\|multiple\|contradiction` | Exit non-zero if any entry gets that verdict — for gating submissions in CI. Any other value is rejected before the audit starts, and so is combining it with `--no-network` (the parse-only report has no verdicts to check). |
 | `--partial-authors ignore\|warn\|error` | How to report a cited author list that names only some of the work's authors without `and others`: not at all, as `uncertain` (default), or as an `error`. Default `PARTIAL_AUTHORS`, else `warn`. |
 
 `--no-network` applies to `.tex` + `.bib` input, and to a PDF that embeds the BibTeX records of its
@@ -396,12 +415,14 @@ The text report leads with two headline categories:
 - **`UNABLE TO VERIFY`** — entries we could **not** conclusively clear of being a hallucination, for
   any reason: a transient network/LLM error, an unfamiliar `.bib` type, a dead link, an
   adjudication left unsettled. This is the catch-all that keeps an inconclusive check from masquerading
-  as a clean pass. When it is empty the report states that for every other reference *at least one
-  matching artifact was positively identified*.
+  as a clean pass. When it is empty the report says *No unresolved references*.
 
-The remaining entries (at least one match found) are then split into `ISSUES`,
+The remaining entries, including resolved-ID contradictions, are then split into `ISSUES`,
 `FORMATTING NITS & ADVISORIES`, and `NO ISSUES`. Per-entry verdict glyphs:
 
+- **`! CONTRADICTION`** — a resolved hard paper ID conflicts with supplied fields. The resolved
+  target and conflicting values are shown under ISSUES and in JSON (`kind: "contradiction"`,
+  `artifacts`, `contradiction_findings`). It is counted separately from hallucinations and ambiguity.
 - **`✓ exactly one match`** — resolved to a single document; the matched identifier and version
   count are shown.
 - **`✗ NO MATCH (possible hallucination)`** — nothing real corresponds; treat as a likely
@@ -575,7 +596,8 @@ Verdict accuracy is measured on [HALLMARK](https://github.com/rpatrik96/hallmark
 citation-hallucination benchmark, by `benchmarks/hallmark_bench.py`.
 [`benchmarks/README.md`](benchmarks/README.md) covers the setup, the `audit` / `score` / `submit`
 subcommands, the verdict-to-label mappings, the results so far, and how to run on the withheld
-`test_hidden` split.
+`test_hidden` split. A `contradiction` maps to HALLUCINATED under `strict` and UNCERTAIN under
+`identity`, because the citation cannot be treated as a clean identification.
 
 ## Constructor Fabric
 

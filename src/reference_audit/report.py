@@ -25,7 +25,7 @@ def _ids_str(audit: EntryAudit) -> str:
     return "  ".join(parts) if parts else "(no identifier)"
 
 
-_VERDICT_GLYPH = {"exactly_one": "✓", "none": "✗", "multiple": "?"}
+_VERDICT_GLYPH = {"exactly_one": "✓", "none": "✗", "multiple": "?", "contradiction": "!"}
 
 
 def _verdict_line(audit) -> str | None:
@@ -34,18 +34,19 @@ def _verdict_line(audit) -> str | None:
         return None
     glyph = _VERDICT_GLYPH.get(v.kind, "·")
     label = {"exactly_one": "exactly one match", "none": "NO MATCH (possible hallucination)",
-             "multiple": "MULTIPLE matches"}.get(v.kind, v.kind)
+             "multiple": "MULTIPLE matches", "contradiction": "CONTRADICTION"}.get(v.kind, v.kind)
     line = f"    {glyph} {label} ({v.confidence}) — {v.rationale}"
-    if v.kind == "exactly_one" and v.artifacts and v.artifacts[0].best_record:
+    if v.kind in ("exactly_one", "contradiction") and v.artifacts and v.artifacts[0].best_record:
         br = v.artifacts[0].best_record
+        target_label = "resolved" if v.kind == "contradiction" else "matched"
         if br.ids.doi:
-            line += f"\n      matched: doi:{br.ids.doi}  ({br.source})"
+            line += f"\n      {target_label}: doi:{br.ids.doi}  ({br.source})"
         elif br.ids.isbn13:
-            line += f"\n      matched: isbn:{br.ids.isbn13}  ({br.source})"
+            line += f"\n      {target_label}: isbn:{br.ids.isbn13}  ({br.source})"
         elif br.ids.openalex:
-            line += f"\n      matched: openalex:{br.ids.openalex}  ({br.source})"
+            line += f"\n      {target_label}: openalex:{br.ids.openalex}  ({br.source})"
         elif br.ids.url:
-            line += f"\n      matched: url:{br.ids.url}  ({br.source})"
+            line += f"\n      {target_label}: url:{br.ids.url}  ({br.source})"
     return line
 
 
@@ -82,7 +83,7 @@ def _has_issues(a: EntryAudit, *, network: bool) -> bool:
         return True
     if network:
         v = a.verdict
-        if v is None or v.kind in ("none", "multiple"):
+        if v is None or v.kind in ("none", "multiple", "contradiction"):
             return True
     return False
 
@@ -175,6 +176,7 @@ def render_text(report: AuditReport) -> str:
             f"  verdicts: {verdicts.get('exactly_one', 0)} matched"
             f"  ·  {verdicts.get('none', 0)} no-match"
             f"  ·  {verdicts.get('multiple', 0)} ambiguous"
+            f"  ·  {verdicts.get('contradiction', 0)} contradictions"
             f"  ·  {verdicts.get('unresolved', 0)} unresolved"
         )
         if s.get("source_backend") == "clickhouse":
@@ -261,8 +263,7 @@ def render_text(report: AuditReport) -> str:
             unable_to_verify,
             "UNABLE TO VERIFY ({n}) — could not conclusively rule out a hallucination "
             "(network/LLM error, unfamiliar entry type, dead link, …):",
-            "UNABLE TO VERIFY — For all other references at least one matching artifact "
-            "was positively identified",
+            "UNABLE TO VERIFY — No unresolved references",
             pdf=pdf,
             citedness_known=citedness_known,
         ))

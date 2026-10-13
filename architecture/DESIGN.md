@@ -51,7 +51,7 @@ Requirements that significantly influence architecture decisions.
 |-------------|------------------|
 | `cpt-referenceaudit-fr-parse-bib-tex` | The `parsing` package + `build_parse_report` orchestration produce a structured `AuditReport` offline. |
 | `cpt-referenceaudit-fr-identify-artifact` | The `sources` package (modular DB adapters) returns candidate `SourceRecord`s, preferring DOI/ISBN/URL. |
-| `cpt-referenceaudit-fr-three-way-verdict` | The `matching` package collapses candidates into a `none` / `exactly_one` / `multiple` verdict. |
+| `cpt-referenceaudit-fr-three-way-verdict` | The `matching` package collapses candidates into a `none` / `exactly_one` / `multiple` / `contradiction` verdict. |
 | `cpt-referenceaudit-fr-hallucination-screen` | `matching` + `llm` adjudication drive empty candidate sets to a confident `none`. |
 | `cpt-referenceaudit-fr-best-version-canonical` | `matching` ranks versions (published > preprint, later editions) and `report` emits the canonical reference. |
 | `cpt-referenceaudit-fr-citation-alignment` | The `alignment` component pairs each citing context (from `parsing`) with the matched artifact's abstract and classifies it via `llm`; advisory, never changing the verdict. |
@@ -163,7 +163,7 @@ failure, never a silently empty reference list.
 | UnparsedEntry | A live `.bib` entry the BibTeX parser could not read (key, type, line, reason); reported, never audited. | [models.py](../src/reference_audit/models.py) |
 | AuditReport | The aggregate report (entries + bookkeeping, including unparsed entries, + summary). | [models.py](../src/reference_audit/models.py) |
 | SourceRecord | A candidate artifact returned by a database/web adapter. | [models.py](../src/reference_audit/models.py) |
-| Verdict / MatchedArtifact | The 3-way verdict and the clustered artifact(s) it resolves to. | [models.py](../src/reference_audit/models.py) |
+| Verdict / MatchedArtifact | The four-way verdict and the clustered artifact(s) it resolves to. | [models.py](../src/reference_audit/models.py) |
 | FieldFinding | A per-field correctness/formatting finding for an exactly-one match. | [models.py](../src/reference_audit/models.py) |
 | CitationContext | One in-text citing occurrence of a key: the surrounding sentence(s) and location. | [models.py](../src/reference_audit/models.py) |
 | AlignmentFinding | A per-citation alignment classification (supported / contradicted / not_in_abstract / unverifiable) with evidence. | [models.py](../src/reference_audit/models.py) |
@@ -285,7 +285,7 @@ To decide, from candidate records, whether a reference matches no artifact, exac
 ##### Responsibility scope
 
 Candidate pooling, feature scoring (`FeatureVector`), the SAME-OBJECT clustering rule (`sameobject`),
-the 3-way verdict (`verdict`), URL-only web verification (`webcheck` — including the rule that a
+the four-way verdict (`verdict`), URL-only web verification (`webcheck` — including the rule that a
 JavaScript app shell that could not be rendered is left unresolved, never read as a wrong/`none`
 URL), and version ranking. **IMPLEMENTED.**
 
@@ -580,7 +580,7 @@ sequenceDiagram
     M->>M: score + bucket
     M->>L: adjudicate non-clean cases (per-candidate, SAME-OBJECT, web, fields)
     L-->>M: structured judgment (cached)
-    M-->>P: 3-way verdict + canonical best version
+    M-->>P: four-way verdict + canonical best version
     P->>C: store successful verdict
 ```
 
@@ -646,6 +646,26 @@ deleted: `--fresh` filters reads to rows whose timestamp (`fetched_at` / `create
 | entry_hash | source | query_kind | ok | fetched_at |
 |------------|--------|------------|----|------------|
 | 9f2a... | crossref | id | 1 | 2026-06-27T00:00:00Z |
+
+The paper-ID consistency check (`matching/contradiction.py`) reads successful by-ID records
+before pooling and compares supplied fields to each exact ID target with version-aware field
+checks. It is traced by `cpt-referenceaudit-algo-identification-contradiction` and the audit flow's
+`inst-id-consistency` instruction. Definitive errors produce `contradiction`, preserving the target
+in `artifacts` and findings in `contradiction_findings`; metadata matches and ID overrides cannot
+replace it. Books and chapters retain their edition-aware policy. Uncertain/failed checks do not
+prove contradiction; failed ID lookups and inconclusive LLM comparisons are reported and prevent caching an unproven
+consistency result. An independently proven contradiction remains conclusive.
+The content hash includes entry type, pages, publisher, volume/issue and all hard identifiers.
+Author omission severity is excluded from ID consistency (all named authors must belong to the
+ID target), leaving `PARTIAL_AUTHORS` as an advisory reporting policy.
+Only confirmed same-work versions contribute to comparison; the raw resolved ID target is retained.
+A published DOI selects the published version absent an explicit venue, and PMID lookups are routed
+through Semantic Scholar (bibcode resolution is not implemented by bundled adapters). These
+routing/version/hash additions are implemented and tested, not separately `@cpt`-traced. Pipeline 0.28
+invalidates old verdicts, while cached contradictions replay their evidence. Text/JSON reports and
+`--fail-on contradiction` expose the new result. HALLMARK maps it to HALLUCINATED (`strict`) or
+UNCERTAIN (`identity`). CLI/benchmark additions are implemented and tested, not separately
+`@cpt`-traced.
 
 ## 4. Additional context
 

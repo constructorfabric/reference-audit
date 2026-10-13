@@ -43,6 +43,15 @@ def test_multiple_is_a_reported_native_result():
     assert_native_outcome(CASE, _one(verdict="multiple", rationale="Matched 2 distinct works"))
 
 
+def test_contradiction_requires_substantive_reported_evidence():
+    case = replace(CASE, native_expectation=None)
+    finding = FieldFinding(field="author", status="error", detail="ID belongs to other authors")
+    audit = _one(verdict="contradiction", findings=[finding], issues=["author: " + finding.detail])
+    assert_native_outcome(case, audit)
+    with pytest.raises(AssertionError, match="no substantive field evidence"):
+        assert_native_outcome(case, _one(verdict="contradiction"))
+
+
 def test_a_failed_record_has_to_explain_why():
     assert_native_outcome(CASE, hb.not_audited(CASE.record.bibtex_key, "failed", "source error"))
     with pytest.raises(AssertionError):

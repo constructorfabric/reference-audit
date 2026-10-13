@@ -2,15 +2,13 @@
   {
     "split": "dev_public",
     "bibtex_key": "d0f7f9c72c33",
-    "identity": "exactly_one",
+    "identity": "contradiction",
     "fields": {
-      "doi": [
-        "error",
-        "uncertain",
-        "unverifiable"
+      "author": [
+        "error"
       ]
     },
-    "reason": "The independent records establish a real work and a discrepancy in this field. An author-corrupted citation may fail correspondence; another version's venue alone does not establish non-publication. Uncheckable fields must remain explicit.",
+    "reason": "The cited DOI resolves to a different paper whose title and authors contradict this citation. Preserve the resolved DOI target and report contradiction, rather than inferring the intended work from title/authors.",
     "evidence": [
       "https://dblp.org/rec/conf/cvpr/WangWGSZBMSF21",
       "https://api.crossref.org/works/10.1109/cvpr46437.2021.00469",
@@ -20,15 +18,13 @@
   {
     "split": "dev_public",
     "bibtex_key": "f802800935ef",
-    "identity": "exactly_one",
+    "identity": "contradiction",
     "fields": {
-      "doi": [
-        "error",
-        "uncertain",
-        "unverifiable"
+      "author": [
+        "error"
       ]
     },
-    "reason": "The independent records establish a real work and a discrepancy in this field. An author-corrupted citation may fail correspondence; another version's venue alone does not establish non-publication. Uncheckable fields must remain explicit.",
+    "reason": "The cited DOI resolves to a different paper whose title and authors contradict this citation. Preserve the resolved DOI target and report contradiction, rather than inferring the intended work from title/authors.",
     "evidence": [
       "https://dblp.org/rec/conf/cvpr/GirdharELSAJM23",
       "https://api.crossref.org/works/10.1109/cvpr52729.2023.02141",
@@ -38,15 +34,13 @@
   {
     "split": "dev_public",
     "bibtex_key": "ff2931c3228f",
-    "identity": "exactly_one",
+    "identity": "contradiction",
     "fields": {
-      "doi": [
-        "error",
-        "uncertain",
-        "unverifiable"
+      "author": [
+        "error"
       ]
     },
-    "reason": "The independent records establish a real work and a discrepancy in this field. An author-corrupted citation may fail correspondence; another version's venue alone does not establish non-publication. Uncheckable fields must remain explicit.",
+    "reason": "The cited DOI resolves to a different paper whose title and authors contradict this citation. Preserve the resolved DOI target and report contradiction, rather than inferring the intended work from title/authors.",
     "evidence": [
       "https://dblp.org/rec/conf/iccv/ChenXH21",
       "https://api.crossref.org/works/10.1109/iccv48922.2021.00952",
@@ -56,15 +50,13 @@
   {
     "split": "dev_public",
     "bibtex_key": "ded9f5844e90",
-    "identity": "exactly_one",
+    "identity": "contradiction",
     "fields": {
-      "doi": [
-        "error",
-        "uncertain",
-        "unverifiable"
+      "author": [
+        "error"
       ]
     },
-    "reason": "The independent records establish a real work and a discrepancy in this field. An author-corrupted citation may fail correspondence; another version's venue alone does not establish non-publication. Uncheckable fields must remain explicit.",
+    "reason": "The cited DOI resolves to a different paper whose title and authors contradict this citation. Preserve the resolved DOI target and report contradiction, rather than inferring the intended work from title/authors.",
     "evidence": [
       "https://dblp.org/rec/conf/eccv/ChenXGYS22",
       "https://api.crossref.org/works/10.1007/978-3-031-19830-4_20",
@@ -74,7 +66,7 @@
   {
     "split": "dev_public",
     "bibtex_key": "a24129d1c5e5",
-    "identity": null,
+    "identity": "contradiction",
     "fields": {
       "author": [
         "error",
@@ -82,7 +74,7 @@
         "unverifiable"
       ]
     },
-    "reason": "The independent records establish a real work and a discrepancy in this field. An author-corrupted citation may fail correspondence; another version's venue alone does not establish non-publication. Uncheckable fields must remain explicit.",
+    "reason": "The cited arXiv identifier resolves to the independently recorded paper, but the citation names authors who are not its authors. Report contradiction with the resolved target and author evidence.",
     "evidence": [
       "https://dblp.org/rec/conf/nips/AlayracDLMBHLMM22"
     ]
@@ -90,7 +82,7 @@
   {
     "split": "dev_public",
     "bibtex_key": "e9e08922a057",
-    "identity": null,
+    "identity": "contradiction",
     "fields": {
       "author": [
         "error",
@@ -98,7 +90,7 @@
         "unverifiable"
       ]
     },
-    "reason": "The independent records establish a real work and a discrepancy in this field. An author-corrupted citation may fail correspondence; another version's venue alone does not establish non-publication. Uncheckable fields must remain explicit.",
+    "reason": "The cited arXiv identifier resolves to the independently recorded paper, but the citation names authors who are not its authors. Report contradiction with the resolved target and author evidence.",
     "evidence": [
       "https://dblp.org/rec/journals/jmlr/ChowdheryNDBMRBCSGSSTMRBTSPRDHPBAI23"
     ]
@@ -122,7 +114,7 @@
   {
     "split": "dev_public",
     "bibtex_key": "c65faf378a95",
-    "identity": null,
+    "identity": "contradiction",
     "fields": {
       "author": [
         "error",
@@ -130,7 +122,7 @@
         "unverifiable"
       ]
     },
-    "reason": "The independent records establish a real work and a discrepancy in this field. An author-corrupted citation may fail correspondence; another version's venue alone does not establish non-publication. Uncheckable fields must remain explicit.",
+    "reason": "The cited arXiv identifier resolves to the independently recorded paper, but the citation names authors who are not its authors. Report contradiction with the resolved target and author evidence.",
     "evidence": [
       "https://dblp.org/rec/journals/corr/abs-2205-01068"
     ]
@@ -138,15 +130,13 @@
   {
     "split": "test_public",
     "bibtex_key": "eae03804fd48",
-    "identity": "exactly_one",
+    "identity": "contradiction",
     "fields": {
-      "doi": [
-        "error",
-        "uncertain",
-        "unverifiable"
+      "author": [
+        "error"
       ]
     },
-    "reason": "The independent records establish a real work and a discrepancy in this field. An author-corrupted citation may fail correspondence; another version's venue alone does not establish non-publication. Uncheckable fields must remain explicit.",
+    "reason": "The cited DOI resolves to a different paper whose title and authors contradict this citation. Preserve the resolved DOI target and report contradiction, rather than inferring the intended work from title/authors.",
     "evidence": [
       "https://dblp.org/rec/conf/iccv/BarronMTHMS21",
       "https://api.crossref.org/works/10.1109/iccv48922.2021.00582",
@@ -156,15 +146,13 @@
   {
     "split": "test_public",
     "bibtex_key": "e8e1379d3939",
-    "identity": "exactly_one",
+    "identity": "contradiction",
     "fields": {
-      "doi": [
-        "error",
-        "uncertain",
-        "unverifiable"
+      "author": [
+        "error"
       ]
     },
-    "reason": "The independent records establish a real work and a discrepancy in this field. An author-corrupted citation may fail correspondence; another version's venue alone does not establish non-publication. Uncheckable fields must remain explicit.",
+    "reason": "The cited DOI resolves to a different paper whose title and authors contradict this citation. Preserve the resolved DOI target and report contradiction, rather than inferring the intended work from title/authors.",
     "evidence": [
       "https://dblp.org/rec/conf/cvpr/HeCXLDG22",
       "https://api.crossref.org/works/10.1109/cvpr52688.2022.01552",
@@ -174,7 +162,7 @@
   {
     "split": "test_public",
     "bibtex_key": "d87ce678eb11",
-    "identity": null,
+    "identity": "contradiction",
     "fields": {
       "author": [
         "error",
@@ -182,7 +170,7 @@
         "unverifiable"
       ]
     },
-    "reason": "The independent records establish a real work and a discrepancy in this field. An author-corrupted citation may fail correspondence; another version's venue alone does not establish non-publication. Uncheckable fields must remain explicit.",
+    "reason": "The cited arXiv identifier resolves to the independently recorded paper, but the citation names authors who are not its authors. Report contradiction with the resolved target and author evidence.",
     "evidence": [
       "https://dblp.org/rec/journals/corr/abs-2307-09288",
       "https://arxiv.org/abs/2307.09288"

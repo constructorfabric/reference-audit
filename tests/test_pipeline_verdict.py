@@ -159,8 +159,7 @@ async def test_report_clean_run_states_categories_empty(tmp_path):
     text = render_text(report)
     assert "CAPITAL OFFENCES — No hallucinated citations" in text
     assert (
-        "UNABLE TO VERIFY — For all other references at least one matching artifact "
-        "was positively identified" in text
+        "UNABLE TO VERIFY — No unresolved references" in text
     )
 
 

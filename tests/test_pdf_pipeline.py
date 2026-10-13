@@ -236,7 +236,7 @@ async def test_a_usable_reference_is_still_searched_alongside_an_unusable_one(pd
     assert by_key["b0"].verdict is not None and by_key["b0"].verdict.kind == "none"
     assert by_key["b1"].verdict is None
     assert report.summary["verdicts"] == {
-        "none": 1, "exactly_one": 0, "multiple": 0, "unresolved": 1
+        "none": 1, "exactly_one": 0, "multiple": 0, "contradiction": 0, "unresolved": 1
     }
 
 

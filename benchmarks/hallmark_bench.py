@@ -18,6 +18,7 @@ published, ...), which reference-audit reports as field findings on an ``exactly
 than through the verdict.
 
 * ``identity`` scores the verdict alone: ``none`` is HALLUCINATED and ``exactly_one`` is VALID.
+* ``contradiction`` maps to HALLUCINATED under ``strict`` and UNCERTAIN under ``identity``.
 * ``strict`` also treats a confirmed metadata error on an ``exactly_one`` match (an ``error`` field
   finding: a wrong title, venue, year or DOI, or a cited author who is not an author of the work) as
   HALLUCINATED, and a field no source could confirm as UNCERTAIN.
@@ -104,7 +105,7 @@ class CompactAudit(BaseModel):
     key: str
     status: Literal["audited", "unparsed", "failed"]
     failure: str = ""                      # why status != "audited"
-    verdict: Literal["none", "exactly_one", "multiple"] | None = None  # None = unresolved
+    verdict: Literal["none", "exactly_one", "multiple", "contradiction"] | None = None
     confidence: Literal["high", "medium", "low"] | None = None
     rationale: str = ""
     matched_source: str = ""
@@ -237,7 +238,7 @@ def compact(audit: EntryAudit) -> CompactAudit:
     verdict = audit.verdict
     failure = next((i for i in audit.issues if i.startswith(AUDIT_FAILED_PREFIX)), "")
     best = None
-    if verdict is not None and verdict.kind == "exactly_one" and verdict.artifacts:
+    if verdict is not None and verdict.kind in ("exactly_one", "contradiction") and verdict.artifacts:
         best = verdict.artifacts[0].best_record
     return CompactAudit(
         key=audit.entry.key,
@@ -295,6 +296,12 @@ def predict(audit: CompactAudit, mapping: Mapping) -> Prediction:
         return out("UNCERTAIN", CONF_UNCERTAIN, f"unresolved: {why}")
     if audit.verdict == "multiple":
         return out("UNCERTAIN", CONF_UNCERTAIN, f"multiple matches: {audit.rationale}")
+    if audit.verdict == "contradiction":
+        return out(
+            "HALLUCINATED" if mapping == "strict" else "UNCERTAIN",
+            CONF_METADATA_ERROR if mapping == "strict" else CONF_UNCERTAIN,
+            f"identifier/metadata contradiction: {audit.rationale}",
+        )
     if audit.verdict == "none":
         conf = CONF_BY_VERDICT_CONFIDENCE[audit.confidence or "low"]
         return out("HALLUCINATED", conf, f"no match: {audit.rationale}")

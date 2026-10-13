@@ -40,7 +40,7 @@
 
 Reference Audit is a library and CLI that audits a paper's bibliography (`.bib`) against its
 manuscript (`.tex`). For each reference it (1) identifies the exact artifact the reference points
-to and returns a 3-way verdict — no real match (hallucinated) / exactly one / multiple — preferring
+to and returns a four-way verdict — no real match (hallucinated) / exactly one / multiple / identifier contradiction — preferring
 DOI for papers, ISBN for books, and URL for other artifacts; (2) finds a better version of the same
 work (published over preprint, later editions); and (3) emits the canonical best reference.
 
@@ -80,7 +80,7 @@ editions against Open Library, backfills missing DOIs/ISBNs, and reports the can
 |------|------------|
 | reference | A single bibliography entry (`@article`, `@book`, ...) in the `.bib` file. |
 | artifact | The real-world scholarly object (paper, book, dataset) a reference points to. |
-| verdict | The 3-way identification result: `none` / `exactly_one` / `multiple`. |
+| verdict | The four-way identification result: `none` / `exactly_one` / `multiple` / `contradiction`. |
 | hallucination | A reference with no real matching artifact in any source. |
 | canonical reference | The single best version of a work (published over preprint, latest edition). |
 | cited / uncited | Whether a `.bib` key appears in a `\cite`-family command in the `.tex`. |
@@ -144,7 +144,7 @@ editions against Open Library, backfills missing DOIs/ISBNs, and reports the can
 - Normalizing DOI / ISBN / arXiv / OpenAlex Work id / Google Books volume id identifiers and detecting commented preprint twins.
 - Reporting cited / uncited keys, missing `\input`/`\include` files, and citation-vs-bib mismatches.
 - Flagging deterministic metadata issues visible from the `.bib` alone.
-- Identifying artifacts against databases, the 3-way verdict, hallucination screening, URL-only web verification, book/edition resolution, best-version selection, and canonical field output.
+- Identifying artifacts against databases, the four-way verdict, hallucination screening, URL-only web verification, book/edition resolution, best-version selection, and canonical field output.
 - Citation-alignment checking: comparing each citing context against the cited work's abstract (advisory; implemented, not yet @cpt-traced).
 
 ### 4.2 Out of Scope
@@ -205,11 +205,23 @@ preferring DOI (papers), ISBN (books), and URL (other artifacts).
 
 **Actors**: `cpt-referenceaudit-actor-author`, `cpt-referenceaudit-actor-database`
 
-#### Three-way identification verdict
+#### Four-way identification verdict
 
 - [x] `p1` - **ID**: `cpt-referenceaudit-fr-three-way-verdict`
 
-The system **MUST** return one of three verdicts per reference: `none`, `exactly_one`, or `multiple`.
+The system **MUST** return one of four verdicts per reference: `none`, `exactly_one`, `multiple`, or `contradiction`.
+
+
+A resolved hard paper identifier with definitively conflicting citation fields **MUST** yield
+`contradiction`, retaining the resolved ID target and supporting field findings. This takes
+precedence over metadata-inferred matches and ambiguity. Missing/placeholder metadata, formatting variants,
+uncertain judgments and lookup failures are not contradictions. The consistency check remains
+active when optional field reporting is disabled. Books/chapters retain edition-aware identification.
+Omitted co-authors remain field-completeness findings regardless of partial-author severity.
+Confirmed related versions must be compared against the cited version. Inconclusive LLM
+comparisons and failed ID lookups are reported and prevent caching an unproven result; editing a decisive
+citation field invalidates the entry hash. The legacy `three-way-verdict` traceability ID is retained
+for reference stability.
 
 **Rationale**: A discrete verdict lets authors and tools act deterministically on each reference.
 
@@ -391,7 +403,7 @@ Contracts this library expects from external systems.
 1. The author (or AI agent) runs the full audit on their `.bib` (and optional `.tex`).
 2. For each entry the system queries the routed sources, scores and clusters candidates, and
    adjudicates residual ambiguity with the LLM.
-3. The system returns a 3-way verdict per reference and, for an `exactly_one` match, the canonical
+3. The system returns a four-way verdict per reference and, for an `exactly_one` match, the canonical
    best version; successful results are cached.
 
 **Postconditions**:

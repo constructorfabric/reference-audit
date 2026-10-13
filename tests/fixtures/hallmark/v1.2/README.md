@@ -119,3 +119,9 @@ credited through the linked work records. Raw responses and abstracts are omitte
 When refreshing, choose an explicit upstream commit, copy the JSONL files and license unchanged,
 update provenance, and re-review all corrections and parsing exceptions. Do not silently follow
 upstream `main`, fit expectations to current predictions, or import HALLMARK to load the records.
+
+Pipeline 0.28 adds `contradiction`: the six reviewed DOI/title+author conflicts and four
+author-corrupted arXiv citations now require a resolved ID target with contradictory field
+evidence. The copied upstream JSONL and label reviews remain provenance records; native
+expectations describe the auditor’s current contract. Six recorded DOI cases exercise the
+full contradiction path offline.

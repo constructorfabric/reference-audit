@@ -121,6 +121,8 @@ def cites_preprint(entry: BibEntry) -> bool:
     venue but an arXiv id. Anything else cites a journal or conference version."""
     if entry.venue:
         return is_repository_venue(entry.venue)
+    if entry.ids.doi and not entry.ids.doi.startswith("10.48550/arxiv"):
+        return False  # a published DOI remains primary when an arXiv ID is also supplied
     return cited_arxiv_id(entry) is not None
 
 

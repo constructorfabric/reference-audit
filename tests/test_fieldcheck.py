@@ -592,7 +592,7 @@ async def test_pipeline_field_check_flags_wrong_volume_and_empty_number(tmp_path
     await pipe.aclose()
 
     audit = report.entries[0]
-    assert audit.verdict.kind == "exactly_one"  # field check never disturbs the verdict
+    assert audit.verdict.kind == "contradiction"  # resolved ID conflicts with supplied fields
     by_field = {f.field: f for f in audit.field_findings}
     assert by_field["volume"].status == "error"
     assert by_field["number"].status == "error"

@@ -82,6 +82,8 @@ def route_entry(entry: BibEntry, adapters: list[SourceAdapter]) -> Route:
         id_adapters += present("crossref", "openalex", "semantic_scholar")
     if entry.ids.arxiv_id:
         id_adapters += present("arxiv", "openalex", "semantic_scholar")
+    if entry.ids.pmid:
+        id_adapters += present("semantic_scholar")
     if entry.ids.isbn13:
         id_adapters += present("openlibrary", "google_books")
     # A cited Google Books volume id (books.google.…/books?id=…) resolves to exactly that volume —
