@@ -2,6 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/reference-audit)](https://pypi.org/project/reference-audit/)
 [![Tests](https://github.com/constructorfabric/reference-audit/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/constructorfabric/reference-audit/actions/workflows/tests.yml)
+[![License](https://img.shields.io/github/license/constructorfabric/reference-audit)](LICENSE)
 
 Audit the references in a paper. Given a `.bib` bibliography and the `.tex` that cites it — or just
 the paper's **PDF** — `reference-audit` figures out **which real-world document each reference
