@@ -21,7 +21,9 @@ The unit and integration tests mock all database and LLM calls, so they are fast
 live tests (markers `clickhouse`, `grobid`, `pdf_build`) are not deselected by default: they run when
 their service or toolchain is reachable and skip otherwise, unless `REFERENCE_AUDIT_LIVE=1` makes them
 required. Use `USE_LLM=false uv run pytest -m "not clickhouse and not grobid and not pdf_build and not hallmark_live"`
-for a strictly offline run, also disabling live LLM settings inherited from the settings files (see [Configuration](configuration.md)). When the tool gets a case
+for a strictly offline run, also disabling live LLM settings inherited from the settings files (see [Configuration](configuration.md)).
+This is what the [`Tests`](../.github/workflows/tests.yml) GitHub Actions workflow runs on every push to
+`main` and every pull request; the live tests and the full HALLMARK audit stay local. When the tool gets a case
 wrong, the fix is captured as a new test with the recorded response (see
 [`architecture/SPEC.md`](../architecture/SPEC.md), "General Design Principles").
 
@@ -121,6 +123,7 @@ src/reference_audit/
   models.py    # pydantic domain models
   inputs.py    # which input shape the CLI arguments name (a .bib, optionally after its .tex, or a .pdf)
   cli.py       # command-line entry point (Typer)
+.github/workflows/ # tests.yml = the offline test suite on push/PR; python-publish.yml = PyPI release
 architecture/  # governed specification & design (SPEC, PRD, DESIGN, DECOMPOSITION, features)
 docs/          # the user and developer documentation (README.md links to each page)
   archive/     # results of past experiments, kept as they were
