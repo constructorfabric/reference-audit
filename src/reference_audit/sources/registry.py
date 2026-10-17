@@ -49,7 +49,7 @@ def build_default_adapters(config: AuditConfig) -> list[SourceAdapter]:
         mirrored: list[SourceAdapter] = build_clickhouse_adapters(config)
     else:
         mirrored = [
-            OpenAlexAdapter(mailto=mailto),
+            OpenAlexAdapter(mailto=mailto, api_key=config.openalex_api_key),
             SemanticScholarAdapter(api_key=config.s2_api_key),
             DblpAdapter(),
         ]

@@ -44,6 +44,21 @@ async def test_openalex_captures_version_graph():
 
 
 @respx.mock
+async def test_openalex_sends_api_key_only_when_configured():
+    route = respx.get(url__regex=r"api\.openalex\.org/works").mock(
+        return_value=httpx.Response(200, json={"results": [OA_WORK], **OA_WORK})
+    )
+    entry = BibEntry(key="k", entry_type=EntryType.ARTICLE, title="Multiscale structural complexity")
+    for key in ("oa-key", None):
+        a = OpenAlexAdapter(api_key=key, client=httpx.AsyncClient())
+        await a.lookup_by_id(Identifiers(doi="10.1177/03010066251384492"))
+        await a.search_by_metadata(entry)
+        await a.aclose()
+    sent = [call.request.url.params.get("api_key") for call in route.calls]
+    assert sent == ["oa-key", "oa-key", None, None]
+
+
+@respx.mock
 async def test_openalex_lookup_by_work_id():
     # russell2019human: cited only by an openalex.org Work URL → resolve it directly by Work id.
     route = respx.get(url__regex=r"api\.openalex\.org/works/W123").mock(

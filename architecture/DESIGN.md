@@ -485,7 +485,7 @@ External libraries and services this module interacts with.
 | beautifulsoup4 | HTML parsing | Web/publisher page metadata extraction |
 | openai | structured-output chat | LLM adjudication |
 | rapidfuzz / anyascii | fuzzy string / transliteration | Title/author similarity features |
-| Crossref / OpenAlex / S2 / arXiv / Open Library / Google Books | HTTPS JSON APIs | Candidate identification |
+| Crossref / OpenAlex / S2 / arXiv / Open Library / Google Books | HTTPS JSON APIs (optional keys: `s2_api_key` header, `openalex_api_key` / `google_books_api_key` query parameter) | Candidate identification |
 | DBLP (`sparql.dblp.org`, QLever) | SPARQL 1.1 over HTTPS, JSON results | Candidate identification for CS/ML venues (the search API is behind a bot challenge) |
 | Local ClickHouse (`s2ag`, `openalex`, `kb`) via `clickhouse-connect` | SQL over HTTP, full-text title indexes | `source_backend=clickhouse`: Semantic Scholar, OpenAlex and DBLP without rate limits |
 

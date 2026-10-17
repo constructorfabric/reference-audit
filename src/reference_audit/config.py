@@ -112,9 +112,7 @@ class AuditConfig(BaseSettings):
         default="reference-audit@example.org", alias="CROSSREF_MAILTO"
     )
     s2_api_key: str | None = Field(default=None, alias="S2_API_KEY")
-    ncbi_api_key: str | None = Field(default=None, alias="NCBI_API_KEY")
-    nasa_ads_api_key: str | None = Field(default=None, alias="NASA_ADS_API_KEY")
-    core_api_key: str | None = Field(default=None, alias="CORE_API_KEY")
+    openalex_api_key: str | None = Field(default=None, alias="OPENALEX_API_KEY")
     unpaywall_email: str | None = Field(
         default=None, alias="PAPER_SEARCH_MCP_UNPAYWALL_EMAIL"
     )

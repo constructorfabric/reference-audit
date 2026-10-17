@@ -13,7 +13,8 @@ def user_config(monkeypatch, tmp_path):
     path = tmp_path / "xdg" / "reference-audit" / "config.toml"
     path.parent.mkdir(parents=True)
     for var in ("OPENAI_API_KEY", "S2_API_KEY", "MODEL", "USE_LLM", "CLICKHOUSE_PORT",
-                "SOURCE_BACKEND", "CLICKHOUSE_PASSWORD", "CLICKHOUSE_DEFAULT_USER_PASSWORD"):
+                "SOURCE_BACKEND", "CLICKHOUSE_PASSWORD", "CLICKHOUSE_DEFAULT_USER_PASSWORD",
+                "OPENALEX_API_KEY"):
         monkeypatch.delenv(var, raising=False)
     return path
 
@@ -57,6 +58,14 @@ def test_project_env_overrides_user_config_and_environment_overrides_both(
     assert config.s2_api_key == "project-s2"
     assert config.model == "env-model"
     assert config.clickhouse_password == "env-pw"
+
+
+def test_openalex_api_key_reaches_the_openalex_adapter(user_config):
+    from reference_audit.sources.registry import build_default_adapters
+
+    user_config.write_text('openalex_api_key = "user-oa"\nsource_backend = "api"\n')
+    adapters = {a.name: a for a in build_default_adapters(AuditConfig(_env_file=None))}
+    assert adapters["openalex"].api_key == "user-oa"
 
 
 def test_constructor_arguments_override_user_config(user_config):

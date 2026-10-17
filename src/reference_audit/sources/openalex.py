@@ -49,12 +49,18 @@ class OpenAlexAdapter(SourceAdapter):
     }
     rate_per_sec = 10.0
 
-    def __init__(self, mailto: str = "reference-audit@example.org", **kw):
+    def __init__(
+        self, mailto: str = "reference-audit@example.org", api_key: str | None = None, **kw
+    ):
         super().__init__(**kw)
         self.mailto = mailto
+        self.api_key = api_key
 
     def _params(self, **extra: str | int) -> dict:
-        return {"mailto": self.mailto, "select": _SELECT, **extra}
+        params: dict[str, str | int] = {"mailto": self.mailto, "select": _SELECT, **extra}
+        if self.api_key:  # OpenAlex takes its key as a query parameter, not a header
+            params["api_key"] = self.api_key
+        return params
 
     async def lookup_by_id(self, ids: Identifiers) -> SourceQueryResult:
         # Prefer DOI; fall back to arXiv via the DataCite DOI OpenAlex indexes, then to a Work id

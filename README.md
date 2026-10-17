@@ -238,6 +238,7 @@ openai_api_key = "sk-..."
 
 # Optional — improve coverage / rate limits for the data sources
 s2_api_key = "..."
+openalex_api_key = "..."                # OpenAlex API key, sent as its `api_key` query parameter
 crossref_mailto = "you@example.org"     # Crossref/OpenAlex polite-pool contact
 unpaywall_email = "you@example.org"     # used as that contact when crossref_mailto is unset
 openlibrary_email = "you@example.org"   # sent in the User-Agent on Open Library requests (polite identification)
@@ -265,14 +266,14 @@ In `.env` and the environment the same settings are upper-cased: `OPENAI_API_KEY
 `CLICKHOUSE_DEFAULT_USER_PASSWORD` (or `CLICKHOUSE_PASSWORD`), and `clickhouse_s2_db` also accepts
 `CLICKHOUSE_DB`. Unrelated variables in `.env` or the environment are ignored. Any other
 `AuditConfig` field can be set the same way, e.g. `model` replaces the default model and
-`use_llm = false` turns the LLM off. `ncbi_api_key`, `nasa_ads_api_key` and `core_api_key` are
-accepted but not used: there is no PubMed, ADS or CORE source.
+`use_llm = false` turns the LLM off.
 
 Only `openai_api_key` is needed to run the full pipeline; the data sources used by default
 (Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open Library, and the publisher and cited-page
 fetches) require no key. Google Books works without a key but on a
 shared global daily quota that is frequently exhausted — set `google_books_api_key` for reliable
-book coverage at scale. You can also run with no LLM at all (`--no-llm`, see below).
+book coverage at scale. Likewise, set `openalex_api_key` for OpenAlex's keyed daily allowance; an
+invalid key makes every OpenAlex query fail (HTTP 401, reported per entry), never "not found". You can also run with no LLM at all (`--no-llm`, see below).
 
 ## Usage
 
