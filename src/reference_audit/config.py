@@ -178,8 +178,17 @@ class AuditConfig(BaseSettings):
     web_render_timeout: float = 30.0      # seconds before a render is treated as a (retryable) error
     web_render_virtual_time_ms: int = 15000  # JS virtual-time budget given to the headless browser
 
-    # --- PDF input (GROBID) ---
-    # The service is NOT managed by this package. Point this at a running instance; a PDF input with
+    # --- PDF input ---
+    # Who reads the reference list of a PDF that embeds no BibTeX records (CLI --pdf-extractor).
+    # "llm": `pdf_extraction_model` reads the PDF (text layer and page images) through the OpenAI API;
+    #   a list that fails its checks, and entries the audit flags, are re-read by
+    #   `pdf_escalation_model` (see `pdf.llm_refs`). Gives no in-text citations, so citedness is
+    #   unknown and --check-citations is unchecked. Sends the PDF to the configured OpenAI endpoint.
+    # "grobid": the operator's GROBID service at `grobid_url`, which also links in-text citations.
+    pdf_extractor: Literal["llm", "grobid"] = "llm"
+    pdf_extraction_model: str = "gpt-6-luna"
+    pdf_escalation_model: str = "gpt-6.1-sol"
+    # GROBID, when pdf_extractor = "grobid". The service is NOT managed by this package. Point this at a running instance; a PDF input with
     # no reachable GROBID is a reported failure, never a silently empty reference list.
     #   podman run -d --replace --name grobid -p 8070:8070 docker.io/grobid/grobid:0.9.1-crf
     # Intentionally NOT declared with alias="GROBID_URL": a non-aliased field already reads its
@@ -243,7 +252,12 @@ class AuditConfig(BaseSettings):
     # 0.27: venue errors require evidence bound to the cited published artifact or an explicitly
     #       complete venue/year/track catalogue. Another version's venue or an LLM guess cannot
     #       establish non-publication. Venue findings retain the evidence's source and scope.
-    pipeline_version: str = "0.28"
+    # 0.29: PDF references are read by an LLM by default (`pdf.llm_refs`), and an entry whose audit
+    #       ends in 'no match', a contradiction or an error on its title, authors, year or DOI is
+    #       re-read by a stronger model and, if the reading differs, audited again — a new
+    #       verdict-producing path. GROBID-read entries keep their text under `pdf_raw` /
+    #       `pdf_ref_index` (were `grobid_raw` / `grobid_ref_index`).
+    pipeline_version: str = "0.29"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

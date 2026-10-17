@@ -67,6 +67,18 @@ def _alignment_advisories(a: EntryAudit) -> list[AlignmentFinding]:
     return [f for f in a.alignment_findings if f.status == "not_in_abstract"]
 
 
+def _reading_notes(a: EntryAudit) -> list[str]:
+    """Advisory lines about how a PDF reference was read by a language model: the reader's doubts,
+    and a re-read whose reading replaced the first one. Notes, not findings — the entry's findings
+    are those of the reading shown."""
+    raw = a.entry.raw_fields
+    lines = [f"    · reading doubt ({raw.get('pdf_read_by', 'reader')}): {d}"
+             for d in (raw.get("pdf_doubts") or "").splitlines() if d.strip()]
+    if raw.get("pdf_reread"):
+        lines.append(f"    · {raw['pdf_reread']}")
+    return lines
+
+
 def _alignment_line(f: AlignmentFinding) -> str:
     where = f" #{f.ordinal + 1}" if f.ordinal else ""
     return (
@@ -91,21 +103,21 @@ def _has_issues(a: EntryAudit, *, network: bool) -> bool:
 def _entry_block(a: EntryAudit, *, pdf: bool = False, citedness_known: bool = True) -> list[str]:
     """The full report block for one entry: header, ids, issues, formatting nits, verdict.
 
-    For a PDF-derived entry the key (`b12`) is a GROBID-assigned id and means nothing to a reader, so
-    the printed reference number is shown alongside it, and a reference GROBID could not title is
-    identified by the raw text it read — otherwise the entry would be unlocatable in the source PDF.
+    For a PDF-derived entry the key (`b12`, `r12`) is assigned by the extraction and means nothing to
+    a reader, so the printed position is shown alongside it, and a reference with no title is
+    identified by the raw text read from the PDF — otherwise the entry would be unlocatable in it.
     """
     e = a.entry
     if not citedness_known:
         flag = "citedness unknown"
     else:
         flag = "cited" if e.cited else "UNCITED"
-    ref_no = e.raw_fields.get("grobid_ref_index") if pdf else None
+    ref_no = e.raw_fields.get("pdf_ref_index") if pdf else None
     where = f"ref #{ref_no}, {flag}" if ref_no else flag
     title = e.title
     if not title:
-        raw = (e.raw_fields.get("grobid_raw") or "").strip()
-        title = f'(no title — GROBID read: "{raw[:160]}")' if raw else "(no title)"
+        raw = (e.raw_fields.get("pdf_raw") or "").strip()
+        title = f'(no title — printed: "{raw[:160]}")' if raw else "(no title)"
     block = [
         f"[{e.entry_type.value}] {e.key}  ({where})",
         f"    {title}",
@@ -117,6 +129,7 @@ def _entry_block(a: EntryAudit, *, pdf: bool = False, citedness_known: bool = Tr
         block.append(_nit_line(f))
     for f in _alignment_advisories(a):
         block.append(_alignment_line(f))
+    block.extend(_reading_notes(a))
     vline = _verdict_line(a)
     if vline:
         block.append(vline)
@@ -246,7 +259,7 @@ def render_text(report: AuditReport) -> str:
             unable_to_verify.append(a)
         elif _has_issues(a, network=network):
             with_issues.append(a)
-        elif _formatting_nits(a) or _alignment_advisories(a):
+        elif _formatting_nits(a) or _alignment_advisories(a) or _reading_notes(a):
             nits_only.append(a)
         else:
             clean.append(a)
@@ -270,7 +283,7 @@ def render_text(report: AuditReport) -> str:
 
     groups = [
         (with_issues, "ISSUES ({n}) — other problems to review:"),
-        (nits_only, "FORMATTING NITS & ADVISORIES ({n}) — cosmetic field fixes or citation notes:"),
+        (nits_only, "FORMATTING NITS & ADVISORIES ({n}) — cosmetic field fixes, citation or reading notes:"),
         (clean, "NO ISSUES ({n}) — verified, nothing to fix:"),
     ]
     for bucket, heading in groups:

@@ -110,7 +110,8 @@ even when a key is configured.
   (`--check-citations`).
 - [Installation and configuration](docs/configuration.md): requirements, installation, and every
   setting.
-- [Auditing a PDF](docs/pdf-input.md): GROBID extraction, and PDFs that embed their references.
+- [Auditing a PDF](docs/pdf-input.md): reading the references with a language model or GROBID, and
+  PDFs that embed their references.
 - [Local ClickHouse backend](docs/clickhouse-backend.md): reading Semantic Scholar, OpenAlex and
   DBLP from a local mirror.
 - [Development](docs/development.md): tests, the PDF extraction oracle, benchmarking, and the project

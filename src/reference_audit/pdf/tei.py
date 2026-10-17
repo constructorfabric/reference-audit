@@ -320,7 +320,7 @@ def _fields_from_biblstruct(bs: ET.Element) -> tuple[dict[str, str], list[str], 
             fields["url"] = target
             break
     if raw:
-        fields["grobid_raw"] = raw
+        fields["pdf_raw"] = raw
 
     failures: list[str] = []
     if doi_note:
@@ -424,7 +424,7 @@ def parse_tei(xml_text: str) -> TeiReferences:
     id_to_key: dict[str, str] = {}
     for index, (bs, key) in enumerate(zip(bibl_structs, keys, strict=True)):
         fields, authors, failures = _fields_from_biblstruct(bs)
-        fields["grobid_ref_index"] = str(index + 1)   # 1-based, as printed
+        fields["pdf_ref_index"] = str(index + 1)   # 1-based, as printed
         fields["grobid_tei_id"] = (bs.get(_XML_ID) or "").strip()
         entry = entry_from_fields(
             key, _infer_bib_type(bs, fields), fields, authors=authors

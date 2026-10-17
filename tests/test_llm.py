@@ -202,3 +202,47 @@ async def test_llm_client_sends_temperature_only_when_set(temperature):
         assert "temperature" not in completions.kwargs
     else:
         assert completions.kwargs["temperature"] == temperature
+
+
+class _ScriptedCompletions:
+    """Returns one scripted choice per call and counts the calls (to show nothing is retried)."""
+
+    def __init__(self, *, content=None, refusal=None, finish_reason="stop"):
+        self.choice = (content, refusal, finish_reason)
+        self.calls = 0
+
+    async def create(self, **kwargs):
+        from types import SimpleNamespace
+
+        self.calls += 1
+        content, refusal, finish_reason = self.choice
+        msg = SimpleNamespace(content=content, refusal=refusal)
+        return SimpleNamespace(choices=[SimpleNamespace(message=msg, finish_reason=finish_reason)])
+
+
+@pytest.mark.parametrize(
+    ("scripted", "reason"),
+    [
+        ({"refusal": "I can't help with that."}, "the model refused: I can't help with that."),
+        ({"content": '{"same": tr', "finish_reason": "length"}, "cut off by the output token limit"),
+        ({"content": '{"sa', "finish_reason": "content_filter"}, "cut off by the content filter"),
+    ],
+)
+async def test_llm_client_names_refusals_and_cut_off_answers(scripted, reason):
+    # A refusal or a truncated answer must say so, not surface as a JSON parse error of half a
+    # document, and must not be retried: asking again would ask the same question again.
+    from types import SimpleNamespace
+
+    from pydantic import BaseModel
+
+    from reference_audit.llm.client import LLMClient, LLMError
+
+    class Same(BaseModel):
+        same: bool
+
+    completions = _ScriptedCompletions(**scripted)
+    llm = LLMClient(model="m", api_key=None,
+                    client=SimpleNamespace(chat=SimpleNamespace(completions=completions)))
+    with pytest.raises(LLMError, match=reason):
+        await llm.structured("s", "u", Same, "Same")
+    assert completions.calls == 1

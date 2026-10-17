@@ -201,7 +201,7 @@ async def test_anchorless_reference_is_never_searched_on(pdf):
     """A title-less, id-less query would return an arbitrary paper the scorer could accept."""
     adapter = RecordingAdapter()
     pipeline = AuditPipeline(
-        AuditConfig(use_llm=False), adapters=[adapter], grobid=StubGrobid(_tei(_NO_ANCHOR))
+        AuditConfig(pdf_extractor="grobid", use_llm=False), adapters=[adapter], grobid=StubGrobid(_tei(_NO_ANCHOR))
     )
     try:
         report = await pipeline.run_pdf(pdf)
@@ -217,7 +217,7 @@ async def test_a_usable_reference_is_still_searched_alongside_an_unusable_one(pd
     """Record independence: the anchorless entry must not suppress the good one."""
     adapter = RecordingAdapter()
     pipeline = AuditPipeline(
-        AuditConfig(use_llm=False),
+        AuditConfig(pdf_extractor="grobid", use_llm=False),
         adapters=[adapter],
         grobid=StubGrobid(_tei(_ONE_ARTICLE + _NO_ANCHOR)),
     )
@@ -257,7 +257,7 @@ async def test_contexts_are_keyed_by_the_same_synthetic_keys_as_the_entries(pdf)
 async def test_contexts_are_kept_even_when_alignment_is_off(pdf):
     """They come free from the TEI we already fetched; re-deriving would mean re-uploading the PDF."""
     pipeline = AuditPipeline(
-        AuditConfig(use_llm=False, check_alignment=False),
+        AuditConfig(pdf_extractor="grobid", use_llm=False, check_alignment=False),
         adapters=[RecordingAdapter()],
         grobid=StubGrobid(_tei(_ONE_ARTICLE, _BODY_CITING_B0)),
     )
@@ -299,7 +299,7 @@ async def test_a_verdict_cached_from_a_bib_run_is_reused_by_a_pdf_run(pdf, tmp_p
         cache.put_entry_verdict(parsed.report.entries[0].entry.content_hash, seeded)
 
         pipeline = AuditPipeline(
-            AuditConfig(use_llm=False, check_fields=False),
+            AuditConfig(pdf_extractor="grobid", use_llm=False, check_fields=False),
             cache=cache,
             adapters=[adapter],
             grobid=StubGrobid(_tei(_ONE_ARTICLE)),

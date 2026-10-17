@@ -55,7 +55,7 @@ Requirements that significantly influence architecture decisions.
 | `cpt-referenceaudit-fr-hallucination-screen` | `matching` + `llm` adjudication drive empty candidate sets to a confident `none`. |
 | `cpt-referenceaudit-fr-best-version-canonical` | `matching` ranks versions (published > preprint, later editions) and `report` emits the canonical reference. |
 | `cpt-referenceaudit-fr-citation-alignment` | The `alignment` component pairs each citing context (from `parsing`) with the matched artifact's abstract and classifies it via `llm`; advisory, never changing the verdict. |
-| `cpt-referenceaudit-fr-audit-pdf` | The `pdf` component (a thin GROBID HTTP client plus a pure TEI mapper) turns a PDF into the same `BibEntry` / `CitationContext` records the `.bib`/`.tex` front end produces, so everything downstream is unchanged. |
+| `cpt-referenceaudit-fr-audit-pdf` | The `pdf` component turns a PDF into the same `BibEntry` (and, through GROBID, `CitationContext`) records the `.bib`/`.tex` front end produces, so everything downstream is unchanged: by default a language model reads the printed list (`pdf/llm_refs.py` checks, `llm` reads), otherwise a thin GROBID HTTP client plus a pure TEI mapper. |
 
 #### NFR Allocation
 
@@ -99,7 +99,9 @@ and forms a stable foundation for the networked stages.
 The GROBID HTTP call lives in one thin module and the TEI-to-model mapping is a pure function of the
 TEI text, so extraction correctness is verifiable offline from recorded TEI XML — the same
 recorded-response discipline the source adapters follow. It is also what makes the compiled-PDF oracle
-possible: the same mapper runs over a live response and over a committed fixture.
+possible: the same mapper runs over a live response and over a committed fixture. The language-model
+reader follows the same split: `LLMClient.read_pdf` makes the call, and the schema, the list checks,
+the DOI checks and the mapping to `BibEntry` (`pdf/llm_refs.py`) are pure functions of its answer.
 
 #### Modular, swappable sources
 
@@ -122,13 +124,14 @@ identifier match takes precedence.
 
 - [x] `p1` - **ID**: `cpt-referenceaudit-constraint-no-network-parse`
 
-The `parsing` package, the pure TEI mapper `pdf/tei.py`, and `build_parse_report` must not import or
-invoke any networking code. Network access is confined to the `sources`, `llm`, and `pdf/grobid`
-modules, and `parsing` must not import `pdf/grobid`.
+The `parsing` package, the pure mappers `pdf/tei.py` and `pdf/llm_refs.py`, and `build_parse_report`
+must not import or invoke any networking code. Network access is confined to the `sources`, `llm`, and
+`pdf/grobid` modules, and `parsing` must not import `pdf/grobid`.
 
-A PDF input is the one case where assembling the entry list *itself* requires a network call — to a
-GROBID service that turns the PDF into TEI. That call is made only by `pdf/grobid.py` and only from the
-async `build_pdf_parse_report`, never from the synchronous `build_parse_report`. So `--no-network`
+A PDF input is the one case where assembling the entry list *itself* requires a network call — to the
+OpenAI API that reads the PDF (default), or to a GROBID service that turns it into TEI. Those calls are
+made only by `LLMClient.read_pdf` and `pdf/grobid.py`, and only from the async `AuditPipeline.run_pdf`,
+never from the synchronous `build_parse_report`. So `--no-network`
 keeps its literal meaning and is accepted only for `.bib` input (with or without its `.tex`) and for a PDF that embeds the
 BibTeX records of its references (`pdf/embedded.py` reads the local file only); combining it with any
 other `.pdf` is rejected rather than silently redefined as "no *remote* network", which would be a
@@ -138,12 +141,26 @@ promise the tool cannot keep once `grobid_url` may point anywhere.
 
 - [ ] `p1` - **ID**: `cpt-referenceaudit-constraint-grobid-local-only`
 
-PDF extraction must talk only to an operator-supplied GROBID instance (`grobid_url`, default
-`http://localhost:8070`), must be reached only when the audited input is a PDF, and must request
+With `--pdf-extractor grobid`, PDF extraction must talk only to an operator-supplied GROBID instance
+(`grobid_url`, default `http://localhost:8070`), must be reached only when the audited input is a PDF,
+and must request
 `consolidateCitations=0` so GROBID performs no third-party lookups of its own — consolidation would let
 it rewrite each reference from Crossref, repairing the very defects this tool exists to detect. No
 public GROBID endpoint is ever a default. A PDF input with no reachable GROBID is an explicit, reported
 failure, never a silently empty reference list.
+
+#### A language-model reading is used only when complete
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-constraint-llm-reading-complete`
+
+With the default extractor, the PDF is sent to the configured OpenAI endpoint (the operator's privacy
+decision; GROBID keeps it local). A reading is used only if it is complete by its own account: it names
+its last printed entry before transcribing, ends with that entry, and reports full coverage — a model
+can stop early inside a completed, schema-valid response. Every constrained field (DOI, arXiv id,
+ISBN, URL, year) is nullable, because a decoding constraint without an escape hatch turns an unfitting
+value into a well-formed wrong one. A DOI must occur in the PDF's own text and may not be shared by
+two references with different titles. An unusable reading goes to the escalation model; when no
+reading is usable the run fails with each model's reason, never with a partial list.
 
 ## 3. Technical Architecture
 
@@ -317,6 +334,8 @@ To adjudicate ambiguous matches that feature scoring cannot resolve on its own.
 OpenAI structured-output (pydantic-schema) adjudication invoked by `matching` for hard cases:
 per-candidate "can this record correspond to the entry?", the SAME-OBJECT tie-break, web-page
 confirmation, and per-field correctness. Decisions are cached by `(prompt, kind, model)`.
+A refusal, or an answer cut off by the token limit or the content filter, fails the call with an
+`LLMError` that names the reason. It is not retried and not cached, and the entry stays unresolved.
 **IMPLEMENTED.**
 
 ##### Responsibility boundaries
@@ -416,19 +435,25 @@ produces, so identification, matching, verdicts, alignment and reporting are unt
 
 ##### Responsibility scope
 
-`pdf/grobid.py` is a thin client over one operator-supplied GROBID instance (health check, one
-multipart upload, a named error per failure mode). `pdf/tei.py` is pure: it maps TEI `<biblStruct>`
+`pdf/llm_refs.py` holds the language-model reader's output schema and instructions and, purely, the
+list checks (completeness against the named last entry), the DOI checks (present in the text layer,
+not shared across titles), the mapping to `BibEntry`, and the pairing and comparison of two readings of
+one reference; `AuditPipeline` orchestrates the reading, the escalation of an unusable list, the
+pre-audit DOI re-reads and the post-audit re-reads, and `cache` stores usable readings by
+(PDF hash, model, schema version). `pdf/grobid.py` is a thin client over one operator-supplied GROBID
+instance (health check, one multipart upload, a named error per failure mode). `pdf/tei.py` is pure: it maps TEI `<biblStruct>`
 elements to `BibEntry` (through `parsing.bib.entry_from_fields`, the shared construction seam) and
 in-text `<ref type="bibr">` markers to `CitationContext` (through `parsing.context`, the shared
 sentence definition). `pdf/embedded.py` reads a PDF that embeds the BibTeX records of its cited works
 (the AI4X template's `cited-references.bib.hex` attachment) — those records are then parsed as a `.bib`
 and GROBID is not called — and looks each record's title up in the printed reference list.
-**IMPLEMENTED (not yet @cpt-traced).**
+**IMPLEMENTED (the language-model reader partly `@cpt`-traced; the rest not yet).**
 
 ##### Responsibility boundaries
 
 It does not manage the GROBID container, does not identify or score anything, and never repairs a
-reference by consulting a third party. Extraction gaps are reported per record rather than filled in:
+reference by consulting a third party; the language-model reader is instructed to transcribe, never to
+complete, and a value it cannot read cleanly is left null with its doubt reported. Extraction gaps are reported per record rather than filled in:
 a reference with no title and no identifier is passed on explicitly unresolved, and a DOI cut short by
 a line break is extended only from that reference's own printed text — never guessed, and never
 allowed to reach the matcher as a truncated prefix that would resolve to a different document.
@@ -531,7 +556,34 @@ sequenceDiagram
 
 **Use cases**: `cpt-referenceaudit-usecase-audit-pdf`
 
-**Actors**: `cpt-referenceaudit-actor-author`, `cpt-referenceaudit-actor-grobid`
+**Actors**: `cpt-referenceaudit-actor-author`, `cpt-referenceaudit-actor-llm-reader`, `cpt-referenceaudit-actor-grobid`
+
+Default extractor (language-model reader):
+
+```mermaid
+sequenceDiagram
+    participant A as Author
+    participant P as AuditPipeline.run_pdf
+    participant C as cache
+    participant L as llm.read_pdf
+    participant R as pdf.llm_refs
+    A->>P: run_pdf_audit(paper.pdf)
+    P->>C: reading of (sha256, first model)?
+    C-->>P: miss
+    P->>L: read with the first model
+    L-->>P: PrintedReferenceList
+    P->>R: list_problems
+    R-->>P: none (else: read with the escalation model; both unusable: exit 2)
+    P->>R: to_entries + doi_problems
+    R-->>P: entries (flagged DOIs re-read by the escalation model before any audit)
+    P->>P: audit every entry
+    P->>L: re-read with the escalation model (once, if any entry is flagged)
+    P->>R: counterpart + reading_differences
+    P->>P: audit each differently-read entry again
+    P-->>A: AuditReport (input_kind=pdf, citedness unknown, pdf_reading summary)
+```
+
+With `--pdf-extractor grobid`:
 
 ```mermaid
 sequenceDiagram
@@ -553,7 +605,13 @@ sequenceDiagram
     P-->>A: AuditReport (then identified exactly as a .bib run is)
 ```
 
-**Description**: One GROBID request yields both the reference list and the in-text citations. Zero
+**Description**: The language-model reader yields the reference list only; a list that is cut short,
+inconsistent or that names no last entry is re-read by the escalation model, a 'no list' answer is
+confirmed by it, and the run fails with both reasons when neither reading is usable. Each entry that
+ends in 'no match', a contradiction or an error on its title, authors, year or DOI is compared with the
+escalation model's reading of the same printed reference (one reading per document) and, if read
+differently, audited again in its place. One GROBID request yields both the reference list and the
+in-text citations. Zero
 `<biblStruct>` raises `EmptyBibliographyError` (the existing exit-2 signal); an unreachable service,
 a persistent 5xx, or an unparseable PDF each raise a distinct named error. Per-reference extraction
 gaps become entry issues, so the run continues for every other reference.

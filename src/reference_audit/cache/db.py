@@ -10,6 +10,9 @@ Three cache layers (README: avoid re-running DB/LLM calls):
   (pipeline_version, model). `backend` is the source backend that produced the verdict (`api` or
   `clickhouse`): the two read different snapshots of the same databases, so neither may serve the
   other's verdict.
+- pdf_extraction_cache: a PDF's reference list as read by an LLM, keyed by (pdf_sha256, model,
+  schema_version) — the file's bytes, the extraction model and the version of the extraction
+  schema and instructions. Only readings that passed the list checks are stored.
 - doi_resolution_cache: doi.org's verdict on a DOI (does the handle resolve?) — a world-fact, so
   keyed by the bare DOI and independent of pipeline_version/model. Only definitive True/False are
   stored; an outage is never cached (mirrors the never-cache-errors invariant).
@@ -47,6 +50,14 @@ CREATE TABLE IF NOT EXISTS entry_verdict_cache (
     model            TEXT NOT NULL,
     created_at       TEXT NOT NULL,
     PRIMARY KEY (entry_hash, backend)
+);
+CREATE TABLE IF NOT EXISTS pdf_extraction_cache (
+    pdf_sha256     TEXT NOT NULL,
+    model          TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    result_json    TEXT NOT NULL,
+    created_at     TEXT NOT NULL,
+    PRIMARY KEY (pdf_sha256, model, schema_version)
 );
 CREATE TABLE IF NOT EXISTS doi_resolution_cache (
     doi        TEXT PRIMARY KEY,

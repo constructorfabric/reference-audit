@@ -107,6 +107,27 @@ class AuditCache:
         )
         self.conn.commit()
 
+    # --- PDF reference lists read by an LLM (only readings that passed the list checks) ---
+    def get_pdf_extraction(self, pdf_sha256: str, model: str, schema_version: str) -> str | None:
+        """A stored reading of this PDF by `model` under `schema_version`, as JSON, or None. Keyed by
+        the extraction model, not the adjudication model this cache was opened with."""
+        row = self.conn.execute(
+            "SELECT result_json FROM pdf_extraction_cache "
+            "WHERE pdf_sha256=? AND model=? AND schema_version=? AND created_at>=?",
+            (pdf_sha256, model, schema_version, self.since),
+        ).fetchone()
+        return row["result_json"] if row else None
+
+    def put_pdf_extraction(
+        self, pdf_sha256: str, model: str, schema_version: str, result_json: str
+    ) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO pdf_extraction_cache "
+            "(pdf_sha256, model, schema_version, result_json, created_at) VALUES (?,?,?,?,?)",
+            (pdf_sha256, model, schema_version, result_json, _now()),
+        )
+        self.conn.commit()
+
     # --- LLM decision cache (used from M4) ---
     def get_llm_decision(self, p_hash: str, kind: str) -> str | None:
         row = self.conn.execute(
