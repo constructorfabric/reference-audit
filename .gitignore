@@ -1,5 +1,6 @@
 # Secrets — contains live API keys, never commit
 .env
+.env.bak
 
 # Inspiration projects (vendored, not part of this codebase)
 inspirations/
