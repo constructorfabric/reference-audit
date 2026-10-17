@@ -121,7 +121,7 @@ class AuditConfig(BaseSettings):
 
     # --- Source backend: where Semantic Scholar, OpenAlex and DBLP are read from ---
     # "api": their public APIs (rate-limited; needs no setup). "clickhouse": a local ClickHouse mirror
-    # of the three databases (no rate limits; must carry the full-text title indexes, see README).
+    # of the three databases (no rate limits; must carry the full-text title indexes, see docs/clickhouse-backend.md).
     # Crossref, arXiv, Open Library, Google Books and the web/publisher fetches are API-only.
     source_backend: Literal["api", "clickhouse"] = Field(
         default="api", validation_alias=AliasChoices("SOURCE_BACKEND", "source_backend")

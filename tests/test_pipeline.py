@@ -3,6 +3,7 @@
 import pytest
 
 from reference_audit.pipeline import EmptyBibliographyError, build_parse_report
+from reference_audit.report import render_text
 
 
 def _audit(report, key):
@@ -54,6 +55,24 @@ def test_bib_only_has_no_uncited(pilot_bib):
     report = build_parse_report(None, pilot_bib)
     assert report.uncited == []
     assert report.summary["total_entries"] == 28
+
+
+def test_bib_only_declares_citedness_unknown(pilot_bib):
+    """Without a manuscript, citedness is unknown, not "nothing is cited": the report says so rather
+    than labelling every entry UNCITED."""
+    report = build_parse_report(None, pilot_bib)
+    assert report.citation_linking == "not_applicable"
+    assert any("no manuscript (.tex)" in n for n in report.notes)
+    text = render_text(report)
+    assert "citedness unknown" in text
+    assert "UNCITED" not in text
+    assert "INPUT NOTES:" in text
+
+
+def test_tex_and_bib_have_citedness_and_no_input_notes(pilot_tex, pilot_bib):
+    report = build_parse_report(pilot_tex, pilot_bib)
+    assert report.citation_linking == "available"
+    assert report.notes == []
 
 
 def test_empty_bib_raises(pilot_tex):

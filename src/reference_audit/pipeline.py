@@ -120,7 +120,9 @@ def _parse_issues(entry: BibEntry) -> list[str]:
 def build_parse_report(tex_path: str | Path | None, bib_path: str | Path) -> AuditReport:
     """Parse-only report (M1): identifiers + cited/uncited bookkeeping + deterministic issues.
 
-    `tex_path` may be None (audit a .bib without a manuscript); then nothing is 'uncited'.
+    `tex_path` may be None (audit a .bib without a manuscript). Citedness is then unknown, not
+    "nothing is cited": `citation_linking` is `not_applicable` and an input note says what is not
+    checked, so no entry is reported as uncited and no `\\cite` as missing.
     """
     # @cpt-begin:cpt-referenceaudit-flow-parsing-build-report:p1:inst-parse-bib
     entries, twins, unparsed = parse_bib(bib_path)
@@ -185,6 +187,13 @@ def build_parse_report(tex_path: str | Path | None, bib_path: str | Path) -> Aud
         "by_type": by_type,
     }
 
+    notes: list[str] = []
+    if tex_path is None:
+        notes.append(
+            "no manuscript (.tex) was given, so cited/uncited bookkeeping is unavailable: no entry "
+            "is reported as uncited, and citations missing from the .bib are not checked"
+        )
+
     return AuditReport(
         entries=audits,
         cited_but_missing=cited_but_missing,
@@ -193,6 +202,8 @@ def build_parse_report(tex_path: str | Path | None, bib_path: str | Path) -> Aud
         missing_includes=missing_includes,
         unparsed=unparsed,
         summary=summary,
+        citation_linking="available" if tex_path is not None else "not_applicable",
+        notes=notes,
     )
     # @cpt-end:cpt-referenceaudit-flow-parsing-build-report:p1:inst-build-report
 
@@ -506,9 +517,15 @@ class AuditPipeline:
         report = build_parse_report(tex_path, bib_path)
         await self.preflight()
         # Citation-alignment (opt-in) needs the citing context from the .tex; extract it once, offline,
-        # up front. Without a manuscript there is no context, so the check simply produces nothing.
-        if self.config.check_alignment and tex_path is not None:
-            self._citation_contexts = parse_citation_contexts(tex_path)
+        # up front. Without a manuscript there is no context, so the check is declared not run.
+        if self.config.check_alignment:
+            if tex_path is not None:
+                self._citation_contexts = parse_citation_contexts(tex_path)
+            else:
+                report.notes.append(
+                    "citation alignment was not checked: without the .tex there are no citing "
+                    "sentences; pass the manuscript before the .bib to check them"
+                )
         return await self._audit_all(report, progress=progress)
 
     async def run_pdf(self, pdf_path: str | Path, *, progress: bool = False) -> AuditReport:
@@ -1319,8 +1336,8 @@ class AuditPipeline:
             return
         contexts = self._citation_contexts.get(audit.entry.key, [])
         if not contexts:
-            # For a .bib/.tex run, no context is an expected absence (uncited entry, or no manuscript
-            # given) and stays silent. For a PDF whose markers GROBID could not link at all, it is an
+            # For a .bib/.tex run, no context is an expected absence (an uncited entry; a missing
+            # manuscript is noted once for the whole report) and stays silent. For a PDF whose markers GROBID could not link at all, it is an
             # extraction failure the user asked for a check on — say so rather than passing quietly.
             if not self._contexts_available:
                 audit.issues.append(

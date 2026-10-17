@@ -129,7 +129,7 @@ modules, and `parsing` must not import `pdf/grobid`.
 A PDF input is the one case where assembling the entry list *itself* requires a network call — to a
 GROBID service that turns the PDF into TEI. That call is made only by `pdf/grobid.py` and only from the
 async `build_pdf_parse_report`, never from the synchronous `build_parse_report`. So `--no-network`
-keeps its literal meaning and is accepted only for `.tex` + `.bib` input and for a PDF that embeds the
+keeps its literal meaning and is accepted only for `.bib` input (with or without its `.tex`) and for a PDF that embeds the
 BibTeX records of its references (`pdf/embedded.py` reads the local file only); combining it with any
 other `.pdf` is rejected rather than silently redefined as "no *remote* network", which would be a
 promise the tool cannot keep once `grobid_url` may point anywhere.
@@ -457,7 +457,7 @@ This realizes the PRD public interface `cpt-referenceaudit-interface-parse-repor
 |--------|------|-------------|-----------|
 | `CALL` | `build_parse_report(tex_path, bib_path)` | Parse-only audit returning an `AuditReport`. | unstable |
 | `CALL` | `run_audit(tex_path, bib_path, ...)` | Full networked audit returning an `AuditReport` with verdicts. | unstable |
-| `CLI` | `reference-audit audit` | Run the audit from the command line (`--no-network`, `--no-llm`, `--fresh`, `--fail-on`, ...). | unstable |
+| `CLI` | `reference-audit audit` | Run the audit from the command line on `refs.bib`, `main.tex refs.bib` or `paper.pdf` (`--no-network`, `--no-llm`, `--fresh`, `--fail-on`, ...). | unstable |
 
 ### 3.4 Internal Dependencies
 

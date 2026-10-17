@@ -228,6 +228,20 @@ async def test_cli_can_fail_on_contradiction(tmp_path, monkeypatch):
     assert "CONTRADICTION" in result.output
 
 
+async def test_cli_audits_a_lone_bib(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+    from reference_audit import cli
+
+    report = await run(tmp_path, Source([record(authors=["Someone Else"])]))
+    bib = tmp_path / "refs.bib"
+    bib.write_text("@article{k,title={T}}", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(cli, "run_audit", lambda *args, **kwargs: calls.append(args) or report)
+    result = CliRunner().invoke(cli.app, ["audit", str(bib), "--fail-on", "contradiction"])
+    assert calls == [(None, bib)]
+    assert result.exit_code == 1
+
+
 @pytest.mark.parametrize("kind,source_name", [("doi", "crossref"), ("arxiv_id", "arxiv"),
                                               ("pmid", "semantic_scholar"), ("openalex", "openalex")])
 async def test_supported_hard_paper_ids_produce_contradictions(tmp_path, kind, source_name):

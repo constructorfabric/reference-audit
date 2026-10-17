@@ -66,7 +66,7 @@ from reference_audit.sources.normalize import (
 )
 from reference_audit.sources.titlewords import title_search_words
 
-# The full-text title index every searched table must carry (see README, "Local ClickHouse backend").
+# The full-text title index every searched table must carry (see docs/clickhouse-backend.md).
 TITLE_INDEX = "idx_title_text"
 TITLE_INDEX_DDL = (
     "ALTER TABLE {table} ADD INDEX IF NOT EXISTS " + TITLE_INDEX + " title "
@@ -178,7 +178,7 @@ class ClickHouseConnection:
         except ClickHouseQueryError as exc:
             raise ClickHouseUnavailableError(
                 f"source_backend=clickhouse, but the ClickHouse server at {where} cannot be queried "
-                f"({exc}). Start it, fix the clickhouse_* settings (see README, Setup), or "
+                f"({exc}). Start it, fix the clickhouse_* settings (see docs/configuration.md), or "
                 "run with the API backend (SOURCE_BACKEND=api / --backend api)."
             ) from exc
         problems: list[str] = []

@@ -388,7 +388,11 @@ Contracts this library expects from external systems.
 - The author has a structured report of bibliography bookkeeping and metadata issues.
 
 **Alternative Flows**:
-- **No `.tex` provided**: Nothing is reported as uncited; only `.bib`-derived issues are produced.
+- **No `.tex` provided** (`reference-audit audit refs.bib`): citedness is unknown rather than "nothing is
+  cited". The report sets `citation_linking` to `not_applicable` and states in an input note that
+  nothing is reported as uncited and citations missing from the `.bib` are not checked; with
+  `--check-citations` it also states that alignment was not checked. Identification is unaffected:
+  it reads the `.bib` alone.
 
 #### Audit references against bibliographic databases
 

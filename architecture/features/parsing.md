@@ -158,6 +158,11 @@ state machine in this slice.
 The system **MUST** assemble an `AuditReport` whose cited / uncited / cited-but-missing /
 commented-twins / missing-includes / unparsed counts are correct for the parsed inputs.
 
+Without a `.tex` (the CLI accepts a lone `.bib`), citedness is unknown, not "nothing is cited":
+the report's `citation_linking` is `not_applicable`, an input note says that no entry is reported
+as uncited and no citation as missing, and the text report shows "citedness unknown" in place of
+the cited/uncited counts and per-entry flags.
+
 `parse_bib` finds the dropped entries by comparing every live `@type{key` header in the raw text
 (not `@string`, `@preamble`, `@comment`, nor a `%`-commented twin) with the keys bibtexparser
 returned. The reason is "unbalanced braces" when the entry's block does not balance, otherwise

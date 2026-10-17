@@ -7,6 +7,8 @@ verdict. A full run() confirms citing contexts flow from the .tex through to fin
 
 from __future__ import annotations
 
+import pytest
+
 from reference_audit.config import AuditConfig
 from reference_audit.models import (
     BibEntry,
@@ -155,3 +157,23 @@ async def test_run_extracts_contexts_and_flags_contradiction(tmp_path):
     assert audit.verdict is not None and audit.verdict.kind == "exactly_one"
     assert [f.status for f in audit.alignment_findings] == ["contradicted"]
     assert any("misrepresent" in i for i in audit.issues)
+
+
+async def test_run_without_a_manuscript_declares_alignment_unchecked(tmp_path):
+    """--check-citations on a lone .bib has no citing sentences: said once, never silently empty."""
+    bib = tmp_path / "r.bib"
+    bib.write_text(
+        "@article{good, title={Widget dynamics}, author={Ann}, year={2020}, doi={10.1/x}}\n",
+        encoding="utf-8",
+    )
+    rec = SourceRecord(source="openalex", title="Widget dynamics", authors=["Ann"], year=2020,
+                       ids=Identifiers(doi="10.1/x"), abstract="We show widgets diverge under load.")
+    llm = FakeLLM(lambda u: pytest.fail("no citing sentence exists to classify"))
+    cfg = AuditConfig(_env_file=None, model="t", check_alignment=True, check_fields=False)
+    pipe = AuditPipeline(cfg, adapters=[_StubAdapter(rec)], llm=llm)
+    report = await pipe.run(None, bib)
+    await pipe.aclose()
+
+    assert report.entries[0].verdict.kind == "exactly_one"
+    assert report.entries[0].alignment_findings == []
+    assert any("citation alignment was not checked" in n for n in report.notes)

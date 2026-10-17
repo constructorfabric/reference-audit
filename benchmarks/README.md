@@ -43,7 +43,7 @@ uv run python benchmarks/hallmark_bench.py submit --split dev_public  # the subm
 - `--partial-authors ignore|warn|error` overrides `PARTIAL_AUTHORS`. HALLMARK counts an unmarked
   partial author list as a hallucination, so `error` scores the tool the way HALLMARK labels it.
 - `--backend api|clickhouse` overrides `SOURCE_BACKEND` (see
-  [Local ClickHouse backend](../README.md#local-clickhouse-backend)).
+  [Local ClickHouse backend](../docs/clickhouse-backend.md)).
 - A run directory refuses to resume under different settings: split, `--limit`, `--seed`,
   `pipeline_version`, model, whether the LLM is on, backend or partial-authors setting.
 - `run.json` records:
@@ -194,7 +194,7 @@ HALLMARK's two scoring modes treat UNCERTAIN differently:
 Both modes exclude `evaluated=false` predictions.
 
 A cited DOI that belongs to a different paper, or that does not resolve, is an `error` field finding
-on the `doi` field (see [How it works](../README.md#how-it-works)). `strict` therefore counts it as HALLUCINATED;
+on the `doi` field (see [How it works](../docs/how-it-works.md)). `strict` therefore counts it as HALLUCINATED;
 `identity` does not, since a real document still matches.
 
 ## Result: `dev_public`, pipeline 0.23

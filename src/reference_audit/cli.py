@@ -1,7 +1,7 @@
 """`reference-audit` command-line interface (Typer).
 
-`audit` runs the async pipeline (parse + identify, cached) over either a `.tex` + `.bib` pair or a
-single PDF. `--no-network` gives the parse-only report (for a PDF only when it embeds the BibTeX records
+`audit` runs the async pipeline (parse + identify, cached) over a `.bib` (optionally with the `.tex`
+that cites it) or a single PDF. `--no-network` gives the parse-only report (for a PDF only when it embeds the BibTeX records
 of its references — otherwise its reference list comes from an HTTP call to GROBID, so there is no
 offline parse for it).
 """
@@ -44,13 +44,14 @@ def audit(
         ...,
         exists=True,
         dir_okay=False,
-        help="Manuscript .tex (paired with a .bib), or a .pdf whose references GROBID extracts.",
+        help="Bibliography .bib to audit, or the manuscript .tex followed by its .bib, or a .pdf "
+             "whose references GROBID extracts.",
     ),
     bib: Path | None = typer.Argument(
         None,
         exists=True,
         dir_okay=False,
-        help="Bibliography .bib to audit. Required with a .tex; must be omitted with a .pdf.",
+        help="Bibliography .bib, when the first argument is its .tex; omitted otherwise.",
     ),
     fmt: str = typer.Option("text", "--format", "-f", help="Output format: text | json | both."),
     no_network: bool = typer.Option(
@@ -90,7 +91,10 @@ def audit(
              "ignore | warn | error (default: PARTIAL_AUTHORS, else warn).",
     ),
 ) -> None:
-    """Audit a .bib with its .tex, or a PDF on its own.
+    """Audit a .bib (optionally with the .tex that cites it), or a PDF on its own.
+
+    The .tex adds citation bookkeeping (uncited entries, citations missing from the .bib) and the
+    citing sentences --check-citations needs; without it the entries are identified all the same.
 
     With a PDF, GROBID supplies both the reference list and the in-text citations, so no .bib is
     needed — unless the PDF embeds the BibTeX records of its cited works (the AI4X template does),
@@ -133,7 +137,7 @@ def audit(
             raise typer.BadParameter(
                 f"--no-network cannot be combined with this PDF ({why}): its reference list and "
                 "in-text citations would be extracted by the GROBID service over HTTP, so it has no "
-                "offline parse path. Pass a .tex + .bib pair for the offline parse-only report."
+                "offline parse path. Pass a .bib (with or without its .tex) for the offline parse-only report."
             )
         embedded_bib = embedded.bib_text
 

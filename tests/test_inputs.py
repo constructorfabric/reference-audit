@@ -55,10 +55,14 @@ def test_swapped_bib_and_tex_names_the_right_order():
     assert "audit main.tex refs.bib" in str(exc.value)
 
 
-def test_lone_bib_is_rejected_with_an_explanation():
+def test_lone_bib_is_audited_without_a_manuscript():
+    assert resolve_input(Path("doc/refs.bib"), None) == TexBibInput(bib_path=Path("doc/refs.bib"))
+
+
+def test_lone_tex_is_rejected_naming_the_missing_bib():
     with pytest.raises(InvalidInputError) as exc:
-        resolve_input(Path("refs.bib"), None)
-    assert "stands alone" in str(exc.value)
+        resolve_input(Path("main.tex"), None)
+    assert "audit main.tex <references.bib>" in str(exc.value)
 
 
 def test_lone_unknown_suffix_is_rejected():
@@ -80,3 +84,8 @@ def test_cache_path_is_anchored_on_the_bib_for_a_pair():
 def test_cache_path_is_anchored_on_the_pdf():
     source = resolve_input(Path("papers/paper.pdf"), None)
     assert default_cache_path(source) == Path("papers/.reference_audit/cache.db")
+
+
+def test_cache_path_is_anchored_on_a_lone_bib():
+    source = resolve_input(Path("refs/refs.bib"), None)
+    assert default_cache_path(source) == Path("refs/.reference_audit/cache.db")

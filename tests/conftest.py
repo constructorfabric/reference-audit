@@ -131,7 +131,7 @@ def require_grobid(grobid_url: str) -> None:
 
 _CLICKHOUSE_HINT = (
     f"set {LIVE_ENV_VAR}=1 to require these tests; they read the local ClickHouse mirror configured by "
-    "the clickhouse_* settings (see README, Setup and Local ClickHouse backend)"
+    "the clickhouse_* settings (see docs/configuration.md and docs/clickhouse-backend.md)"
 )
 
 

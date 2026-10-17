@@ -1,9 +1,13 @@
 """What the positional CLI arguments mean. Pure and side-effect-free, so it is directly testable.
 
-Two input shapes are supported, distinguished by file extension:
+Three input shapes are supported, distinguished by file extension:
 
-    reference-audit audit main.tex references.bib     # authored sources
+    reference-audit audit references.bib              # a bibliography on its own
+    reference-audit audit main.tex references.bib     # with the manuscript that cites it
     reference-audit audit paper.pdf                   # GROBID extracts both from the PDF
+
+The manuscript only adds citation bookkeeping (cited / uncited / missing entries) and the citing
+sentences `--check-citations` needs; identification reads the `.bib` alone.
 
 Every rejected combination gets a message naming the fix, because "usage: ..." tells a user what the
 grammar is but not which of their two paths was the wrong one.
@@ -58,8 +62,8 @@ def resolve_input(first: Path, second: Path | None) -> AuditInput:
             raise InvalidInputError(
                 f"a PDF is the whole input: GROBID extracts both the reference list and the in-text "
                 f"citations from {first.name}, so there is nothing for {second.name} to add. "
-                f"Run 'reference-audit audit {first.name}' on its own, or pass a .tex + .bib pair "
-                f"instead."
+                f"Run 'reference-audit audit {first.name}' on its own, or pass a .bib (optionally "
+                f"after its .tex) instead."
             )
         return PdfInput(first)
 
@@ -70,10 +74,16 @@ def resolve_input(first: Path, second: Path | None) -> AuditInput:
         )
 
     if second is None:
+        if a == ".bib":
+            return TexBibInput(bib_path=first)
+        if a in _TEX_SUFFIXES:
+            raise InvalidInputError(
+                f"a manuscript needs the bibliography it cites: 'reference-audit audit {first.name} "
+                f"<references.bib>'."
+            )
         raise InvalidInputError(
-            f"expected 'audit <paper.pdf>' or 'audit <main.tex> <references.bib>', but got a single "
-            f"{a or 'extension-less'} file ({first.name}). A .bib needs its manuscript; a PDF stands "
-            f"alone."
+            f"expected 'audit <references.bib>', 'audit <main.tex> <references.bib>' or "
+            f"'audit <paper.pdf>', but got a single {a or 'extension-less'} file ({first.name})."
         )
 
     if a == ".bib" and b in _TEX_SUFFIXES:
