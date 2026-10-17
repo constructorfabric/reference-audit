@@ -28,8 +28,9 @@ actually audit (the ``.bib`` round-trip changed it, or its audit raised) is UNCE
 ``evaluated=false``. That marks a reported non-measurement, never a guessed label. Confidences come from
 a fixed table and are not fitted to the labels.
 
-HALLMARK runs from its own checkout and environment (``--hallmark-bin``) and is never imported here. ``.env`` is read from the repository root,
-so the harness can be run from any directory.
+HALLMARK runs from its own checkout and environment (``--hallmark-bin``) and is never imported here. ``.env`` is read from the repository root
+(over the per-user ``~/.config/reference-audit/config.toml``), so the harness can be run from any
+directory.
 """
 
 from __future__ import annotations
@@ -55,7 +56,7 @@ from bibtexparser.model import Field as BibField
 from bibtexparser.writer import BibtexFormat
 from pydantic import BaseModel, Field
 
-from reference_audit.config import AuditConfig
+from reference_audit.config import AuditConfig, user_config_file
 from reference_audit.models import EntryAudit, FieldFinding
 from reference_audit.parsing.bib import parse_bib
 from reference_audit.parsing.latex import LatexDecodeError, decode_latex
@@ -478,8 +479,9 @@ def audit(
     elif not config.llm_enabled():
         # The pipeline silently runs formal-only without a key; a benchmark run must not.
         raise typer.BadParameter(
-            f"no OPENAI_API_KEY in the environment or {REPO_ROOT / '.env'}: the LLM would be "
-            "silently disabled. Set it, or pass --no-llm to measure the formal-only pipeline."
+            f"no OPENAI_API_KEY in the environment, {REPO_ROOT / '.env'} or {user_config_file()}: "
+            "the LLM would be silently disabled. Set it, or pass --no-llm to measure the formal-only "
+            "pipeline."
         )
 
     run_meta_path = out / "run.json"

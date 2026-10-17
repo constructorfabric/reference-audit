@@ -41,7 +41,7 @@ REFERENCE_AUDIT_HALLMARK_LIVE=1 uv run pytest tests/test_hallmark_live.py -q -s
 REFERENCE_AUDIT_HALLMARK_LIVE=1 uv run pytest tests/test_hallmark_live.py -k eae03804fd48 -q
 ```
 
-This uses the repository's `.env` / environment, requires an enabled LLM and key, and may take an
+This uses the repository's `.env`, `~/.config/reference-audit/config.toml` and the environment, requires an enabled LLM and key, and may take an
 hour or more and incur LLM charges for the whole corpus. Sources use the configured `SOURCE_BACKEND`.
 The tests honor the configured `PARTIAL_AUTHORS` policy, force field checking on, and turn citation
 alignment off. Records are

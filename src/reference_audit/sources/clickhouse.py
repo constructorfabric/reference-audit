@@ -178,8 +178,8 @@ class ClickHouseConnection:
         except ClickHouseQueryError as exc:
             raise ClickHouseUnavailableError(
                 f"source_backend=clickhouse, but the ClickHouse server at {where} cannot be queried "
-                f"({exc}). Start it, fix CLICKHOUSE_* in .env, or run with the API backend "
-                "(SOURCE_BACKEND=api / --backend api)."
+                f"({exc}). Start it, fix the clickhouse_* settings (see README, Setup), or "
+                "run with the API backend (SOURCE_BACKEND=api / --backend api)."
             ) from exc
         problems: list[str] = []
         for table in tables:

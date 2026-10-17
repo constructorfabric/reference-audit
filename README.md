@@ -213,49 +213,65 @@ outage never counts as "no match".
 uv sync
 ```
 
-Create a `.env` file with your keys in the directory you run the tool from (normally the project
-root; it is read from the current directory, and is git-ignored):
+Settings, including API keys, are read from these places; a higher one wins for any setting
+several define:
 
-```dotenv
+1. Command-line options (`--model`, `--backend`, …).
+2. Environment variables, which suit CI, containers and scheduled runs.
+3. `.env` in the current directory: per-project overrides in dotenv format (git-ignored in this
+   repository).
+4. `~/.config/reference-audit/config.toml` (`$XDG_CONFIG_HOME/reference-audit/config.toml` when
+   that is set): the per-user file, read from any directory. This is the place for an installed
+   package. Keep it private: `chmod 600`.
+
+A missing file is skipped. The TOML file's keys are the lower-case `AuditConfig` field names (in
+`config.py`). An unknown key there is an error, not a silently ignored typo; the tool exits with
+code 2 and names it. An example:
+
+```toml
 # Required for LLM adjudication
-OPENAI_API_KEY=sk-...
-# OPENAI_BASE_URL=...               # optional — an OpenAI-compatible endpoint
+openai_api_key = "sk-..."
+# openai_base_url = "..."          # optional — an OpenAI-compatible endpoint
 # Optional — sampling temperature. Unset ⇒ the model default (gpt-6-luna accepts only its default);
-# set LLM_TEMPERATURE=0 when overriding --model with one that supports it, for more stable verdicts
-# LLM_TEMPERATURE=0
+# set it to 0 when overriding --model with one that supports it, for more stable verdicts
+# llm_temperature = 0.0
 
 # Optional — improve coverage / rate limits for the data sources
-S2_API_KEY=...
-CROSSREF_MAILTO=you@example.org     # Crossref/OpenAlex polite-pool contact
-PAPER_SEARCH_MCP_UNPAYWALL_EMAIL=you@example.org   # used as that contact when CROSSREF_MAILTO is unset
-OPENLIBRARY_EMAIL=you@example.org   # sent in the User-Agent on Open Library requests (polite identification)
-GOOGLE_BOOKS_API_KEY=...            # Google Books per-project quota (the keyless endpoint shares a global daily quota that is routinely exhausted)
+s2_api_key = "..."
+crossref_mailto = "you@example.org"     # Crossref/OpenAlex polite-pool contact
+unpaywall_email = "you@example.org"     # used as that contact when crossref_mailto is unset
+openlibrary_email = "you@example.org"   # sent in the User-Agent on Open Library requests (polite identification)
+google_books_api_key = "..."            # Google Books per-project quota (the keyless endpoint shares a global daily quota that is routinely exhausted)
 
 # Optional — only used for PDF input; overridable per-run with --grobid
-GROBID_URL=http://localhost:8070
+grobid_url = "http://localhost:8070"
 
 # Optional — read Semantic Scholar, OpenAlex and DBLP from a local ClickHouse mirror instead of their
 # APIs (see "Local ClickHouse backend"); overridable per-run with --backend
-SOURCE_BACKEND=clickhouse          # default: api
-CLICKHOUSE_HOST=127.0.0.1
-CLICKHOUSE_PORT=8123
-CLICKHOUSE_USER=default
-CLICKHOUSE_DEFAULT_USER_PASSWORD=...   # or CLICKHOUSE_PASSWORD
-# CLICKHOUSE_S2_DB=s2ag  CLICKHOUSE_OPENALEX_DB=openalex  CLICKHOUSE_DBLP_DB=kb   (the defaults;
-#   CLICKHOUSE_DB is accepted for CLICKHOUSE_S2_DB)
+source_backend = "clickhouse"           # default: "api"
+clickhouse_host = "127.0.0.1"
+clickhouse_port = 8123
+clickhouse_user = "default"
+clickhouse_password = "..."
+# clickhouse_s2_db = "s2ag"  clickhouse_openalex_db = "openalex"  clickhouse_dblp_db = "kb"  (the defaults)
 
 # Optional — a Chrome/Chromium binary for rendering JavaScript pages, if none is on PATH
-# WEB_RENDER_BROWSER_PATH=/usr/bin/chromium
+# web_render_browser_path = "/usr/bin/chromium"
 ```
 
-`NCBI_API_KEY`, `NASA_ADS_API_KEY` and `CORE_API_KEY` are accepted in `.env` but not used: there is
-no PubMed, ADS or CORE source. Any other `AuditConfig` field (in `config.py`) can also be set by its
-upper-cased name, e.g. `MODEL=` replaces the default model and `USE_LLM=false` turns the LLM off.
+In `.env` and the environment the same settings are upper-cased: `OPENAI_API_KEY=sk-...`,
+`SOURCE_BACKEND=clickhouse`, `USE_LLM=false`, and so on. Three have different names there:
+`unpaywall_email` is `PAPER_SEARCH_MCP_UNPAYWALL_EMAIL`, `clickhouse_password` is
+`CLICKHOUSE_DEFAULT_USER_PASSWORD` (or `CLICKHOUSE_PASSWORD`), and `clickhouse_s2_db` also accepts
+`CLICKHOUSE_DB`. Unrelated variables in `.env` or the environment are ignored. Any other
+`AuditConfig` field can be set the same way, e.g. `model` replaces the default model and
+`use_llm = false` turns the LLM off. `ncbi_api_key`, `nasa_ads_api_key` and `core_api_key` are
+accepted but not used: there is no PubMed, ADS or CORE source.
 
-Only `OPENAI_API_KEY` is needed to run the full pipeline; the data sources used by default
+Only `openai_api_key` is needed to run the full pipeline; the data sources used by default
 (Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open Library, and the publisher and cited-page
 fetches) require no key. Google Books works without a key but on a
-shared global daily quota that is frequently exhausted — set `GOOGLE_BOOKS_API_KEY` for reliable
+shared global daily quota that is frequently exhausted — set `google_books_api_key` for reliable
 book coverage at scale. You can also run with no LLM at all (`--no-llm`, see below).
 
 ## Usage
@@ -352,8 +368,8 @@ uv run reference-audit audit paper.tex refs.bib --format json --fail-on hallucin
 Semantic Scholar, OpenAlex and DBLP can be read from a local [ClickHouse](https://clickhouse.com)
 mirror instead of their public APIs: the S2 Academic Graph dump (database `s2ag`), an OpenAlex
 snapshot (`openalex`) and the DBLP XML dump (`kb.dblp_publication`). Select it with
-`SOURCE_BACKEND=clickhouse` in `.env` or `--backend clickhouse`. The other sources (Crossref, arXiv,
-Open Library, Google Books, publisher and web fetches) always use their APIs. Those requests stay inside
+`source_backend = "clickhouse"` in the config file (`SOURCE_BACKEND=clickhouse` in `.env`) or
+`--backend clickhouse`. The other sources (Crossref, arXiv, Open Library, Google Books, publisher and web fetches) always use their APIs. Those requests stay inside
 each API's published limits: they are spaced per source, and Crossref (3 at a time, its polite-pool
 limit) and arXiv (1) also cap requests in flight, retries included. arXiv's terms allow one request
 every three seconds, so lookups by arXiv id are the slowest step of a large batch. Without these
@@ -530,7 +546,7 @@ The unit and integration tests mock all database and LLM calls, so they are fast
 live tests (markers `clickhouse`, `grobid`, `pdf_build`) are not deselected by default: they run when
 their service or toolchain is reachable and skip otherwise, unless `REFERENCE_AUDIT_LIVE=1` makes them
 required. Use `USE_LLM=false uv run pytest -m "not clickhouse and not grobid and not pdf_build and not hallmark_live"`
-for a strictly offline run, also disabling live LLM settings inherited from `.env`. When the tool gets a case
+for a strictly offline run, also disabling live LLM settings inherited from the settings files (see Setup). When the tool gets a case
 wrong, the fix is captured as a new test with the recorded response (see
 [`architecture/SPEC.md`](architecture/SPEC.md), "General Design Principles").
 
@@ -715,7 +731,7 @@ src/reference_audit/
   versioning.py# better-version detection (published > preprint)
   pipeline.py  # async orchestration
   report.py    # text / JSON rendering
-  config.py    # AuditConfig (model, keys, thresholds)
+  config.py    # AuditConfig (model, keys, thresholds) and the settings files it reads
   models.py    # pydantic domain models
   inputs.py    # which input shape the CLI arguments name (.tex + .bib, or a .pdf)
   cli.py       # command-line entry point (Typer)

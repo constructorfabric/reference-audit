@@ -59,6 +59,17 @@ def discover_document_versions() -> list[DocumentVersion]:
     return found
 
 
+# Tests that audit against the developer's real services read their real settings.
+_USER_SETTINGS_MARKERS = ("clickhouse", "hallmark_live")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_user_config(request, monkeypatch, tmp_path_factory):
+    """Keep the developer's ~/.config/reference-audit/config.toml out of offline tests."""
+    if not any(request.node.get_closest_marker(m) for m in _USER_SETTINGS_MARKERS):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path_factory.mktemp("xdg_config")))
+
+
 @pytest.fixture
 def pilot_bib() -> Path:
     return document_path(PILOT_SLUG, PILOT_VERSION, ".bib")
@@ -120,7 +131,7 @@ def require_grobid(grobid_url: str) -> None:
 
 _CLICKHOUSE_HINT = (
     f"set {LIVE_ENV_VAR}=1 to require these tests; they read the local ClickHouse mirror configured by "
-    "CLICKHOUSE_* in .env (see README, Local ClickHouse backend)"
+    "the clickhouse_* settings (see README, Setup and Local ClickHouse backend)"
 )
 
 

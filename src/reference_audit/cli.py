@@ -13,7 +13,7 @@ from pathlib import Path
 
 import typer
 
-from reference_audit.config import AuditConfig
+from reference_audit.config import AuditConfig, UserConfigError
 from reference_audit.inputs import InvalidInputError, PdfInput, default_cache_path, resolve_input
 from reference_audit.pdf.embedded import read_embedded_references
 from reference_audit.pdf.grobid import GrobidError
@@ -170,7 +170,7 @@ def audit(
                 report = run_pdf_audit(source.pdf_path, **common)
             else:
                 report = run_audit(source.tex_path, source.bib_path, **common)
-    except (EmptyBibliographyError, GrobidError, ClickHouseUnavailableError) as exc:
+    except (EmptyBibliographyError, GrobidError, ClickHouseUnavailableError, UserConfigError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 

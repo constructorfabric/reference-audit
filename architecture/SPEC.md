@@ -110,7 +110,11 @@ When that evidence is unavailable, retain the identified work and report the ven
    application).
 2. The part which queries the databases is modular (easy to change and add adapters for individual
    databases).
-3. `.env` contains the API keys.
+3. API keys and other settings live outside the code: the per-user TOML file
+   `~/.config/reference-audit/config.toml` (`$XDG_CONFIG_HOME` respected), so an installed package
+   works from any directory, overridden by `.env` in the current directory, overridden by environment
+   variables. Unknown keys in the TOML file are an error. Implemented in `config.py`
+   (`user_config_file()`); not separately `@cpt`-traced.
 4. The LLM model is configurable; by default use `gpt-6-luna`. The sampling temperature is the
    model default unless `LLM_TEMPERATURE` is set (gpt-6-luna accepts only its default).
 5. Use `uv` to manage Python dependencies.

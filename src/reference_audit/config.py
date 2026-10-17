@@ -1,17 +1,79 @@
 """Runtime configuration for the reference auditor.
 
-All settings load from the environment / `.env` (pydantic-settings). Secrets live only in
-`.env` (git-ignored); never hard-code keys. The LLM model defaults to `gpt-6-luna` per
-the README but is configurable.
+Settings load (pydantic-settings) from, in decreasing priority: constructor arguments, environment
+variables, `.env` in the current directory, and the per-user TOML file `user_config_file()`
+(`~/.config/reference-audit/config.toml`). Secrets live only in those files or the environment
+(the project `.env` is git-ignored); never hard-code keys. The LLM model defaults to `gpt-6-luna`
+per the README but is configurable.
 """
 
 from __future__ import annotations
 
+import os
+import tomllib
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic.fields import FieldInfo
+from pydantic_settings import (
+    BaseSettings,
+    InitSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+
+
+class UserConfigError(ValueError):
+    """The per-user config file exists but cannot be used: unreadable, not TOML, or unknown keys."""
+
+
+def user_config_file() -> Path | None:
+    """The per-user config file, so an installed package finds its settings from any directory.
+
+    `$XDG_CONFIG_HOME/reference-audit/config.toml`, defaulting to `~/.config/reference-audit/
+    config.toml`; None when no home directory can be determined. Resolved on every `AuditConfig()`.
+    """
+    base = os.environ.get("XDG_CONFIG_HOME")
+    if not base or not Path(base).is_absolute():  # the XDG spec says to ignore a relative value
+        try:
+            base = Path.home() / ".config"
+        except RuntimeError:
+            return None
+    return Path(base) / "reference-audit" / "config.toml"
+
+
+def _input_key(name: str, field: FieldInfo) -> str:
+    """The key validation reads `field` from: its (first) alias, else its name."""
+    alias = field.validation_alias or field.alias
+    if isinstance(alias, AliasChoices):
+        alias = alias.choices[0]
+    return alias if isinstance(alias, str) else name
+
+
+class _UserConfigSource(InitSettingsSource):
+    """`user_config_file()`, keyed by `AuditConfig` field name (`openai_api_key = "..."`).
+
+    Unlike the environment and `.env`, where any unrelated variable may appear, this file belongs to
+    the tool, so an unknown key (a typo that would otherwise silently leave a setting unset) is an
+    error. A missing file is skipped.
+    """
+
+    def __init__(self, settings_cls: type[BaseSettings], path: Path | None):
+        data: dict[str, Any] = {}
+        if path is not None and path.exists():
+            try:
+                data = tomllib.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+                raise UserConfigError(f"cannot read config file {path}: {exc}") from exc
+        fields = settings_cls.model_fields
+        unknown = sorted(set(data) - set(fields))
+        if unknown:
+            raise UserConfigError(
+                f"unknown setting(s) in {path}: {', '.join(unknown)}. Keys are the lower-case "
+                "AuditConfig field names (e.g. openai_api_key, not OPENAI_API_KEY)."
+            )
+        super().__init__(settings_cls, {_input_key(k, fields[k]): v for k, v in data.items()})
 
 
 class AuditConfig(BaseSettings):
@@ -24,6 +86,19 @@ class AuditConfig(BaseSettings):
         protected_namespaces=(),
     )
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # Highest priority first: the per-user file is the fallback beneath the environment and ./.env.
+        return (init_settings, env_settings, dotenv_settings, file_secret_settings,
+                _UserConfigSource(settings_cls, user_config_file()))
+
     # --- LLM (OpenAI SDK) ---
     model: str = "gpt-6-luna"
     # None ⇒ omit `temperature` and use the model default. gpt-6-luna rejects any value but its default
@@ -32,7 +107,7 @@ class AuditConfig(BaseSettings):
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_base_url: str | None = Field(default=None, alias="OPENAI_BASE_URL")
 
-    # --- Data-source credentials (all already present in .env) ---
+    # --- Data-source credentials ---
     crossref_mailto: str = Field(
         default="reference-audit@example.org", alias="CROSSREF_MAILTO"
     )
