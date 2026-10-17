@@ -27,10 +27,10 @@ uncited citations.
 ## Quick Start
 
 You need [`uv`](https://docs.astral.sh/uv/getting-started/installation/). Install the tool from
-GitHub (uv fetches Python 3.14 if your system lacks it):
+PyPI (uv fetches Python 3.14 if your system lacks it):
 
 ```bash
-uv tool install git+https://github.com/constructorfabric/reference-audit.git
+uv tool install reference-audit
 ```
 
 Then audit a bibliography:

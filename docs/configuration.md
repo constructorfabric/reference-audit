@@ -19,12 +19,16 @@
 
 ## Installation
 
-Install the `reference-audit` command as a uv tool, straight from GitHub:
+Install the `reference-audit` command as a uv tool from PyPI:
 
 ```bash
-uv tool install git+https://github.com/constructorfabric/reference-audit.git
+uv tool install reference-audit
 uv tool upgrade reference-audit      # later, to update it
 ```
+
+If you installed it from GitHub before it was on PyPI, `uv tool install --force reference-audit`
+switches the installation to the PyPI release. To try unreleased changes from `main`, install
+`git+https://github.com/constructorfabric/reference-audit.git` instead.
 
 For development, clone the repository and run `uv sync` instead; see [Development](development.md).
 
