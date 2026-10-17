@@ -70,6 +70,18 @@ def _isolate_user_config(request, monkeypatch, tmp_path_factory):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path_factory.mktemp("xdg_config")))
 
 
+@pytest.fixture(autouse=True)
+def _plain_cli_output(monkeypatch):
+    """Render Typer's error panels as plain text, as on a non-terminal.
+
+    Typer forces a color terminal when GITHUB_ACTIONS, FORCE_COLOR or PY_COLORS is set (read once at
+    import), and the ANSI codes then split the messages the CLI tests look for in `result.output`.
+    """
+    import typer.rich_utils
+
+    monkeypatch.setattr(typer.rich_utils, "FORCE_TERMINAL", False)
+
+
 @pytest.fixture
 def pilot_bib() -> Path:
     return document_path(PILOT_SLUG, PILOT_VERSION, ".bib")
