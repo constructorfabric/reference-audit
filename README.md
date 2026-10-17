@@ -1,5 +1,7 @@
 # reference-audit
 
+[![PyPI](https://img.shields.io/pypi/v/reference-audit)](https://pypi.org/project/reference-audit/)
+
 Audit the references in a paper. Given a `.bib` bibliography and the `.tex` that cites it — or just
 the paper's **PDF** — `reference-audit` figures out **which real-world document each reference
 actually points to** and flags ones that don't match anything real (hallucinated references).
