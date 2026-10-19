@@ -276,7 +276,8 @@ To query external bibliographic databases and pages and return candidate artifac
 ##### Responsibility scope
 
 Modular adapters (Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open Library, Google Books, the
-publisher DOI landing-page citation export, and a web page fetcher) producing `SourceRecord`s behind
+publisher citation export — by the DOI's landing page, or by a cited NeurIPS proceedings URL — and a
+web page fetcher) producing `SourceRecord`s behind
 a common interface, with per-entry routing by id vs. metadata. The web page fetcher additionally
 detects JavaScript single-page-app shells (a served page with no readable content) and re-fetches
 them through a headless browser (`render`) so the rendered page can be read; when no browser is

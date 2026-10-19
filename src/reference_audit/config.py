@@ -263,7 +263,12 @@ class AuditConfig(BaseSettings):
     #       re-read by a stronger model and, if the reading differs, audited again — a new
     #       verdict-producing path. GROBID-read entries keep their text under `pdf_raw` /
     #       `pdf_ref_index` (were `grobid_raw` / `grobid_ref_index`).
-    pipeline_version: str = "0.31"
+    # 0.32: a cited NeurIPS proceedings URL's official BibTeX export is pooled into the matched work
+    #       (a new verdict-artifact source: publisher, venue, DOI for 2022+); NeurIPS, ICLR, ICML,
+    #       PMLR and JMLR join the no-DOI venue allowlist, whose "no DOI" warning is withdrawn when
+    #       no published DOI is found; an arXiv DOI is no longer reported as a backfilled find for an
+    #       entry citing that arXiv id or a no-DOI venue; enrichment now precedes the backfill note.
+    pipeline_version: str = "0.32"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

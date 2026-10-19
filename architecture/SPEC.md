@@ -36,7 +36,8 @@ citation manager fields are outside the Word importer. See [Word input](../docs/
 ### 1. Which exact artifact does the reference point to?
 
 - For papers we want to find a **DOI** — but also keep a list of reputable venues which don't
-  assign one, e.g. TMLR.
+  assign one, e.g. TMLR, ICLR, ICML/PMLR, JMLR, and NeurIPS before 2022. An arXiv preprint's DOI is
+  not a DOI of the version published at such a venue.
 - For books, we want to find an **ISBN**.
 - For books, we prefer chapter citation, but don't insist.
 - For artifacts, we want a **URL**.

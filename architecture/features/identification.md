@@ -218,12 +218,40 @@ forgiving title/author/ISBN search recovers real books that Open Library's stric
 subtitle-bearing title, or a single off-by-one ISBN) reports as not found.
 
 Articles and conference papers are additionally queried against **DBLP**, the authority for the
-premier CS/ML venues (NeurIPS, ICLR, ICML/PMLR, TMLR). These mint **no DOI** and are
+premier CS/ML venues (NeurIPS, ICLR, ICML/PMLR, TMLR). These mint **no DOI** (NeurIPS: none
+before 2022, Curran DOIs since) and are
 thinly/ambiguously covered by the article-centric aggregators, so a real paper cited only by its
 proceedings or OpenReview URL would otherwise be "unable to verify". For scoring, a bare URL is
 **not** a strong anchor (`Identifiers.has_strong_id` excludes it — no feature compares a URL), so a
 URL-only entry takes the strict title+author backfill path: a DBLP record with the exact title, full
 author list, and year confirms it deterministically (no LLM required).
+
+**Venues that mint no DOI** (`registry.venue_allows_no_doi`, pipeline 0.32): NeurIPS, ICLR,
+ICML/PMLR, JMLR and TMLR, matched as whole words in the cited venue (`icml` is not ICMLA, and the
+DOI-minting "International Conference on Machine Learning and Applications" is excluded). The
+allowlist never hides a DOI that exists; it only governs what `_note_backfill` reports:
+- the parse-time `no DOI/arXiv id` warning is withdrawn when identification found no published DOI
+  for an allowlisted venue: the announced backfill has run, and the venue has none to give;
+- an arXiv DataCite DOI (`10.48550/arXiv.…`) is the preprint's identifier, so it is not reported as a
+  found DOI for such a venue (a NeurIPS 2017 paper is not cited by its preprint's DOI), nor for any
+  entry that already cites that arXiv id (the same identifier in DOI form). For a venue that does
+  mint DOIs it is still reported, next to the `no DOI` warning;
+- a published DOI found for an allowlisted venue (NeurIPS since 2022) is reported as usual.
+
+**A cited NeurIPS proceedings URL reaches the publisher of record** (`_enrich_from_proceedings`,
+pipeline 0.32). None of the aggregators carries a NeurIPS paper's publisher (Curran Associates), and
+before 2022 there is no DOI to reach the publisher by, so a citation copied from NeurIPS's own
+BibTeX had an unverifiable `publisher`. In the advisory enrichment step, a cited
+`proceedings.neurips.cc` / `papers.nips.cc` paper URL (abstract page or PDF) is mapped by its paper
+hash to the official `…/file/{hash}-Bibtex.bib` export (`publisher.neurips_export_url`), fetched by
+the publisher adapter, and pooled into the matched work. The export describes whatever paper the URL
+names, so it joins only when pooling ties it to the matched work by title and authors; otherwise the
+mismatch is reported as an issue and the record is not used. A missing export (HTTP 404) and a
+non-BibTeX or blocked response are reported, never treated as absence. The lookup is cached in the
+entry's `web` source-query slot, apart from the by-DOI publisher lookup. Enrichment now runs before
+the backfill note on a fresh run too, as on a cached one, so a Curran DOI from the export is backfilled
+identically. Implemented and tested (`tests/test_publisher.py`, `tests/test_backfill.py`); not
+separately `@cpt`-traced.
 
 DBLP is read through its **SPARQL endpoint** (`sparql.dblp.org`). Its search API and mirrors now
 answer automated clients with a bot-challenge HTML page, which made every DBLP query an error and so

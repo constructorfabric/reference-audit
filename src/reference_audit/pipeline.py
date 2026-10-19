@@ -75,8 +75,10 @@ from reference_audit.fieldcheck import (
 from reference_audit.alignmentcheck import alignment_note, resolve_alignment_findings
 from reference_audit.parsing.bib import parse_bib, parse_bib_text
 from reference_audit.parsing.docx import DOCX_SCOPE_WARNING, DocxParse, parse_docx
+from reference_audit.parsing.identifiers import extract_arxiv_id
 from reference_audit.parsing.tex import parse_cited_keys, parse_citation_contexts
 from reference_audit.sources.base import SourceAdapter
+from reference_audit.sources.publisher import neurips_export_url
 from reference_audit.versioning import better_version_notes
 from reference_audit.sources.registry import (
     build_default_adapters,
@@ -86,6 +88,8 @@ from reference_audit.sources.registry import (
 
 _NEEDS_ISBN = {EntryType.BOOK, EntryType.INCOLLECTION}
 _NEEDS_DOI = {EntryType.ARTICLE, EntryType.INPROCEEDINGS}
+# Withdrawn by `_note_backfill` once identification found no published DOI for a venue that mints none.
+_NO_DOI_ISSUE = "no DOI/arXiv id (will attempt DOI backfill)"
 
 
 @dataclass
@@ -119,7 +123,7 @@ def _parse_issues(entry: BibEntry) -> list[str]:
     if entry.entry_type in _NEEDS_ISBN and not entry.ids.isbn13:
         issues.append("book has no ISBN (will attempt ISBN backfill)")
     if entry.entry_type in _NEEDS_DOI and not entry.ids.doi and not entry.ids.arxiv_id:
-        issues.append("no DOI/arXiv id (will attempt DOI backfill)")
+        issues.append(_NO_DOI_ISSUE)
     if entry.entry_type == EntryType.MISC and not entry.ids.any_present():
         issues.append("no identifier or URL")
     if not entry.title:
@@ -1171,11 +1175,12 @@ class AuditPipeline:
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-book
 
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-best-output
+        # Enrich BEFORE caching the verdict, so the cached artifact already carries the authoritative
+        # by-id / publisher-of-record records (identity is settled; this only improves field sourcing),
+        # and before the backfill note, which reads the enriched best record (a cached run does too).
+        await self._enrich_artifact(audit, verdict)
         await self._note_backfill(audit, verdict)
         self._note_better_version(audit, verdict)
-        # Enrich BEFORE caching the verdict, so the cached artifact already carries the authoritative
-        # by-id / publisher-of-record records (identity is settled; this only improves field sourcing).
-        await self._enrich_artifact(audit, verdict)
         # @cpt-end:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-best-output
         # @cpt-begin:cpt-referenceaudit-flow-identification-audit-entry:p1:inst-cache-store
         audit.verdict = verdict
@@ -1407,6 +1412,7 @@ class AuditPipeline:
             # work's ISBN would dissolve that edition back into the work and lose its year/publisher.
             return
         artifact = verdict.artifacts[0]
+        await self._enrich_from_proceedings(audit, artifact)
         ids = artifact.merged_ids
         if not (ids.doi or ids.isbn13):
             return  # no strong identifier to enrich by
@@ -1448,6 +1454,62 @@ class AuditPipeline:
             matched,
             key=lambda r: (0 if r.is_preprint else 1, 1 if r.ids.doi else 0, r.citation_count),
         )
+
+    async def _enrich_from_proceedings(self, audit: EntryAudit, artifact: MatchedArtifact) -> None:
+        """Pool the cited proceedings site's own BibTeX (NeurIPS) into the matched artifact.
+
+        NeurIPS papers before 2022 have no DOI to reach the publisher of record by, and none of the
+        aggregators carries their publisher (Curran Associates); the cited proceedings URL does reach
+        it. The export describes whatever paper that URL names, so it joins the artifact only when
+        pooling ties it to the matched work (title + authors); otherwise the mismatch is reported and
+        the record is not used. It is keyed by the URL, so it has its own (`web`) cache slot.
+        """
+        url = audit.entry.ids.url
+        export_url = neurips_export_url(url)
+        publisher = next((a for a in self.adapters if a.name == "publisher"), None)
+        if export_url is None or publisher is None:
+            return
+        entry = audit.entry
+        result = (
+            self.cache.get_source_query(entry.content_hash, publisher.cache_source, "web")
+            if self.cache is not None
+            else None
+        )
+        if result is None:
+            result = await publisher.lookup_proceedings(url)
+            if self.cache is not None:
+                self.cache.put_source_query(entry.content_hash, result, source=publisher.cache_source)
+        if result.error:
+            audit.issues.append(
+                f"authority of record not auto-retrievable (field check may be incomplete) — "
+                f"{result.error}"
+            )
+            return
+        if not result.records:
+            audit.issues.append(
+                f"the cited NeurIPS proceedings URL has no BibTeX export ({export_url}): the URL may "
+                "be wrong, and the field check may be incomplete"
+            )
+            return
+        record = result.records[0]
+        pooled = pool_candidates([*artifact.records, record])
+        if any(r is record for r in pooled):  # left on its own: not the matched work
+            authors = "; ".join(record.authors[:3]) + ("; …" if len(record.authors) > 3 else "")
+            audit.issues.append(
+                f"the cited NeurIPS proceedings URL is the paper '{record.title}' ({authors}), "
+                f"which could not be tied to the matched work — its BibTeX ({export_url}) is not "
+                "used for the field check"
+            )
+            return
+        artifact.records = pooled
+        artifact.versions = pooled
+        artifact.best_record = max(
+            pooled,
+            key=lambda r: (0 if r.is_preprint else 1, 1 if r.ids.doi else 0, r.citation_count),
+        )
+        if record.ids.doi and not _published_doi(artifact.merged_ids.doi):
+            # The Curran DOI (NeurIPS 2022+) names the published version; prefer it for enrichment.
+            artifact.merged_ids = artifact.merged_ids.model_copy(update={"doi": record.ids.doi})
 
     # @cpt-algo:cpt-referenceaudit-algo-identification-score:p1
     def _assess(
@@ -1507,23 +1569,33 @@ class AuditPipeline:
         return result
 
     async def _note_backfill(self, audit: EntryAudit, verdict) -> None:
-        """Record identifiers discovered for an entry that lacked them (T3 backfill)."""
+        """Record identifiers discovered for an entry that lacked them (T3 backfill).
+
+        An arXiv DataCite DOI identifies the preprint, not the cited version, so it is not reported as
+        a find for an entry that already cites that arXiv id (the same identifier in DOI form), nor
+        for a paper at a venue that mints no DOI (a NeurIPS 2017 paper is not cited by its preprint's
+        DOI). When identification found no published DOI for such a venue, the parse-time "no DOI"
+        warning is withdrawn: the backfill it announced has run, and the venue has no DOI to give.
+        """
         if verdict is None or verdict.kind != "exactly_one" or not verdict.artifacts:
             return
         best = verdict.artifacts[0].best_record
         entry = audit.entry
         if best is None:
             return
-        if not entry.ids.doi and best.ids.doi:
-            audit.issues.append(await self._backfilled_doi_note(best.ids.doi, best.source))
+        no_doi_venue = venue_allows_no_doi(entry.venue)
+        doi = best.ids.doi
+        if not entry.ids.doi and doi:
+            preprint_doi = _published_doi(doi) is None
+            same_arxiv = bool(entry.ids.arxiv_id) and (
+                extract_arxiv_id(entry.ids.arxiv_id) == extract_arxiv_id(None, fallback_text=doi)
+            )
+            if not (preprint_doi and (same_arxiv or no_doi_venue)):
+                audit.issues.append(await self._backfilled_doi_note(doi, best.source))
         if not entry.ids.isbn13 and best.ids.isbn13:
             audit.issues.append(f"ISBN found via {best.source}: {best.ids.isbn13}")
-        if (
-            not entry.ids.doi
-            and not best.ids.doi
-            and venue_allows_no_doi(entry.venue)
-        ):
-            audit.issues.append("no DOI expected for this venue (allowlisted)")
+        if not entry.ids.doi and not _published_doi(doi) and no_doi_venue:
+            audit.issues = [i for i in audit.issues if i != _NO_DOI_ISSUE]
 
     async def _backfilled_doi_note(self, doi: str, source: str) -> str:
         """Backfill message for a *discovered* DOI, gated on whether it actually resolves.

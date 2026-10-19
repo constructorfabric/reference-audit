@@ -14,6 +14,7 @@ from reference_audit.sources.publisher import (
     PublisherAdapter,
     _atypon_export_url,
     _silverchair_export_url,
+    neurips_export_url,
 )
 
 
@@ -275,3 +276,164 @@ async def test_doi_registered_reads_the_handle_api_response_code(status, body, e
     adapter = PublisherAdapter(client=httpx.AsyncClient())
     assert await adapter.doi_registered("10.8888/ngtbpa.458568") is expected
     await adapter.aclose()
+
+
+# ── NeurIPS proceedings: the publisher of record keyed by the cited URL ─────────────────────────
+
+# The official export of AI4X_Schutt2017 (the AI4X-2027 Word template cites exactly this record).
+_NEURIPS_BIB = r"""@inproceedings{NIPS2017_303ed4c6,
+ author = {Sch\"{u}tt, Kristof and Kindermans, Pieter-Jan and Sauceda Felix, Huziel Enoc and Chmiela, Stefan and Tkatchenko, Alexandre and M\"{u}ller, Klaus-Robert},
+ booktitle = {Advances in Neural Information Processing Systems},
+ editor = {I. Guyon and U. Von Luxburg and S. Bengio and H. Wallach and R. Fergus and S. Vishwanathan and R. Garnett},
+ pages = {},
+ publisher = {Curran Associates, Inc.},
+ title = {SchNet: A continuous-filter convolutional neural network for modeling quantum interactions},
+ url = {https://proceedings.neurips.cc/paper_files/paper/2017/file/303ed4c69846ab36c2904d3ba8573050-Paper.pdf},
+ volume = {30},
+ year = {2017}
+}
+"""
+_NEURIPS_HASH = "303ed4c69846ab36c2904d3ba8573050"
+_NEURIPS_PDF = f"https://proceedings.neurips.cc/paper_files/paper/2017/file/{_NEURIPS_HASH}-Paper.pdf"
+_NEURIPS_EXPORT = (
+    f"https://proceedings.neurips.cc/paper_files/paper/2017/file/{_NEURIPS_HASH}-Bibtex.bib"
+)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        (_NEURIPS_PDF, _NEURIPS_EXPORT),
+        (f"https://proceedings.neurips.cc/paper/2017/hash/{_NEURIPS_HASH}-Abstract.html",
+         _NEURIPS_EXPORT),
+        ("https://proceedings.neurips.cc/paper_files/paper/2022/hash/"
+         "002262941c9edfd472a79298b2ac5e17-Abstract-Conference.html",
+         "https://proceedings.neurips.cc/paper_files/paper/2022/file/"
+         "002262941c9edfd472a79298b2ac5e17-Bibtex.bib"),
+        (f"https://papers.nips.cc/paper/2017/file/{_NEURIPS_HASH}-Paper.pdf",
+         f"https://papers.nips.cc/paper_files/paper/2017/file/{_NEURIPS_HASH}-Bibtex.bib"),
+        ("https://papers.nips.cc/paper/6700-schnet-a-continuous-filter", None),  # no paper hash
+        ("https://openreview.net/forum?id=abc", None),
+        (None, None),
+    ],
+)
+def test_neurips_export_url_derivation(url, expected):
+    assert neurips_export_url(url) == expected
+
+
+async def test_neurips_proceedings_export_is_parsed_with_its_publisher():
+    seen = []
+
+    async def fetch(url):
+        seen.append(url)
+        return 200, _NEURIPS_BIB
+
+    res = await PublisherAdapter(export_fetch=fetch).lookup_proceedings(_NEURIPS_PDF)
+    assert seen == [_NEURIPS_EXPORT]
+    assert res.error is None and res.query_kind == "web"
+    rec = res.records[0]
+    assert rec.publisher == "Curran Associates, Inc."
+    assert rec.venue == "Advances in Neural Information Processing Systems"
+    assert rec.year == 2017 and rec.volume == "30"
+
+
+async def test_neurips_missing_export_is_empty_and_challenge_is_error():
+    missing = await PublisherAdapter(export_fetch=_fake_export((404, ""))).lookup_proceedings(
+        _NEURIPS_PDF
+    )
+    assert missing.records == [] and missing.error is None
+    walled = await PublisherAdapter(export_fetch=_fake_export((200, _CHALLENGE))).lookup_proceedings(
+        _NEURIPS_PDF
+    )
+    assert walled.records == [] and "not a citation export" in walled.error
+
+
+_SCHNET_WORD_BIB = (
+    "@inproceedings{AI4X_Schutt2017, "
+    "title={SchNet: A continuous-filter convolutional neural network for modeling quantum "
+    "interactions}, "
+    "author={Sch{\\\"u}tt, Kristof and Kindermans, Pieter-Jan and Sauceda Felix, Huziel Enoc and "
+    "Chmiela, Stefan and Tkatchenko, Alexandre and M{\\\"u}ller, Klaus-Robert}, "
+    "booktitle={Advances in Neural Information Processing Systems}, "
+    "publisher={Curran Associates, Inc.}, volume={30}, year={2017}, "
+    f"url={{{_NEURIPS_PDF}}}}}"
+)
+_SCHNET_S2 = {
+    "data": [{
+        "paperId": "schnet",
+        "title": "SchNet: A continuous-filter convolutional neural network for modeling quantum "
+                 "interactions",
+        "year": 2017,
+        "venue": "Neural Information Processing Systems",
+        "authors": [{"name": n} for n in (
+            "Kristof T. Schütt", "Pieter-Jan Kindermans", "Huziel Enoc Sauceda Felix",
+            "Stefan Chmiela", "Alexandre Tkatchenko", "Klaus-Robert Müller",
+        )],
+        "externalIds": {"ArXiv": "1706.08566", "DOI": "10.48550/arXiv.1706.08566"},
+        "citationCount": 453,
+    }]
+}
+
+
+async def _audit_schnet(tmp_path, export):
+    from reference_audit.sources.semantic_scholar import SemanticScholarAdapter
+
+    respx.get(url__startswith="https://api.semanticscholar.org/graph/v1/paper/search").mock(
+        return_value=httpx.Response(200, json=_SCHNET_S2)
+    )
+    respx.get(url__startswith="https://api.semanticscholar.org/graph/v1/paper/").mock(
+        return_value=httpx.Response(200, json=_SCHNET_S2["data"][0])
+    )
+    respx.get(url__startswith="https://doi.org/").mock(
+        return_value=httpx.Response(302, headers={"Location": "https://arxiv.org/abs/1706.08566"})
+    )
+    respx.get(url__startswith="https://arxiv.org/").mock(return_value=httpx.Response(200))
+    bib = tmp_path / "r.bib"
+    bib.write_text(_SCHNET_WORD_BIB, encoding="utf-8")
+    pipe = AuditPipeline(
+        AuditConfig(model="t", use_llm=False),
+        adapters=[
+            SemanticScholarAdapter(client=httpx.AsyncClient()),
+            PublisherAdapter(client=httpx.AsyncClient(), export_fetch=_fake_export(export)),
+        ],
+        llm=None,
+    )
+    report = await pipe.run(None, bib)
+    await pipe.aclose()
+    return report.entries[0]
+
+
+@respx.mock
+async def test_cited_neurips_url_verifies_publisher_and_raises_no_doi_issue(tmp_path):
+    # AI4X_Schutt2017: the canonical NeurIPS 2017 citation. The venue mints no DOI and the only DOI
+    # found is the arXiv preprint's, so neither is an issue; the publisher no aggregator carries is
+    # verified against the proceedings site's own BibTeX, keyed by the cited URL.
+    audit = await _audit_schnet(tmp_path, (200, _NEURIPS_BIB))
+    assert audit.verdict.kind == "exactly_one"
+    by_field = {f.field: f for f in audit.field_findings}
+    assert by_field["publisher"].status == "ok"
+    assert by_field["publisher"].sources == ["publisher"]
+    assert by_field["journal/venue"].status == "ok"
+    assert audit.issues == []
+
+
+@respx.mock
+async def test_cited_neurips_url_of_another_paper_is_reported_not_used(tmp_path):
+    other = _NEURIPS_BIB.replace(
+        "SchNet: A continuous-filter convolutional neural network for modeling quantum interactions",
+        "Attention Is All You Need",
+    ).replace("Sch\\\"{u}tt, Kristof and Kindermans, Pieter-Jan", "Vaswani, Ashish and Shazeer, Noam")
+    audit = await _audit_schnet(tmp_path, (200, other))
+    assert audit.verdict.kind == "exactly_one"
+    assert any(
+        "'Attention Is All You Need'" in i and "could not be tied to the matched work" in i
+        for i in audit.issues
+    )
+    by_field = {f.field: f for f in audit.field_findings}
+    assert by_field["publisher"].status == "unverifiable"
+
+
+@respx.mock
+async def test_cited_neurips_url_without_export_is_reported(tmp_path):
+    audit = await _audit_schnet(tmp_path, (404, ""))
+    assert any("has no BibTeX export" in i for i in audit.issues)

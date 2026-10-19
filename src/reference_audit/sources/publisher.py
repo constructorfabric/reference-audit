@@ -11,6 +11,8 @@ Resolution is deliberately conservative and reliability-first:
   2. derive the platform's citation-export URL (Silverchair: `/Citation/Download?...` keyed by the
      numeric resource id in the landing path);
   3. fetch + parse the BibTeX.
+A cited NeurIPS proceedings URL is resolved the same way without a DOI: its official BibTeX export
+is derived from the paper hash in the URL (`lookup_proceedings`).
 The export fetch (step 3) goes through a browser-TLS-impersonating client (`get_text_impersonate`),
 because these platforms sit behind Cloudflare, which fingerprints httpx's TLS ClientHello and 403s it
 even with browser headers; replaying a real browser's ClientHello passes. If any step fails — unknown
@@ -21,6 +23,7 @@ cached as "absent".
 
 from __future__ import annotations
 
+import re
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -51,6 +54,26 @@ _SILVERCHAIR_HOSTS = ("direct.mit.edu",)
 _ATYPON_HOSTS = ("journals.sagepub.com",)
 
 
+# NeurIPS proceedings mint no landing-page DOI before 2022, so the publisher of record is keyed by
+# the cited proceedings URL instead: every paper's abstract page / PDF
+#   {host}/paper_files/paper/{year}/hash/{hash}-Abstract[-Conference].html   (also /paper/{year}/…)
+#   {host}/paper_files/paper/{year}/file/{hash}-Paper[-Conference].pdf
+# has its official BibTeX (incl. `publisher = {Curran Associates, Inc.}`, and the Curran DOI since
+# 2022) at {host}/paper_files/paper/{year}/file/{hash}-Bibtex.bib.
+_NEURIPS_HOSTS = ("proceedings.neurips.cc", "papers.nips.cc", "papers.neurips.cc")
+_NEURIPS_PATH = re.compile(r"^/(?:paper_files/)?paper/(\d{4})/(?:file|hash)/([0-9a-f]{32})-")
+
+
+def neurips_export_url(url: str | None) -> str | None:
+    """The official BibTeX export of a cited NeurIPS proceedings paper URL, or None if it is not one."""
+    parts = urlparse(url or "")
+    match = _NEURIPS_PATH.match(parts.path)
+    if parts.netloc.lower() not in _NEURIPS_HOSTS or match is None:
+        return None
+    year, paper_hash = match.groups()
+    return f"https://{parts.netloc.lower()}/paper_files/paper/{year}/file/{paper_hash}-Bibtex.bib"
+
+
 def _silverchair_export_url(landing: str) -> str | None:
     parts = urlparse(landing)
     if not any(parts.netloc == h or parts.netloc.endswith("." + h) for h in _SILVERCHAIR_HOSTS):
@@ -75,7 +98,8 @@ def _atypon_export_url(landing: str, doi: str) -> str | None:
 
 
 class PublisherAdapter(SourceAdapter):
-    """Fetch the DOI publisher's own citation export (Silverchair and Atypon platforms)."""
+    """Fetch the publisher's own citation export: by DOI (Silverchair and Atypon platforms), or by
+    a cited NeurIPS proceedings URL."""
 
     name = "publisher"
     handles = {
@@ -148,6 +172,42 @@ class PublisherAdapter(SourceAdapter):
             return False
         return None  # undetermined; never asserted invalid
 
+    async def lookup_proceedings(self, url: str | None) -> SourceQueryResult:
+        """The proceedings site's own BibTeX for a cited paper URL (NeurIPS), keyed by that URL.
+
+        The record describes whatever paper the URL points at: the caller must tie it to the matched
+        work before using it. Not a proceedings URL we know → empty; a missing export (404) → empty;
+        a transport failure or a non-BibTeX body → a reported error, never 'absent'.
+        """
+        export_url = neurips_export_url(url)
+        if export_url is None:
+            return SourceQueryResult(source=self.name, query_kind="web", records=[])
+        return await self._export_record(export_url, "web")
+
+    async def _export_record(self, export_url: str, query_kind: str) -> SourceQueryResult:
+        try:
+            status, text = await self._fetch_export(export_url)
+        except TransientHTTPError as exc:
+            # Most commonly a Cloudflare/JS bot-challenge (HTTP 403). Surfaced as an error — a
+            # human-retrievable datum we could not auto-fetch — so it is reported, not treated as
+            # absent, and retried next run rather than cached.
+            return SourceQueryResult(
+                source=self.name,
+                query_kind=query_kind,
+                error=f"publisher citation export not retrievable ({exc}): {export_url}",
+            )
+        if status == 404:
+            return SourceQueryResult(source=self.name, query_kind=query_kind, records=[])
+
+        record = publisher_bibtex_to_record(text)
+        if record is None:
+            return SourceQueryResult(
+                source=self.name,
+                query_kind=query_kind,
+                error=f"publisher response was not a citation export (bot-challenge?): {export_url}",
+            )
+        return SourceQueryResult(source=self.name, query_kind=query_kind, records=[record])
+
     async def lookup_by_id(self, ids: Identifiers) -> SourceQueryResult:
         if not ids.doi:
             return SourceQueryResult(source=self.name, query_kind="id", records=[])
@@ -161,26 +221,4 @@ class PublisherAdapter(SourceAdapter):
             # Unknown publisher platform — nothing we know how to fetch. A clean "not found" here
             # (not an error): field checks then report the gap against the sources we did consult.
             return SourceQueryResult(source=self.name, query_kind="id", records=[])
-
-        try:
-            status, text = await self._fetch_export(export_url)
-        except TransientHTTPError as exc:
-            # Most commonly a Cloudflare/JS bot-challenge (HTTP 403). Surfaced as an error — a
-            # human-retrievable datum we could not auto-fetch — so it is reported, not treated as
-            # absent, and retried next run rather than cached.
-            return SourceQueryResult(
-                source=self.name,
-                query_kind="id",
-                error=f"publisher citation export not retrievable ({exc}): {export_url}",
-            )
-        if status == 404:
-            return SourceQueryResult(source=self.name, query_kind="id", records=[])
-
-        record = publisher_bibtex_to_record(text)
-        if record is None:
-            return SourceQueryResult(
-                source=self.name,
-                query_kind="id",
-                error=f"publisher response was not a citation export (bot-challenge?): {export_url}",
-            )
-        return SourceQueryResult(source=self.name, query_kind="id", records=[record])
+        return await self._export_record(export_url, "id")

@@ -7,6 +7,7 @@ backfill missing DOIs/ISBNs and supply corroborating candidates for the equivale
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from reference_audit.config import AuditConfig
@@ -25,7 +26,19 @@ from reference_audit.sources.semantic_scholar import SemanticScholarAdapter
 from reference_audit.sources.web import WebAdapter
 
 # Reputable venues that legitimately mint no DOI — a no-DOI match here is not a defect (README 1.1).
-VENUE_ALLOWLIST_NO_DOI = ("tmlr", "transactions on machine learning research")
+# Matched as whole words, so `icml` is not ICMLA. The ICML name excludes the unrelated (DOI-minting)
+# "International Conference on Machine Learning and Applications / and Cybernetics / , Optimization,
+# and Data Science". NeurIPS has had Curran DOIs since 2022: an allowlisted venue only means a
+# missing DOI is not a defect when identification found none, never that a found DOI is wrong.
+VENUE_ALLOWLIST_NO_DOI = (
+    "tmlr", "transactions on machine learning research",
+    "neurips", "nips", "neural information processing systems",
+    "iclr", "international conference on learning representations",
+    "icml", r"international conference on machine learning(?!\s+and\b|\s*,\s*optimization\b)",
+    "pmlr", "proceedings of machine learning research",
+    "jmlr", "journal of machine learning research",
+)
+_NO_DOI_VENUE = re.compile(r"\b(?:" + "|".join(VENUE_ALLOWLIST_NO_DOI) + r")\b")
 
 
 def build_web_renderer(config: AuditConfig) -> ChromiumRenderer | None:
@@ -115,5 +128,4 @@ def route_entry(entry: BibEntry, adapters: list[SourceAdapter]) -> Route:
 
 
 def venue_allows_no_doi(venue: str) -> bool:
-    v = (venue or "").lower()
-    return any(allowed in v for allowed in VENUE_ALLOWLIST_NO_DOI)
+    return bool(_NO_DOI_VENUE.search((venue or "").lower()))

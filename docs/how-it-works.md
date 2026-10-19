@@ -44,9 +44,13 @@ to an LLM when needed:
    list (the BibTeX `and others` / "et al." convention) is recognized as such, so its named authors
    all appearing in the full record's author list (in any order) confirms the entry rather than
    reading the omitted names as a different work. The **publisher** of record (the DOI landing
-   page's BibTeX export, for MIT Press / Silverchair and SAGE / Atypon) is not an identity source: it
+   page's BibTeX export, for MIT Press / Silverchair and SAGE / Atypon; for a paper cited by its
+   NeurIPS proceedings URL, that paper's official `-Bibtex.bib` export) is not an identity source: it
    is queried only after the verdict, to enrich the matched work's venue, volume, issue, pages,
-   publisher and year.
+   publisher and year. A NeurIPS export joins the matched work only when its title and authors tie
+   it to that work; one that names another paper, or a proceedings URL with no export, is reported.
+   It is what verifies a NeurIPS paper's `publisher = {Curran Associates, Inc.}`, which no
+   aggregator carries, and it supplies the Curran DOI NeurIPS has minted since 2022.
 3. **Pool** the results, merging records that are the same work (shared identifier, or a
    preprint↔published version link). Pooling keys on a record's canonical ISBN-13 only, so a book
    chapter that inherits its volume's ISBNs is not fused with its sibling chapters. When the
@@ -125,7 +129,12 @@ to an LLM when needed:
      DOI, and an arXiv DataCite DOI): when the matched work does not carry it, the DOI's own records
      are looked up. A DOI that belongs to a different paper, or that the doi.org Handle API does not
      know, is reported as a wrong `doi` field, naming that paper. A DOI found for backfill is checked
-     at doi.org too: one that does not resolve is reported as unusable, not as a find.
+     at doi.org too: one that does not resolve is reported as unusable, not as a find. An arXiv
+     DataCite DOI (`10.48550/arXiv.…`) is not reported as a find for an entry that already cites
+     that arXiv id (it is the same identifier) or for a paper at a venue that mints no DOI (NeurIPS,
+     ICLR, ICML/PMLR, JMLR, TMLR), since it is the preprint's DOI, not the cited version's. For such
+     a venue the parse-time `no DOI/arXiv id` warning is withdrawn when identification finds no
+     published DOI; a published DOI it does find (NeurIPS since 2022) is still reported.
 8. **Suggest a better version** of a matched work: the published version of a cited preprint, a
    newer arXiv version, or a later edition of a cited book.
 
