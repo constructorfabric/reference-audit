@@ -1,13 +1,13 @@
 [project]
 name = "reference-audit"
-version = "0.5.0"
+version = "1.0.0"
 description = "Audit BibTeX, PDF and structured Word references: identify artifacts and screen for hallucinated references."
 readme = "README.md"
 requires-python = ">=3.14"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",

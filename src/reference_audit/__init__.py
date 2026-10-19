@@ -5,4 +5,4 @@ The package is a plain async Python application (project governance uses the
 governed design artifacts and `README.md` for the audit specification.
 """
 
-__version__ = "0.5.0"
+__version__ = "1.0.0"
