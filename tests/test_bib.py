@@ -220,3 +220,27 @@ def test_an_entry_without_fields_is_unparsed():
     (u,) = unparsed
     assert u.key == "key"
     assert u.reason.startswith("the entry has no fields")
+
+
+def test_a_url_in_howpublished_or_note_is_read_as_the_url():
+    entries = _parse(
+        "@misc{tpl, author={Woods, John O.}, title={A LaTeX template}, year={2025},\n"
+        "  howpublished={\\url{https://github.com/grande-dev/template}}}\n"
+        "@misc{site, author={Doe, Jane}, title={A page}, year={2024},\n"
+        "  note={See \\href{https://example.org/page}{the page}}}\n"
+        "@misc{wiki, title={A}, year={2024}, note={(see https://en.wikipedia.org/wiki/A_(b))}}\n"
+    ).entries
+    by = _by_key(entries)
+    assert by["tpl"].ids.url == "https://github.com/grande-dev/template"
+    assert by["tpl"].venue == ""  # a bare URL is not a venue
+    assert by["site"].ids.url == "https://example.org/page"
+    assert by["wiki"].ids.url == "https://en.wikipedia.org/wiki/A_(b)"
+    assert "url" not in by["tpl"].raw_fields  # the fallback does not invent a field
+
+
+def test_an_explicit_url_field_wins_over_howpublished():
+    (entry,) = _parse(
+        "@misc{x, title={T}, year={2024}, url={https://a.org/},\n"
+        "  howpublished={\\url{https://b.org/}}}\n"
+    ).entries
+    assert entry.ids.url == "https://a.org/"

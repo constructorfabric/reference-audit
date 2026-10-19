@@ -16,6 +16,9 @@ to an LLM when needed:
    those records instead, without GROBID. Either way, DOIs, ISBNs, arXiv ids, OpenAlex Work
    ids (an `openalex.org/W…` URL becomes a first-class identifier) and Google Books volume ids (a
    `books.google.…/books?id=…` URL) are normalized identically, and everything below is unchanged.
+   An entry with no `url` field takes its URL from `howpublished` or `note`, where `@misc` entries
+   conventionally keep it (`howpublished = {\url{…}}`); a `howpublished` that is only a URL is not
+   read as the venue.
    HTML character references left by web-scraped metadata (`d&apos;Amore`, `&amp;`) are decoded in
    the `.bib`'s title, author, venue, publisher and pages, and in every source record's title,
    authors, venue and publisher, so the two compare as plain text in identification and in the field
@@ -25,7 +28,8 @@ to an LLM when needed:
    title/author search is routed by entry type: a `@book`/`@incollection` goes to Open Library,
    Google Books and Crossref; a `@misc` also to arXiv; anything else to Crossref, OpenAlex, Semantic
    Scholar and DBLP. With the [ClickHouse backend](clickhouse-backend.md), Semantic Scholar,
-   OpenAlex and DBLP are read from a local mirror instead. A cited Google Books volume id is
+   OpenAlex and DBLP are read from a local mirror instead. `?` and `*` are dropped from an OpenAlex
+   title search, which reads them as wildcards and rejects them. A cited Google Books volume id is
    resolved directly to that volume, and a cited OpenAlex Work id to that Work when the entry
    carries no DOI or arXiv id (OpenAlex is queried by those first) — the authoritative key for
    entries, notably trade books, the other sources miss. DBLP is the authority for the premier
@@ -60,7 +64,12 @@ to an LLM when needed:
    ISBNs — a cite that gives a book's electronic ISBN matches a source record carrying that book's
    print ISBN, and it counts as a *conflict* only when the two ISBN sets are wholly disjoint (this is
    what lets a book-chapter cited by its volume's ISBN resolve deterministically instead of falling
-   to the LLM).
+   to the LLM). Author similarity compares surnames, with two exceptions. A compound surname
+   matches any of its parts (`Sauceda Felix` / `Sauceda`), since databases often keep only the
+   first. An organizational author (`AI4X Program Committee`, `The ATLAS Collaboration`) is
+   compared by its distinctive words and never matches a person, so a shared generic noun
+   (`Committee`) cannot make an invented reference look like a real document by another body.
+   Pipeline **0.30** invalidates verdicts scored before these rules.
 5. **Adjudicate** anything the formal rules leave undecided with an LLM, asking one record at a time
    whether it can correspond to the entry; a second LLM check decides whether two strong candidates
    are the *same* work. At most `llm_max_candidates` (8) candidates, the best-scoring, are

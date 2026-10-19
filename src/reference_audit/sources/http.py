@@ -100,7 +100,7 @@ async def _send_with_retry(
     try:
         resp = await send()
     except httpx.TransportError as exc:  # network/DNS/timeout
-        raise TransientHTTPError(f"transport: {exc}") from exc
+        raise TransientHTTPError(f"transport: {type(exc).__name__} {exc}".rstrip()) from exc
     if transient(resp):
         raise TransientHTTPError(f"http {resp.status_code}")
     return resp
@@ -235,7 +235,7 @@ async def _impersonate_get_with_retry(
     try:
         resp = await session.get(url)
     except ImpersonateRequestError as exc:  # network/DNS/timeout/TLS
-        raise TransientHTTPError(f"transport: {exc}") from exc
+        raise TransientHTTPError(f"transport: {type(exc).__name__} {exc}".rstrip()) from exc
     if resp.status_code == 429 or resp.status_code >= 500:
         raise TransientHTTPError(f"http {resp.status_code}")
     return resp

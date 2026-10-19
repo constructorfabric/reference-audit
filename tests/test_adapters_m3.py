@@ -181,3 +181,18 @@ async def test_openlibrary_fetch_editions_surfaces_error_when_nothing_retrieved(
     await a.aclose()
     assert res.records == []
     assert res.error is not None
+
+
+@respx.mock
+async def test_openalex_search_strips_wildcards():
+    # OpenAlex answers HTTP 400 to `?` / `*` in a stemmed search; a question title must still search
+    route = respx.get(url__regex=r"api\.openalex\.org/works\?").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    a = OpenAlexAdapter(client=httpx.AsyncClient())
+    res = await a.search_by_metadata(
+        BibEntry(key="q", title="Desk rejections -- is there a connection?")
+    )
+    await a.aclose()
+    assert res.error is None
+    assert route.calls.last.request.url.params["search"] == "Desk rejections -- is there a connection"

@@ -149,7 +149,7 @@ async def check_web_reference(
     if llm is None:
         issues.append(
             "cited URL is live but its HTML metadata did not confirm the reference; "
-            "LLM check is disabled (--no-llm), so it is left unresolved"
+            "no LLM is available (--no-llm, or OPENAI_API_KEY is not set), so it is left unresolved"
         )
         return None, issues
 

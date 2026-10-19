@@ -245,7 +245,11 @@ class AuditConfig(BaseSettings):
     #       establish non-publication. Venue findings retain the evidence's source and scope.
     # 0.29: native Word bibliography/CITATION input feeds the shared verdict-producing pipeline;
     #       invalidate whole-entry verdicts from before this input path.
-    pipeline_version: str = "0.29"
+    # 0.30: organizational authors ("AI4X Program Committee") are scored by their distinctive words
+    #       and never match a person, a compound surname scores as its parts, and a URL in
+    #       `howpublished`/`note` is read as the entry's URL — scoring and web routing change. The
+    #       OpenAlex search no longer fails on titles containing `?` or `*`.
+    pipeline_version: str = "0.30"
 
     def llm_enabled(self) -> bool:
         return self.use_llm and bool(self.openai_api_key)

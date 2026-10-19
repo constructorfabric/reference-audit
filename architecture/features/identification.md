@@ -274,6 +274,21 @@ forcing needless adjudication — which, with no LLM, leaves an otherwise-confir
 the record's full list confirms identity. The author field check (below) reads the marker the same
 way: a list that says it is shortened is never reported as a partial author list.
 
+An **organizational author** ("AI4X Program Committee", "The ATLAS Collaboration") has no surname:
+its last word is a generic noun shared by unrelated bodies. Taken as a surname, "Committee" made an
+invented reference by a program committee score as a perfect author match against the "F25
+Committee" of an unrelated standards document, so it was sent to adjudication instead of being
+reported as no match. In scoring (`author_overlap`, `author_set`), a name containing a generic
+organizational noun (committee, collaboration, consortium, institute, …) is therefore compared by
+its distinctive words only, and never matches a personal name. A **compound surname** scores as any
+subset of its words ("Sauceda Felix, Huziel Enoc" ≈ "Huziel E. Sauceda"), as databases often keep
+only the first surname of a Spanish or Portuguese name. (The person-level author check already
+handled compound surnames; this aligns scoring with it.) Pipeline 0.30.
+
+OpenAlex reads `?` and `*` in a search as wildcards and rejects them with HTTP 400, so the OpenAlex
+metadata search drops them from the title; before, every title ending in a question mark left
+OpenAlex errored for that entry.
+
 A cited OpenAlex Work id (an `openalex.org/W…` URL) is routed to OpenAlex's by-id lookup and treated
 as authoritative identity: when the resolved Work matches the entry's title+author it is pinned as
 the matched artifact (`_apply_openalex_identity`), so the article-centric pooler cannot dissolve the

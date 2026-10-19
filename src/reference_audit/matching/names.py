@@ -2,7 +2,10 @@
 
 Distilled from `sciwrite-lint/api.py:_name_variants/_author_overlap`. Names may be "Last, First",
 "First Last", initials, or transliterated (anyascii) — we compare on normalized last names with a
-fuzzy fallback, so "Vanchurin, Vitaly" ≈ "Vitaly Vanchurin" and "Müller" ≈ "Mueller".
+fuzzy fallback, so "Vanchurin, Vitaly" ≈ "Vitaly Vanchurin" and "Müller" ≈ "Mueller". A compound
+surname matches its parts ("Sauceda Felix, Huziel Enoc" ≈ "Huziel E. Sauceda"), and an
+organizational author ("AI4X Program Committee") is compared by its distinctive words, never by its
+last word.
 """
 
 from __future__ import annotations
@@ -37,8 +40,61 @@ def _named(authors: list[str]) -> list[str]:
     return [a for a in authors if not _is_etal(a)]
 
 
+# An organizational author ("AI4X Program Committee", "The ATLAS Collaboration") has no surname: its
+# last word is a generic noun shared by unrelated bodies, so "AI4X Program Committee" would match the
+# "F25 Committee" of an unrelated standards document perfectly. Such names are compared by their
+# distinctive words (generic nouns and stopwords removed) and never match a personal name.
+_ORG_WORDS = {
+    "agency", "alliance", "association", "authors", "board", "bureau", "collaboration",
+    "commission", "committee", "community", "consortium", "contributors", "corporation", "council",
+    "department", "developers", "federation", "foundation", "group", "inc", "initiative",
+    "institute", "laboratories", "laboratory", "ltd", "ministry", "organisation", "organization",
+    "project", "society", "team", "university",
+}
+_ORG_STOPWORDS = {"the", "of", "and", "for", "on", "in", "at"}
+_ORG_PREFIX = "org:"
+
+
+def _org_key(name: str) -> str:
+    """`org:<distinctive words>` for an organizational author, '' for a personal name."""
+    if "," in name:
+        return ""  # "Last, First" is a person
+    # Digits are kept (unlike `_norm`): they are often what tells two bodies apart ("F25", "AI4X").
+    text = anyascii(decode_html_entities(name or "")).lower()
+    tokens = re.sub(r"[^a-z0-9\s]", " ", text).split()
+    if not any(t in _ORG_WORDS for t in tokens):
+        return ""
+    distinctive = [t for t in tokens if t not in _ORG_WORDS and t not in _ORG_STOPWORDS]
+    return _ORG_PREFIX + " ".join(distinctive or tokens)
+
+
+def surname_similarity(a: str, b: str) -> float:
+    """Similarity in [0, 1] of two `last_name` keys.
+
+    An organization never matches a person, and two organizations are compared by their distinctive
+    words only. A compound surname matches any subset of its words ("sauceda felix" ≈ "sauceda"):
+    databases often keep only the paternal surname of a Spanish or Portuguese name.
+    """
+    if a.startswith(_ORG_PREFIX) != b.startswith(_ORG_PREFIX):
+        return 0.0
+    if a.startswith(_ORG_PREFIX):
+        a, b = a.removeprefix(_ORG_PREFIX), b.removeprefix(_ORG_PREFIX)
+    else:
+        ta, tb = a.replace("-", " ").split(), b.replace("-", " ").split()
+        short, long_ = sorted((ta, tb), key=len)
+        if len(long_) > 1 and any(len(t) >= 3 for t in short) and set(short) <= set(long_):
+            return 1.0
+    return fuzz.ratio(a, b) / 100.0
+
+
 def last_name(name: str) -> str:
-    """Best-effort surname extraction handling 'Last, First' and 'First Last'."""
+    """Best-effort surname extraction handling 'Last, First' and 'First Last'.
+
+    An organizational author yields its `org:`-prefixed distinctive words instead (see `_org_key`).
+    """
+    org = _org_key(name)
+    if org:
+        return org
     n = _norm(name)
     if not n:
         return ""
@@ -67,7 +123,7 @@ def author_overlap(query_authors: list[str], item_authors: list[str]) -> float:
         ql = last_name(qa)
         if not ql:
             continue
-        best = max((fuzz.ratio(ql, il) / 100.0 for il in item_last), default=0.0)
+        best = max((surname_similarity(ql, il) for il in item_last), default=0.0)
         scores.append(best)
     return sum(scores) / len(scores) if scores else 0.0
 

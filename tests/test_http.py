@@ -88,3 +88,13 @@ async def test_documented_source_caps_reach_the_limiter():
         assert adapter.rate_limiter.max_in_flight == cap
         await adapter.aclose()
     assert ArxivAdapter.rate_per_sec <= 1 / 3  # arXiv API terms: one request every three seconds
+
+
+async def test_a_transport_error_names_its_type(no_backoff):
+    # httpx timeouts often carry an empty message; "transport: " alone would tell the reader nothing
+    async def handler(request):
+        raise httpx.ReadTimeout("")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(http.TransientHTTPError, match=r"^transport: ReadTimeout$"):
+            await get_json(client, CountingLimiter(), "https://x.test/a")

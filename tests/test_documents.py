@@ -35,7 +35,8 @@ POSITION_SLUG = "position-align-ai-to-aspirations"
 @pytest.mark.parametrize(
     "version, total, cited, uncited, with_issues",
     [
-        ("initial", 120, 115, 5, 45),
+        # 44, not 45: endcorporalpunishment2024 keeps its URL in `howpublished`, which is now read
+        ("initial", 120, 115, 5, 44),
         ("polished", 144, 134, 10, 25),
     ],
 )

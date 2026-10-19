@@ -6,6 +6,8 @@ normalizer captures those as `version_links` so the matcher can enumerate versio
 
 from __future__ import annotations
 
+import re
+
 from reference_audit.models import (
     BibEntry,
     EntryType,
@@ -18,6 +20,9 @@ from reference_audit.sources.http import TransientHTTPError, get_json
 from reference_audit.sources.normalize import openalex_work_to_record
 
 _BASE = "https://api.openalex.org/works"
+# OpenAlex reads `*` and `?` in `search` as wildcards and rejects them with HTTP 400 in the default
+# stemmed search, so a title such as "Is attention all you need?" could never be searched.
+_WILDCARD_RE = re.compile(r"[*?]")
 # Trim the payload to what we normalize (OpenAlex `select`).
 _SELECT = ",".join(
     [
@@ -89,7 +94,8 @@ class OpenAlexAdapter(SourceAdapter):
     async def search_by_metadata(self, entry: BibEntry, limit: int = 10) -> SourceQueryResult:
         if not entry.title:
             return SourceQueryResult(source=self.name, query_kind="metadata", records=[])
-        params = self._params(search=entry.title, per_page=limit)
+        query = " ".join(_WILDCARD_RE.sub(" ", entry.title).split())
+        params = self._params(search=query, per_page=limit)
         try:
             _status, data = await get_json(self.client, self.rate_limiter, _BASE, params=params)
         except TransientHTTPError as exc:

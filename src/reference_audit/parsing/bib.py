@@ -7,7 +7,7 @@ in ways nothing reports: they leave a `#` concatenation (`venue # " 2020"`) and 
 (`parsing.latex`). `read_bib_records` resolves `@string` references, `#` concatenation and BibTeX's
 month macros, then decodes LaTeX (`decode_latex`: {\'e}→é) for clean matching. It never guesses: a
 reference to an undefined `@string`, a duplicate field, or a value pylatexenc cannot read makes the
-entry unparsed, with the reason. Three further non-standard behaviors:
+entry unparsed, with the reason. Four further non-standard behaviors:
 
 1. **Commented-twin detection.** The pilot has a `%@misc{bagrov2024visual, ...}` block whose
    only-commented header is the arXiv preprint of `kravchenko2026`. bibtexparser reads a `%` line as
@@ -20,6 +20,9 @@ entry unparsed, with the reason. Three further non-standard behaviors:
    `UnparsedEntry` with the reason, so the report can say it was not checked.
 3. **Duplicate keys.** bibtexparser sets a repeated entry key aside as a failed block. Both entries
    are audited, as written.
+4. **URL outside `url`.** An entry with no `url` field takes its URL from `howpublished` or `note`,
+   where `@misc` entries conventionally keep it (`howpublished = {\url{…}}`); a `howpublished` that
+   is only a URL is not used as the venue.
 """
 
 from __future__ import annotations
@@ -66,6 +69,10 @@ _MONTH_MACROS = {
 # A bare operand of a field value: a `@string` name (or a number, checked first).
 _STRING_NAME_RE = re.compile(r"[^\s\"#%'(),={}]+")
 _NOT_CHECKED = "the entry was not read, so it was not checked"
+# A URL in decoded text. pylatexenc renders `\url{u}` as `u` and `\href{u}{text}` as `text <u>`.
+_BARE_URL_RE = re.compile(r"https?://[^\s<>{}]+")
+# Where an entry without a `url` field conventionally keeps its URL (`@misc` mostly).
+_URL_FALLBACK_FIELDS = ("howpublished", "note")
 
 
 def _classify_keys(raw: str) -> set[str]:
@@ -126,6 +133,18 @@ def _identifiers_from_fields(f: dict[str, str]) -> Identifiers:
     )
 
 
+def _fallback_url(f: dict[str, str]) -> str:
+    """The first URL in `howpublished` or `note`, for an entry with no `url` field ('' if none)."""
+    for field in _URL_FALLBACK_FIELDS:
+        m = _BARE_URL_RE.search(f.get(field) or "")
+        if m:
+            url = m.group(0).rstrip(".,;:")  # sentence punctuation after the URL
+            while url.endswith(")") and url.count(")") > url.count("("):
+                url = url[:-1].rstrip(".,;:")  # "(see https://x.org)" — but keep "wiki/A_(b)"
+            return url
+    return ""
+
+
 def entry_from_fields(
     key: str,
     bib_type: str,
@@ -144,7 +163,11 @@ def entry_from_fields(
     us structured `<persName>` elements, and re-joining them into `"A and B"` only to re-split would
     corrupt an organizational author such as "Smith and Sons".
     """
-    venue = f.get("journal") or f.get("booktitle") or f.get("howpublished") or ""
+    howpublished = f.get("howpublished") or ""
+    if _BARE_URL_RE.fullmatch(howpublished.strip()):
+        howpublished = ""  # a bare URL is where the work is, not a venue (it is read as `ids.url`)
+    venue = f.get("journal") or f.get("booktitle") or howpublished
+    id_fields = f if f.get("url") else {**f, "url": _fallback_url(f)}
     return BibEntry(
         key=key,
         entry_type=entry_type_from_bib(bib_type),
@@ -154,7 +177,7 @@ def entry_from_fields(
         venue=_clean(venue),
         publisher=_clean(f.get("publisher", "")),
         pages=_clean(f.get("pages", "")),
-        ids=_identifiers_from_fields(f),
+        ids=_identifiers_from_fields(id_fields),
         raw_fields={k: v for k, v in f.items() if isinstance(v, str)},
         is_commented=commented,
     )

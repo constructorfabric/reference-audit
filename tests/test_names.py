@@ -124,3 +124,38 @@ def test_a_full_length_list_with_a_spelling_variant_omits_nobody():
     record = ["Brian Hu", "Paul Tunison", "Brandon RichardWebster", "Anthony Hoogs"]
     assert omitted_authors(cited, record) == []
     assert omitted_authors(cited[:2], record) == ["Brandon RichardWebster", "Anthony Hoogs"]
+
+
+# ── surname scoring (`author_overlap`) ───────────────────────────────────────
+
+
+def test_organizational_authors_are_scored_by_their_distinctive_words():
+    from reference_audit.matching.names import author_overlap
+
+    # the shared generic noun must not make unrelated bodies match (ai4x2028hallucinated regression)
+    assert author_overlap(["AI4X Program Committee"], ["F25 Committee"]) < 0.5
+    assert author_overlap(["CMS Collaboration"], ["ATLAS Collaboration"]) < 0.5
+    assert author_overlap(["The ATLAS Collaboration"], ["ATLAS Collaboration"]) == 1.0
+    # an organization never matches a person, even one whose surname is its distinctive word
+    assert author_overlap(["Program Committee"], ["Jane Program"]) == 0.0
+
+
+def test_a_compound_surname_scores_as_its_part():
+    from reference_audit.matching.names import author_overlap
+
+    # schutt2017schnet: the bib keeps both surnames, OpenAlex only the first
+    bib = ["Schütt, Kristof", "Sauceda Felix, Huziel Enoc"]
+    assert author_overlap(bib, ["Kristof T. Schütt", "Huziel E. Sauceda"]) == 1.0
+    # a different surname that merely shares letters still does not match
+    assert author_overlap(["Sauceda Felix, Huziel"], ["Maria Felici"]) < 0.8
+
+
+def test_cli_can_fail_on_unresolved(tmp_path, monkeypatch):
+    from reference_audit.models import AuditReport
+
+    report = AuditReport(entries=[], summary={"verdicts": {"unresolved": 1}})
+    bib = tmp_path / "refs.bib"
+    bib.write_text("@article{k,title={T}}", encoding="utf-8")
+    monkeypatch.setattr(cli, "run_audit", lambda *args, **kwargs: report)
+    result = CliRunner().invoke(app, ["audit", str(bib), "--fail-on", "unresolved"])
+    assert result.exit_code == 1

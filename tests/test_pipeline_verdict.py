@@ -214,3 +214,31 @@ async def test_transient_error_does_not_flag_hallucination(tmp_path):
     assert audit.unresolved_reasons
     assert all(r.startswith("crossref ") and "query failed" in r for r in audit.unresolved_reasons)
     assert any(i.startswith("unresolved: crossref ") for i in audit.issues)
+
+
+COMMITTEE_ITEM = {
+    "DOI": "10.4271/j3105_202001",
+    "title": ["Specification for Desk, Log, Marine, Steel, with Cabinet"],
+    "author": [{"name": "F25 Committee"}],
+    "type": "standard",
+}
+
+
+@respx.mock
+async def test_organizational_author_does_not_rescue_invented_reference(tmp_path):
+    """ai4x2028hallucinated regression: an invented reference by a committee must be a conclusive
+    `none`, not left to adjudication because the DB is full of documents by *some* committee."""
+    respx.get(url__regex=SEARCH_RE).mock(
+        return_value=httpx.Response(200, json={"message": {"items": [COMMITTEE_ITEM]}})
+    )
+    bib = _bib(
+        tmp_path,
+        "@article{invented, author={{AI4X Program Committee}}, journal={Nature}, year={2028},\n"
+        "  title={Hallucinated citations and {Desk Rejections} -- is there a connection?}}",
+    )
+    pipe = _pipeline(None)
+    report = await pipe.run(None, bib)
+    await pipe.aclose()
+
+    assert report.entries[0].verdict is not None
+    assert report.entries[0].verdict.kind == "none"

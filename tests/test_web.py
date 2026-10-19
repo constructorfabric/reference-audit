@@ -271,7 +271,7 @@ async def test_funnel_no_llm_unresolved_on_metadata_miss():
     res = await WebAdapter(fetch=_stub_fetch(html="<html><body>no metadata here</body></html>")).fetch_page(_URL)
     verdict, issues = await _check(_entry(), res, None)
     assert verdict is None
-    assert any("LLM check is disabled" in i for i in issues)
+    assert any("no LLM is available" in i for i in issues)
 
 
 async def test_funnel_spa_unavailable_is_unresolved_never_none():

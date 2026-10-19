@@ -101,6 +101,12 @@ web page); a bare `W…` token with no `openalex.org` host is not trusted. A `bo
 URL likewise yields a first-class `Identifiers.google_books` volume id (the `url` is kept, as it is a
 real landing page); a bare token with no Google Books host is not trusted.
 
+An entry without a `url` field takes its URL from `howpublished` or `note`, where `@misc` entries
+conventionally keep it (`howpublished = {\url{…}}`, `note = {\href{…}{…}}`); the first URL in the
+decoded text is used, minus trailing sentence punctuation. A `howpublished` that is only a URL is
+not used as the venue. `raw_fields` is left as written: the URL is an identifier, not an invented
+field.
+
 ### Read field values
 
 bibtexparser 2 only splits the `.bib` text into blocks (`parse_string` with an empty parse stack);

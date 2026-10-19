@@ -381,7 +381,8 @@ nits, clean); `cli.py` (Typer) parses arguments and runs either the parse-only o
 The options with a fixed set of values (`--format`, `--backend`, `--partial-authors`, `--fail-on`)
 are checked before any input is read or any source is queried, so a typo fails fast instead of
 after a full run. `--fail-on` with `--no-network` is rejected too: the parse-only report has no
-verdicts, so the gate could never trip. **IMPLEMENTED.**
+verdicts, so the gate could never trip. `--fail-on unresolved` gates on entries left without a
+verdict, so an outage or a skipped LLM step cannot pass a CI gate silently. **IMPLEMENTED.**
 
 ##### Responsibility boundaries
 
