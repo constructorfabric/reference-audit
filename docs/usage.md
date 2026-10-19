@@ -11,9 +11,10 @@ reference-audit audit <paper.docx> [options]
 
 (From a clone of the repository rather than an installed tool, prefix the commands with `uv run`.)
 
-They are mutually exclusive: a PDF *is* the whole input, since GROBID extracts both its reference list
-and its in-text citations (or the PDF embeds its references' BibTeX records), so passing a `.bib`
-alongside one is rejected. PDF input needs a running GROBID; see [Auditing a PDF](pdf-input.md).
+They are mutually exclusive: a PDF *is* the whole input, since its reference list is read from it (or
+the PDF embeds its references' BibTeX records), so passing a `.bib` alongside one is rejected. PDF input
+needs the OpenAI API (a language model reads the references), or a running GROBID with
+`--pdf-extractor grobid`; see [Auditing a PDF](pdf-input.md).
 
 Word `.docx` is also a standalone input and needs no GROBID or Word installation.
 **WARNING: Only Word's native structured bibliography is checked. Free-form / manually typed
@@ -66,7 +67,7 @@ ISSUES (7) — other problems to review:
     ✓ exactly one match (high) — Matched a single work via semantic_scholar (2 versions).
 ...
 
-FORMATTING NITS & ADVISORIES (3) — cosmetic field fixes or citation notes:
+FORMATTING NITS & ADVISORIES (3) — cosmetic field fixes, citation or reading notes:
 
 [article] goldenfeld1992lectures  (cited)
     Lectures on Phase Transitions and the Renormalization Group
@@ -91,15 +92,16 @@ NO ISSUES (18) — verified, nothing to fix:
 | `--fresh` | Ignore results cached before this run and re-query everything; new results overwrite the old ones. Nothing is deleted, so other bibliographies sharing the cache DB keep their cached results. |
 | `--cache PATH` | Cache DB location. Default: `.reference_audit/cache.db` beside the `.bib`, `.pdf`, or `.docx`. |
 | `--model NAME` | Override the LLM model (default `gpt-6-luna`). |
-| `--grobid URL` | GROBID base URL for PDF input. Default `http://localhost:8070` (or `GROBID_URL`). |
-| `--ignore-embedded` | For a PDF that embeds the BibTeX records of its cited works, extract the references with GROBID anyway. See [PDFs that embed their references](pdf-input.md#pdfs-that-embed-their-references). |
+| `--pdf-extractor llm\|grobid` | Who reads a PDF's references: a language model over the OpenAI API (default), or a local GROBID service, which also links in-text citations (needed for citedness and `--check-citations` on a PDF). See [Auditing a PDF](pdf-input.md). |
+| `--grobid URL` | GROBID base URL. Default `http://localhost:8070` (or `GROBID_URL`). Implies `--pdf-extractor grobid` unless another extractor is given. |
+| `--ignore-embedded` | For a PDF that embeds the BibTeX records of its cited works, read the references from the typeset text anyway. See [PDFs that embed their references](pdf-input.md#pdfs-that-embed-their-references). |
 | `--backend api\|clickhouse` | Where Semantic Scholar, OpenAlex and DBLP are read from: their public APIs, or a local ClickHouse mirror. Default `SOURCE_BACKEND`, else `api`. See [Local ClickHouse backend](clickhouse-backend.md). |
 | `--fail-on hallucinated\|multiple\|contradiction\|unresolved` | Exit non-zero if any entry gets that verdict — for gating submissions in CI. `unresolved` fails on entries the tool could not settle (`UNABLE TO VERIFY`), so a source outage or a missing LLM key cannot pass the gate silently. Any other value is rejected before the audit starts, and so is combining it with `--no-network` (the parse-only report has no verdicts to check). |
 | `--partial-authors ignore\|warn\|error` | How to report a cited author list that names only some of the work's authors without `and others`: not at all, as `uncertain` (default), or as an `error`. Default `PARTIAL_AUTHORS`, else `warn`. |
 
 `--no-network` applies to structured Word `.docx` input, `.bib` input (with or without its `.tex`), and to a PDF that embeds the BibTeX records of its
-references. Any other PDF's reference list comes from an HTTP call to GROBID, so there is no offline
-parse path for it, and combining the two is rejected rather than quietly redefining what the flag
+references. Any other PDF's reference list comes from the OpenAI API or an HTTP call to GROBID, so
+there is no offline parse path for it, and combining the two is rejected rather than quietly redefining what the flag
 promises.
 
 Example — fail a CI check if any reference looks hallucinated, as JSON:

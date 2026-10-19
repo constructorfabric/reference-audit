@@ -14,6 +14,8 @@
   - [Map TEI references to entries](#map-tei-references-to-entries)
   - [Map in-text markers to citing contexts](#map-in-text-markers-to-citing-contexts)
   - [Read the BibTeX records a PDF embeds](#read-the-bibtex-records-a-pdf-embeds)
+  - [Read the reference list with a language model](#read-the-reference-list-with-a-language-model)
+  - [Re-read with the escalation model](#re-read-with-the-escalation-model)
 - [4. States (CDSL)](#4-states-cdsl)
   - [Citation linking availability](#citation-linking-availability)
 - [5. Definitions of Done](#5-definitions-of-done)
@@ -24,18 +26,23 @@
   - [Inapplicable bookkeeping is declared, not zeroed](#inapplicable-bookkeeping-is-declared-not-zeroed)
   - [Extraction fidelity is measured against a compiled oracle](#extraction-fidelity-is-measured-against-a-compiled-oracle)
   - [Embedded records are preferred, and checked against the printed list](#embedded-records-are-preferred-and-checked-against-the-printed-list)
+  - [A language-model reading is used only when complete](#a-language-model-reading-is-used-only-when-complete)
+  - [Entries a misreading can explain are read again](#entries-a-misreading-can-explain-are-read-again)
 - [6. Acceptance Criteria](#6-acceptance-criteria)
 
 <!-- /toc -->
 
 - [ ] `p1` - **ID**: `cpt-referenceaudit-featstatus-pdf-input`
 
-> **Status:** IMPLEMENTED, not yet `@cpt`-traced. The capability is built and covered by tests
+> **Status:** IMPLEMENTED, mostly not yet `@cpt`-traced. The capability is built and covered by tests
 > (`pdf/grobid.py`, `pdf/tei.py`, the `inputs.py`/`cli.py`/`pipeline.py` wiring, the offline mapper
 > tests in `tests/test_tei.py` and `tests/test_grobid_client.py`, the stubbed end-to-end run in
-> `tests/test_pdf_pipeline.py`, the live compiled-PDF oracle in `tests/test_pdf_extraction.py`, and the
-> embedded-records path in `pdf/embedded.py` with `tests/test_embedded.py`).
-> The checkboxes stay `[ ]` because instruction-level `@cpt` tracing to code is follow-on governance
+> `tests/test_pdf_pipeline.py`, the live compiled-PDF oracle in `tests/test_pdf_extraction.py`, the
+> embedded-records path in `pdf/embedded.py` with `tests/test_embedded.py`, and the language-model
+> reader in `pdf/llm_refs.py`, `LLMClient.read_pdf` and `AuditPipeline.run_pdf` with
+> `tests/test_llm_refs.py` and `tests/test_llm_pdf_pipeline.py`). The language-model reader is traced: its two flow
+> instructions carry `@cpt` block markers and its two algorithms scope markers, and those four are
+> checked (its definitions of done are not, pending DoD evidence markers). The other checkboxes stay `[ ]` because instruction-level `@cpt` tracing to code is follow-on governance
 > work — mirroring [Citation Alignment](citation-alignment.md) and the untraced
 > `sources`/`matching`/`llm`/`cache` components in [DESIGN](../DESIGN.md). Flip each box to `[x]` when
 > its marker lands.
@@ -46,10 +53,13 @@
 
 ### 1.1 Overview
 
-A PDF as the whole audited input. A locally-run GROBID converts the PDF to TEI XML; a pure mapper turns
-that TEI into the same `BibEntry` and `CitationContext` records the `.bib`/`.tex` front end produces.
-Identification, matching, verdicts, citation alignment and reporting are untouched — the PDF path
-replaces only where the records come from.
+A PDF as the whole audited input. By default a language model reads the PDF and transcribes its printed
+reference list into a constrained schema; pure checks decide whether the reading can be used, and a
+stronger model re-reads what they, or the audit, flag. Alternatively (`--pdf-extractor grobid`) a
+locally-run GROBID converts the PDF to TEI XML, and a pure mapper turns that TEI into the same
+`BibEntry` and `CitationContext` records the `.bib`/`.tex` front end produces. Identification,
+matching, verdicts, citation alignment and reporting are untouched — the PDF path replaces only where
+the records come from.
 
 A PDF can also carry the authored records itself: one made with the AI4X conference template embeds
 the BibTeX records of its cited works as the attachment `cited-references.bib.hex`. Such a PDF is read
@@ -58,9 +68,13 @@ from those records, parsed exactly as a `.bib`, and GROBID is not involved.
 ### 1.2 Purpose
 
 For mass automated processing the artifact actually available is a PDF, with no authored LaTeX sources
-anywhere. This feature removes that precondition. It is orchestrated by
+anywhere. This feature removes that precondition. It is orchestrated by `AuditPipeline.run_pdf`: with
+the default extractor through `LLMClient.read_pdf` and `pdf.llm_refs`, with GROBID through
 `pipeline.build_pdf_parse_report`, which calls `pdf.grobid.GrobidClient.fulltext_tei` and
-`pdf.tei.parse_tei`, then reuses `pipeline._parse_issues` and the ordinary per-entry audit.
+`pdf.tei.parse_tei`. Both then reuse `pipeline._parse_issues` and the ordinary per-entry audit. The
+language-model reader was chosen over GROBID after measurement (`docs/archive/llm-pdf-references.md`):
+on 38 hand-transcribed conference abstracts it recovered every printed reference where GROBID
+recovered 93%, and GROBID mis-segmented the author names of one reference in five.
 
 Two properties are load-bearing rather than incidental. First, the extraction is honest about itself:
 records GROBID could not read are reported as uncheckable instead of being searched on or quietly
@@ -79,6 +93,7 @@ recorded TEI.
 |-------|-----------------|
 | `cpt-referenceaudit-actor-author` | Audits a paper they have only as a PDF. |
 | `cpt-referenceaudit-actor-ai-agent` | Screens PDFs in bulk with no authored sources available. |
+| `cpt-referenceaudit-actor-llm-reader` | Reads the printed reference list from the PDF (default extractor). |
 | `cpt-referenceaudit-actor-grobid` | Converts the PDF to TEI; supplied by the operator, not managed here. |
 
 ### 1.4 References
@@ -103,9 +118,14 @@ from a `.bib` + `.tex` pair, plus explicit notes on what the extraction could no
 **Success Scenarios**:
 - A born-digital PDF with a bibliography yields an `AuditReport` whose references are identified and
   screened exactly as `.bib`-derived ones are.
-- References GROBID read incompletely are still reported, with the reason and the raw reference text.
+- References read incompletely are still reported, with the reason and the raw reference text.
+- An entry whose audit a misreading can explain is read again by the escalation model, and audited
+  again if read differently; the report says which model's reading each entry is.
 
 **Error Scenarios**:
+- Neither model produced a usable reading (cut short, inconsistent, refused, failed): the run stops
+  with each model's reason — never a partial bibliography.
+- Both models found no reference list: the run stops with "nothing to audit".
 - GROBID unreachable, persistently failing, or unable to parse this PDF: the run stops with that
   specific reason and the command to start the service — never a partial bibliography.
 - TEI containing no reference list: the run stops with "nothing to audit", not a clean bill of health.
@@ -115,11 +135,13 @@ from a `.bib` + `.tex` pair, plus explicit notes on what the extraction could no
 **Steps**:
 1. [ ] - `p1` - Classify the CLI arguments as a PDF input, rejecting a `.pdf` combined with a `.bib`, and `--no-network` with a `.pdf` that embeds no BibTeX records (`inputs.resolve_input`, `cli.audit`) - `inst-resolve-input`
 2. [ ] - `p1` - **IF** the PDF embeds the BibTeX records of its cited works and `--ignore-embedded` is not given, parse them as a `.bib`, look each title up in the printed reference list, and **RETURN** that `AuditReport` (`pipeline.build_embedded_parse_report`); a malformed attachment continues below with its reason as an input note - `inst-read-embedded`
-3. [ ] - `p1` - Health-check GROBID, then upload the PDF once and return its TEI (`GrobidClient.fulltext_tei`) - `inst-fetch-tei`
-4. [ ] - `p1` - Map TEI `<biblStruct>` elements to `BibEntry` records (`pdf.tei.parse_tei`) - `inst-map-references`
-5. [ ] - `p1` - Map in-text `<ref type="bibr">` markers to per-reference `CitationContext`s - `inst-map-contexts`
-6. [ ] - `p1` - **FOR EACH** reference collect deterministic issues plus its extraction failures - `inst-collect-issues`
-7. [ ] - `p1` - **RETURN** the assembled `AuditReport` with `input_kind`, `citation_linking` and input notes - `inst-build-report`
+3. [x] - `p1` - **IF** the extractor is the language model, read the reference list with the extraction model; **IF** that reading fails `list_problems`, gives no answer, or finds no list, read it with the escalation model, and fail with both reasons when that reading is unusable too (`AuditPipeline._read_pdf_with_llm`) - `inst-llm-read`
+4. [x] - `p1` - Map the reading to `BibEntry` records, apply the DOI checks, re-read the flagged entries with the escalation model, and **RETURN** the `AuditReport` with citedness unavailable (`pdf.llm_refs.to_entries`, `AuditPipeline._check_dois`, `build_llm_parse_report`); after the audit, re-read the entries a misreading can explain (`AuditPipeline._reread_flagged`) - `inst-llm-doi-checks`
+5. [ ] - `p1` - Health-check GROBID, then upload the PDF once and return its TEI (`GrobidClient.fulltext_tei`) - `inst-fetch-tei`
+6. [ ] - `p1` - Map TEI `<biblStruct>` elements to `BibEntry` records (`pdf.tei.parse_tei`) - `inst-map-references`
+7. [ ] - `p1` - Map in-text `<ref type="bibr">` markers to per-reference `CitationContext`s - `inst-map-contexts`
+8. [ ] - `p1` - **FOR EACH** reference collect deterministic issues plus its extraction failures - `inst-collect-issues`
+9. [ ] - `p1` - **RETURN** the assembled `AuditReport` with `input_kind`, `citation_linking` and input notes - `inst-build-report`
 
 ## 3. Processes / Business Logic (CDSL)
 
@@ -193,6 +215,62 @@ is not judged.
 (the PDF is unreadable, the attachment is not hex, is truncated, or holds no entry). Then `BibEntry`
 records, each with an issue if its title was not found in the printed reference list.
 
+### Read the reference list with a language model
+
+- [x] `p1` - **ID**: `cpt-referenceaudit-algo-pdf-input-llm-references`
+
+The model gets the PDF (text layer and page images) and answers in `PrintedReferenceList`, a strict
+schema enforced while decoding. Four decisions carry the weight:
+
+- **Transcribe, never complete.** The instructions forbid looking up, correcting or completing a
+  reference, and each entry's `raw_text` comes first, so the fields are read off the transcription.
+- **Constraints with an escape hatch.** DOI, arXiv id, ISBN and URL carry regex patterns and the year a
+  range, and every one of them is nullable: when what is printed does not fit, the field is null and
+  the entry's `doubts` say why. A constraint without that hatch makes the model write a well-formed
+  wrong value instead.
+- **Completeness is checked, not assumed.** The model names the start of the last printed entry
+  before transcribing and reports its coverage after. `list_problems` rejects a reading that reports
+  stopping early, whose last entry is not the one it named, or that contradicts itself about having a
+  list — a model can stop early inside a completed, schema-valid response.
+- **A DOI must be on the page.** `doi_problems` flags a DOI that does not occur in the PDF's text layer
+  (ignoring whitespace and hyphens, which text layers lose) and a DOI carried by two references with
+  different titles (one entry's tail spliced onto another).
+
+Each reference becomes a `BibEntry` through `parsing.bib.entry_from_fields`, keyed `r1`, `r2`, … in
+printed order, with the printed position, the transcribed text and the reading model in `raw_fields`
+(none of which enters the content hash) and a printed "et al." as the `others` marker. Usable readings
+are cached by (PDF hash, model, schema version).
+
+**Input**: A PDF and the extraction model.
+
+**Output**: `BibEntry` records and per-entry issues (doubts, DOI problems), or the reasons the reading
+cannot be used.
+
+### Re-read with the escalation model
+
+- [x] `p1` - **ID**: `cpt-referenceaudit-algo-pdf-input-llm-escalation`
+
+The escalation model reads the whole PDF at most once per document, on first need, and that reading
+serves every escalation of the document:
+
+- **An unusable list** is replaced by the escalation model's reading when that one is usable; a 'no
+  list' answer is confirmed by it.
+- **A DOI flagged before the audit** is replaced by the escalation model's reading of the same printed
+  reference when that reading has no DOI problem; otherwise the entry stays as read, with the problem as
+  an issue.
+- **An entry whose audit a misreading can explain** — 'no match', a contradiction, or an error finding
+  on its title, authors, year or DOI — is compared with the escalation model's reading of the same
+  printed reference (`counterpart`, by transcribed text, printed position breaking ties). If the two
+  differ (`reading_differences`, ignoring name order and spacing), the escalation model's reading
+  replaces the entry under the same key and position and is audited again; if not, the finding stands
+  and concerns the reference as printed. An entry left unresolved because a source failed is not
+  re-read.
+
+**Input**: The audited report and the document's readings.
+
+**Output**: The report with re-read entries replaced and audited, each re-read stated as an issue, and a
+`pdf_reading` summary (who read the list, how many entries were re-read or replaced, token usage).
+
 ## 4. States (CDSL)
 
 ### Citation linking availability
@@ -207,7 +285,7 @@ document, so it is carried explicitly on the report.
 **Initial State**: UNAVAILABLE
 
 **Transition**: UNAVAILABLE → AVAILABLE when at least one in-text marker resolves to a bibliography
-entry. While UNAVAILABLE the uncited list is suppressed and the report says citedness is unknown —
+entry. A language-model reading reads no markers, so it stays UNAVAILABLE. While UNAVAILABLE the uncited list is suppressed and the report says citedness is unknown —
 reporting every reference as uncited would assert something the extraction does not know.
 
 ## 5. Definitions of Done
@@ -327,6 +405,48 @@ document, since the records carry no citing sentences.
   `pipeline.build_embedded_parse_report`, `AuditPipeline.run_pdf`, `parsing.bib.parse_bib_text`
 - Entities: `EmbeddedReferences`, `AuditReport.input_kind`, `AuditConfig.use_embedded_references`
 
+### A language-model reading is used only when complete
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-dod-pdf-input-llm-reading`
+
+The system **MUST** read a PDF that embeds no BibTeX records with the extraction model unless
+`--pdf-extractor grobid` is given; **MUST NOT** audit a reading that `list_problems` rejects; **MUST**
+then read with the escalation model and **MUST** fail with each model's reason when neither reading is
+usable; **MUST** confirm a 'no list' answer with the escalation model before reporting that there is
+nothing to audit; **MUST** re-read, before any audit, an entry whose DOI is absent from the PDF's text
+or shared with a differently-titled entry; and **MUST** declare citedness unknown and citation
+alignment unchecked for the document.
+
+**Implements**:
+- `cpt-referenceaudit-flow-pdf-input-audit-pdf`
+- `cpt-referenceaudit-algo-pdf-input-llm-references`
+
+**Constraints**: `cpt-referenceaudit-constraint-llm-reading-complete`
+
+**Touches**:
+- API: `LLMClient.read_pdf`, `pdf.llm_refs.list_problems`, `pdf.llm_refs.doi_problems`,
+  `pdf.llm_refs.to_entries`, `AuditPipeline.run_pdf`, `build_llm_parse_report`, `cli.audit`
+  (`--pdf-extractor`)
+- Entities: `PrintedReferenceList`, `PdfReadError`, `AuditConfig.pdf_extractor`,
+  `AuditConfig.pdf_extraction_model`, `AuditConfig.pdf_escalation_model`, `pdf_extraction_cache`
+
+### Entries a misreading can explain are read again
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-dod-pdf-input-llm-reread`
+
+The system **MUST** re-read with the escalation model, once per document, every entry whose audit ends
+in 'no match', a contradiction, or an error finding on its title, authors, year or DOI; **MUST** audit
+the escalation model's reading in its place when the two readings differ, and keep the finding
+otherwise; **MUST** state every re-read and its outcome on the entry; **MUST NOT** re-read an entry left
+unresolved by a source failure; and **MUST** report a failed re-read on each entry it concerns.
+
+**Implements**:
+- `cpt-referenceaudit-algo-pdf-input-llm-escalation`
+
+**Touches**:
+- API: `pdf.llm_refs.counterpart`, `pdf.llm_refs.reading_differences`, `AuditPipeline._reread_flagged`
+- Entities: `EntryAudit.issues`, `AuditReport.summary["pdf_reading"]`
+
 ## 6. Acceptance Criteria
 
 - [x] `reference-audit audit paper.pdf` audits a PDF with no `.bib` and no `.tex`.
@@ -348,3 +468,14 @@ document, since the records carry no citing sentences.
       same content hashes as the `.bib` they were compiled from.
 - [x] A record whose title is not in the printed reference list (a hand-edited `.bbl`) is flagged.
 - [x] A malformed attachment falls back to GROBID with the reason in the input notes.
+- [x] A PDF without embedded records is audited from a language-model reading, with no GROBID running;
+      citedness is reported unknown.
+- [x] A reading cut short (its last entry is not the one it named) or reporting that it stopped early
+      is replaced by the escalation model's reading; when that is unusable too, the run fails with both
+      reasons and no source is queried.
+- [x] A DOI absent from the PDF's text is replaced by the escalation model's reading before any audit,
+      and the absent DOI is never looked up.
+- [x] An entry ending in 'no match' is re-read; read differently, the new reading is audited and
+      reported with what changed; read the same, the finding stands. Matched entries are untouched,
+      and one escalation reading serves every flagged entry.
+- [x] A usable reading is served from the cache on the next run; an unusable one is not cached.

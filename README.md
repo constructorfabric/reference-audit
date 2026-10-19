@@ -116,7 +116,8 @@ even when a key is configured.
   (`--check-citations`).
 - [Installation and configuration](docs/configuration.md): requirements, installation, and every
   setting.
-- [Auditing a PDF](docs/pdf-input.md): GROBID extraction, and PDFs that embed their references.
+- [Auditing a PDF](docs/pdf-input.md): reading the references with a language model or GROBID, and
+  PDFs that embed their references.
 - [Auditing Word documents](docs/word-input.md): native structured bibliography and citation fields,
   with a prominent warning that free-form references are not checked.
 - [Local ClickHouse backend](docs/clickhouse-backend.md): reading Semantic Scholar, OpenAlex and

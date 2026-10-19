@@ -125,7 +125,13 @@ editions against Open Library, backfills missing DOIs/ISBNs, and reports the can
 
 **ID**: `cpt-referenceaudit-actor-grobid`
 
-**Role**: An operator-supplied [GROBID](https://github.com/grobidOrg/grobid) instance (a local container by default) that converts a PDF into TEI XML, from which both the printed reference list and the in-text citation markers are read. Contacted only when the audited input is a PDF, and asked to perform no third-party lookups of its own. Not managed by this system: if it is not reachable, the run fails with the command to start it rather than producing a partial bibliography.
+**Role**: An operator-supplied [GROBID](https://github.com/grobidOrg/grobid) instance (a local container by default) that converts a PDF into TEI XML, from which both the printed reference list and the in-text citation markers are read. Contacted only when the audited input is a PDF and the GROBID extractor is chosen (`--pdf-extractor grobid`), and asked to perform no third-party lookups of its own. Not managed by this system: if it is not reachable, the run fails with the command to start it rather than producing a partial bibliography.
+
+#### Language-Model Reference Reader
+
+**ID**: `cpt-referenceaudit-actor-llm-reader`
+
+**Role**: An OpenAI language model, reached through the configured OpenAI endpoint, that reads a PDF (its text layer and page images) and returns its printed reference list as structured records. The default PDF extractor: a fast model reads every PDF, and a stronger one re-reads a list that fails its checks and the entries the audit flags. It does not read in-text citations. Contacted only when the audited input is a PDF that embeds no BibTeX records; the PDF leaves the machine.
 
 ## 3. Operational Concept & Environment
 
@@ -279,17 +285,20 @@ when the abstract is silent or absent, and never altering the identification ver
 - [ ] `p1` - **ID**: `cpt-referenceaudit-fr-audit-pdf`
 
 The system **MUST** accept a PDF as the whole audited input (`reference-audit audit paper.pdf`),
-extracting from it both the printed reference list as `BibEntry` records and the in-text citation
-occurrences as `CitationContext` records, so a paper with no available `.tex`/`.bib` is audited by the
-same pipeline. Bookkeeping that has no meaning for a PDF **MUST** be reported as inapplicable or
-unknown rather than as zero — in particular, when no in-text citation marker can be linked to a
-bibliography entry, no reference may be reported as uncited. A PDF that embeds the BibTeX records of
+extracting from it the printed reference list as `BibEntry` records — and, with an extractor that
+reads them, the in-text citation occurrences as `CitationContext` records — so a paper with no
+available `.tex`/`.bib` is audited by the same pipeline. A reference list **MUST NOT** be audited unless
+the extraction is complete by its own account; an unusable reading **MUST** be retried with a stronger
+reader, and the run **MUST** fail with each reader's reason when no reading is usable. Bookkeeping that
+has no meaning for a PDF **MUST** be reported as inapplicable or unknown rather than as zero — in
+particular, when no in-text citation marker can be linked to a bibliography entry, or the extractor
+reads none, no reference may be reported as uncited. A PDF that embeds the BibTeX records of
 its cited works (as the AI4X template makes it do) **MUST** be audited from those records, each checked
 against the printed reference list, unless the user asks for extraction.
 
 **Rationale**: For mass automated processing the available artifact is a PDF; requiring authored LaTeX sources would exclude most real inputs.
 
-**Actors**: `cpt-referenceaudit-actor-author`, `cpt-referenceaudit-actor-ai-agent`, `cpt-referenceaudit-actor-grobid`
+**Actors**: `cpt-referenceaudit-actor-author`, `cpt-referenceaudit-actor-ai-agent`, `cpt-referenceaudit-actor-grobid`, `cpt-referenceaudit-actor-llm-reader`
 
 ### 5.5 Word Input
 
@@ -352,7 +361,9 @@ at least the pinned fraction of printed entries matched by identifier or normali
 DOIs that disagree with the printed one beyond the per-document allowance recorded with its reason.
 Pinned values are **regression floors for the recorded GROBID image and bibliography styles, not
 fidelity guarantees for arbitrary third-party PDFs** — the oracle's bibliographies are BibTeX-typeset
-from clean data, which is materially easier than the PDFs found in the wild.
+from clean data, which is materially easier than the PDFs found in the wild. The language-model reader
+is measured on the same oracle and on hand-transcribed third-party PDFs
+(`docs/archive/llm-pdf-references.md`), and every DOI it returns must occur in the PDF's own text.
 
 **Rationale**: Extraction quality determines everything downstream; a silently truncated identifier would send the auditor to the wrong document and be reported with full confidence.
 
@@ -472,21 +483,27 @@ Contracts this library expects from external systems.
 **Actor**: `cpt-referenceaudit-actor-author`
 
 **Preconditions**:
-- A born-digital PDF with a text layer and a bibliography exists; a GROBID instance is reachable.
+- A PDF with a bibliography exists; the OpenAI API is configured (default extractor), or a GROBID
+  instance is reachable (`--pdf-extractor grobid`).
 
 **Main Flow**:
 1. The author runs the audit on the PDF alone, with no `.bib` and no `.tex`.
-2. The system sends the PDF to GROBID once and maps the returned TEI into reference records and
-   in-text citing contexts.
-3. Each reference is identified and screened exactly as a `.bib`-derived one is.
-4. The report states that the references were extracted rather than authored, and flags any reference
-   GROBID could not read well enough to check.
+2. The system has the language-model reader transcribe the printed reference list, checks that the
+   list is complete and that its DOIs occur in the PDF, and has a stronger reader re-read it when not
+   (with GROBID: sends the PDF once and maps the returned TEI into reference records and in-text
+   citing contexts).
+3. Each reference is identified and screened exactly as a `.bib`-derived one is. A reference whose
+   outcome a misreading can cause ('no match', a contradiction, an error on its title, authors, year
+   or DOI) is re-read by the stronger reader and, if read differently, audited again.
+4. The report states that the references were extracted rather than authored, which reader read each
+   one, and flags any reference that could not be read well enough to check.
 
 **Postconditions**:
 - The author has the same audit they would get from authored sources, plus explicit notes on what the
   extraction could and could not recover.
 
 **Alternative Flows**:
+- **No usable reading** (both readers cut short, inconsistent or failing): the run stops with each reader's reason; no partial bibliography is reported.
 - **GROBID unreachable / failing / the PDF unparseable**: the run stops with the specific reason and the command to start the service; no partial bibliography is reported.
 - **No reference list found in the TEI**: the run stops with "nothing to audit" rather than reporting a clean bill of health.
 - **No in-text marker links to a bibliography entry**: citedness is reported as unknown and no reference is listed as uncited.

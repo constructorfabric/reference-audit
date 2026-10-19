@@ -179,7 +179,7 @@ async def _run(path: Path, config: AuditConfig, grobid: StubGrobid):
 
 async def test_embedded_records_are_audited_without_grobid():
     grobid = StubGrobid(_tei(_ONE_ARTICLE))
-    report = await _run(PAPER_PDF, AuditConfig(use_llm=False), grobid)
+    report = await _run(PAPER_PDF, AuditConfig(pdf_extractor="grobid", use_llm=False), grobid)
     assert grobid.calls == []
     assert report.input_kind == "pdf_embedded"
     assert [a.entry.key for a in report.entries] == [
@@ -190,14 +190,14 @@ async def test_embedded_records_are_audited_without_grobid():
 
 async def test_ignore_embedded_extracts_with_grobid():
     grobid = StubGrobid(_tei(_ONE_ARTICLE))
-    report = await _run(PAPER_PDF, AuditConfig(use_llm=False, use_embedded_references=False), grobid)
+    report = await _run(PAPER_PDF, AuditConfig(pdf_extractor="grobid", use_llm=False, use_embedded_references=False), grobid)
     assert grobid.calls == [PAPER_PDF]
     assert report.input_kind == "pdf"
 
 
 async def test_a_pdf_without_records_goes_to_grobid_silently(tmp_path):
     grobid = StubGrobid(_tei(_ONE_ARTICLE))
-    report = await _run(_pdf(tmp_path), AuditConfig(use_llm=False), grobid)
+    report = await _run(_pdf(tmp_path), AuditConfig(pdf_extractor="grobid", use_llm=False), grobid)
     assert len(grobid.calls) == 1 and report.input_kind == "pdf"
     assert not any("embedded" in n for n in report.notes)
 
@@ -205,14 +205,14 @@ async def test_a_pdf_without_records_goes_to_grobid_silently(tmp_path):
 async def test_malformed_records_go_to_grobid_with_the_reason_noted(tmp_path):
     grobid = StubGrobid(_tei(_ONE_ARTICLE))
     path = _pdf(tmp_path, {ATTACHMENT_NAME: b"4061"})  # "@a": hex, but no entry
-    report = await _run(path, AuditConfig(use_llm=False), grobid)
+    report = await _run(path, AuditConfig(pdf_extractor="grobid", use_llm=False), grobid)
     assert len(grobid.calls) == 1 and report.input_kind == "pdf"
     assert any("no readable BibTeX entry" in n and "GROBID instead" in n for n in report.notes)
 
 
 async def test_alignment_on_embedded_records_is_declared_unchecked_once():
     report = await _run(
-        PAPER_PDF, AuditConfig(use_llm=False, check_alignment=True), StubGrobid(_tei(""))
+        PAPER_PDF, AuditConfig(pdf_extractor="grobid", use_llm=False, check_alignment=True), StubGrobid(_tei(""))
     )
     assert sum("citation alignment was not checked" in n for n in report.notes) == 1
     assert not any("alignment" in i for a in report.entries for i in a.issues)

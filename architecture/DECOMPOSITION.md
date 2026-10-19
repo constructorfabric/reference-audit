@@ -210,13 +210,19 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
 
 - [ ] `p1` - **ID**: `cpt-referenceaudit-feature-pdf-input`
 
-- **Purpose**: Accept a PDF as the whole audited input — a locally-run GROBID converts it to TEI, and a
-  pure mapper turns that TEI into the `BibEntry`s and `CitationContext`s the rest of the pipeline
-  already consumes, so nothing downstream changes. **IMPLEMENTED (not yet @cpt-traced).**
+- **Purpose**: Accept a PDF as the whole audited input — a language model reads its printed reference
+  list (by default), or a locally-run GROBID converts it to TEI, and pure mappers turn either into the
+  `BibEntry`s (and, from GROBID, `CitationContext`s) the rest of the pipeline already consumes, so
+  nothing downstream changes. **IMPLEMENTED (the language-model reader partly @cpt-traced; the rest
+  not yet).**
 
 - **Depends On**: `cpt-referenceaudit-feature-parsing`
 
 - **Scope**:
+  - Have a language model read the printed reference list into a constrained schema; use a reading
+    only when complete by its own account and its DOIs occur in the PDF; re-read an unusable list,
+    flagged DOIs, and entries whose audit a misreading can explain, with a stronger model
+  - Cache usable readings by (PDF hash, model, schema version)
   - Send a PDF to an operator-supplied GROBID instance and return its TEI (one request per run)
   - Map TEI `<biblStruct>` elements to `BibEntry` via the shared `entry_from_fields` seam
   - Map in-text `<ref type="bibr">` markers to `CitationContext` via the shared sentence definition
@@ -229,7 +235,8 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
 - **Out of scope**:
   - Managing the GROBID container (start/stop/health administration)
   - Scanned or image-only PDFs (no OCR)
-  - Extractors other than GROBID, and PDF *output*
+  - Extractors other than the language-model reader and GROBID, and PDF *output*
+  - In-text citations from the language-model reader (citedness is unknown on that path)
 
 - **Requirements Covered**:
 
@@ -248,6 +255,7 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
 - **Design Constraints Covered**:
 
   - [ ] `p1` - `cpt-referenceaudit-constraint-grobid-local-only`
+  - [ ] `p1` - `cpt-referenceaudit-constraint-llm-reading-complete`
 
 - **Design Components**:
 
@@ -258,6 +266,8 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
   - `reference_audit.pipeline.build_pdf_parse_report(...)`
   - `reference_audit.pdf.tei.parse_tei(...)`
   - `reference_audit.pdf.grobid.GrobidClient`
+  - `reference_audit.pdf.llm_refs` (`PrintedReferenceList`, `list_problems`, `doi_problems`, `to_entries`)
+  - `reference_audit.llm.client.LLMClient.read_pdf(...)`
 
 - **Sequences**:
 

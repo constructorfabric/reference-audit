@@ -20,6 +20,7 @@ from reference_audit.inputs import (
 from reference_audit.parsing.docx import DOCX_SCOPE_WARNING, DocxInputError
 from reference_audit.pdf.embedded import read_embedded_references
 from reference_audit.pdf.grobid import GrobidError
+from reference_audit.pdf.llm_refs import PdfReadError
 from reference_audit.pipeline import (
     EmptyBibliographyError,
     build_docx_parse_report,
@@ -50,7 +51,7 @@ def audit(
         exists=True,
         dir_okay=False,
         help="Bibliography .bib to audit, or the manuscript .tex followed by its .bib, or a .pdf "
-             "whose references GROBID extracts, or a .docx with Word bibliography sources.",
+             "whose references are read from the PDF, or a .docx with Word bibliography sources.",
     ),
     bib: Path | None = typer.Argument(
         None,
@@ -79,13 +80,20 @@ def audit(
         help="Where Semantic Scholar, OpenAlex and DBLP are read from: api | clickhouse "
              "(default: SOURCE_BACKEND, else api).",
     ),
+    pdf_extractor: str | None = typer.Option(
+        None, "--pdf-extractor",
+        help="Who reads a PDF's references: llm (a language model over the OpenAI API; the default) "
+             "| grobid (a local GROBID service, which also links in-text citations).",
+    ),
     grobid: str | None = typer.Option(
-        None, "--grobid", help="GROBID base URL for PDF input (default http://localhost:8070)."
+        None, "--grobid",
+        help="GROBID base URL (default http://localhost:8070); implies --pdf-extractor grobid "
+             "unless another extractor is given.",
     ),
     ignore_embedded: bool = typer.Option(
         False, "--ignore-embedded",
-        help="For a PDF that embeds the BibTeX records of its cited works (AI4X template), extract "
-             "the references with GROBID anyway.",
+        help="For a PDF that embeds the BibTeX records of its cited works (AI4X template), read "
+             "the references from the typeset text anyway.",
     ),
     fail_on: str | None = typer.Option(
         None, "--fail-on",
@@ -103,10 +111,10 @@ def audit(
     The .tex adds citation bookkeeping (uncited entries, citations missing from the .bib) and the
     citing sentences --check-citations needs; without it the entries are identified all the same.
 
-    With a PDF, GROBID supplies both the reference list and the in-text citations, so no .bib is
-    needed — unless the PDF embeds the BibTeX records of its cited works (the AI4X template does),
-    which are then audited instead. Either way each reference is identified and screened for
-    hallucinations.
+    With a PDF, a language model reads the printed reference list (or GROBID, with
+    --pdf-extractor grobid, which also links the in-text citations), so no .bib is needed — unless
+    the PDF embeds the BibTeX records of its cited works (the AI4X template does), which are then
+    audited instead. Either way each reference is identified and screened for hallucinations.
 
     A .docx supplies its native Word bibliography sources and CITATION fields directly, including
     offline with --no-network. No Word installation or GROBID service is needed for it.
@@ -117,6 +125,8 @@ def audit(
         raise typer.BadParameter("--backend must be 'api' or 'clickhouse'")
     if partial_authors not in (None, "ignore", "warn", "error"):
         raise typer.BadParameter("--partial-authors must be 'ignore', 'warn' or 'error'")
+    if pdf_extractor not in (None, "llm", "grobid"):
+        raise typer.BadParameter("--pdf-extractor must be 'llm' or 'grobid'")
     if fail_on not in (None, "hallucinated", "multiple", "contradiction", "unresolved"):
         raise typer.BadParameter(
             "--fail-on must be 'hallucinated', 'multiple', 'contradiction' or 'unresolved'"
@@ -142,10 +152,10 @@ def audit(
 
     embedded_bib: str | None = None
     if no_network and isinstance(source, PdfInput):
-        # A PDF that embeds its references' BibTeX records parses offline. Any other PDF needs
-        # GROBID, and --no-network is a contract ("this run contacts nothing") — --grobid can point
-        # at any host, so we cannot honestly weaken it to "no *remote* network". Reject it rather
-        # than quietly redefining what the flag promises.
+        # A PDF that embeds its references' BibTeX records parses offline. Any other PDF needs the
+        # OpenAI API or GROBID, and --no-network is a contract ("this run contacts nothing") —
+        # --grobid can point at any host, so we cannot honestly weaken it to "no *remote* network".
+        # Reject it rather than quietly redefining what the flag promises.
         embedded = None if ignore_embedded else read_embedded_references(source.pdf_path)
         if embedded is None or embedded.bib_text is None:
             why = (
@@ -153,9 +163,10 @@ def audit(
                 else embedded.problem or "it embeds no BibTeX records of its references"
             )
             raise typer.BadParameter(
-                f"--no-network cannot be combined with this PDF ({why}): its reference list and "
-                "in-text citations would be extracted by the GROBID service over HTTP, so it has no "
-                "offline parse path. Pass a .bib (with or without its .tex) for the offline parse-only report."
+                f"--no-network cannot be combined with this PDF ({why}): its reference list would be "
+                "read by a language model over the OpenAI API, or by the GROBID service over HTTP, "
+                "so it has no offline parse path. Pass a .bib (with or without its .tex) for the "
+                "offline parse-only report."
             )
         embedded_bib = embedded.bib_text
 
@@ -176,6 +187,8 @@ def audit(
                 updates["check_alignment"] = True
             if grobid:
                 updates["grobid_url"] = grobid
+            if pdf_extractor or grobid:
+                updates["pdf_extractor"] = pdf_extractor or "grobid"
             if ignore_embedded:
                 updates["use_embedded_references"] = False
             if backend:
@@ -197,7 +210,8 @@ def audit(
             else:
                 report = run_audit(source.tex_path, source.bib_path, **common)
     except (
-        EmptyBibliographyError, DocxInputError, GrobidError, ClickHouseUnavailableError, UserConfigError,
+        EmptyBibliographyError, DocxInputError, GrobidError, PdfReadError,
+        ClickHouseUnavailableError, UserConfigError,
     ) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=2) from exc

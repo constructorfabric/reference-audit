@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 from reference_audit.cache.store import AuditCache
 from reference_audit.config import AuditConfig
-from reference_audit.llm.client import LLMClient
+from reference_audit.llm.client import LLMClient, LLMError
 from reference_audit.matching.adjudicate import adjudicate_entry
 from reference_audit.matching.features import _published_doi, compute_features, title_ratio
 from reference_audit.matching.names import author_overlap
@@ -33,6 +33,19 @@ from reference_audit.pdf.embedded import (
     title_printed,
 )
 from reference_audit.pdf.grobid import GrobidClient, GrobidRequestError
+from reference_audit.pdf.llm_refs import (
+    INSTRUCTIONS as PDF_READ_INSTRUCTIONS,
+    SCHEMA_VERSION as PDF_READ_SCHEMA_VERSION,
+    USER_PROMPT as PDF_READ_PROMPT,
+    PdfReadError,
+    PrintedReferenceList,
+    counterpart,
+    doi_problems,
+    list_problems,
+    pdf_text_layer,
+    reading_differences,
+    to_entries,
+)
 from reference_audit.pdf.tei import TeiParseError, parse_tei
 from reference_audit.models import (
     AuditReport,
@@ -440,6 +453,107 @@ def build_embedded_parse_report(pdf_path: str | Path, bib_text: str) -> AuditRep
     )
 
 
+# @cpt-algo:cpt-referenceaudit-algo-pdf-input-llm-references:p1
+def build_llm_parse_report(
+    pdf_path: str | Path, entries: list[BibEntry], entry_issues: dict[str, list[str]],
+    notes: list[str],
+) -> AuditReport:
+    """The `AuditReport` for a PDF whose reference list an LLM read (`pdf.llm_refs`).
+
+    The reading carries no in-text citations, so citedness is unknown (`citation_linking`
+    `unavailable`): nothing is reported uncited, and nothing is claimed cited either. `entry_issues`
+    are the per-entry DOI problems that stand; `notes` are the document-level caveats gathered while
+    reading. Reading notes (a model's doubts, a replacing re-read) ride in `raw_fields` and are
+    rendered as advisories, not issues.
+    """
+    path = Path(pdf_path)
+    audits = [
+        EntryAudit(entry=e, verdict=None,
+                   issues=_parse_issues(e) + entry_issues.get(e.key, []))
+        for e in entries
+    ]
+    no_anchor = sum(1 for e in entries if not e.title and not e.ids.any_present())
+    report_notes = [
+        f"references were read from {path.name} by a language model; they are extraction results, "
+        "not authored source files",
+        "in-text citations are not read this way, so cited/uncited bookkeeping is unavailable — "
+        "no reference is reported as uncited; --pdf-extractor grobid links them",
+        *notes,
+    ]
+    if no_anchor:
+        report_notes.append(
+            f"{no_anchor} reference(s) have neither a title nor an identifier and could not be "
+            "checked at all; they are listed with their printed text"
+        )
+    by_type: dict[str, int] = {}
+    for e in entries:
+        by_type[e.entry_type.value] = by_type.get(e.entry_type.value, 0) + 1
+    summary = {
+        "total_entries": len(entries),
+        "cited": 0,
+        "uncited": 0,
+        "cited_but_missing": 0,
+        "commented_twins": 0,        # inapplicable: a PDF has no commented-out entries
+        "missing_includes": 0,       # inapplicable: a PDF has no \input targets
+        "entries_with_issues": sum(1 for a in audits if a.issues),
+        "by_type": by_type,
+        "references_without_title_or_id": no_anchor,
+    }
+    return AuditReport(
+        entries=audits,
+        summary=summary,
+        input_kind="pdf",
+        citation_linking="unavailable",
+        notes=report_notes,
+    )
+
+
+# The fields whose error finding can come from a misread reference, and so trigger a second reading.
+_REREAD_FIELDS = frozenset({"title", "author", "year", "doi"})
+
+
+def _reread_reason(audit: EntryAudit) -> str | None:
+    """Why this audited entry should be read again by the escalation model, or None.
+
+    Only outcomes a misreading can cause: 'no match', a contradiction, or an error on a field the
+    reader transcribes. An entry left unresolved because a source failed is not one of them, and
+    neither is a formatting nit.
+    """
+    v = audit.verdict
+    if v is not None and v.kind == "none":
+        return "a 'no match' verdict"
+    if v is not None and v.kind == "contradiction":
+        return "a contradiction verdict"
+    fields = sorted({f.field for f in audit.field_findings
+                     if f.status == "error" and f.field in _REREAD_FIELDS})
+    return f"an error finding on {', '.join(fields)}" if fields else None
+
+
+def _as_reread(second: BibEntry, first: BibEntry, note: str) -> BibEntry:
+    """The second reading of a reference under the first reading's key and printed position, so
+    the report keeps one entry per printed reference, with `note` saying why and what changed (a
+    reading note, shown as an advisory: the entry's findings are those of the new reading)."""
+    raw = {**second.raw_fields, "pdf_ref_index": first.raw_fields.get("pdf_ref_index", ""),
+           "pdf_reread": note}
+    return second.model_copy(update={"key": first.key, "raw_fields": raw})
+
+
+@dataclass
+class _PdfReading:
+    """One document's LLM readings, shared by the list checks and the post-audit re-reads.
+
+    The escalation model's reading is made at most once per document, on first need.
+    """
+
+    pdf: Path
+    sha256: str
+    text_layer: str | None
+    primary_model: str
+    second: tuple[list[BibEntry], dict[str, list[str]]] | None = None
+    second_error: str | None = None
+    reread: set[str] = field(default_factory=set)   # keys already compared with the second reading
+
+
 def _verdict_summary(report: AuditReport) -> dict[str, int]:
     counts = {"none": 0, "exactly_one": 0, "multiple": 0, "contradiction": 0, "unresolved": 0}
     for a in report.entries:
@@ -530,6 +644,10 @@ class AuditPipeline:
         # False only when a PDF's in-text citation markers could not be linked at all — then a
         # missing context is a reportable extraction failure, not an expected absence.
         self._contexts_available = True
+        # The current PDF's LLM readings, when its references are read by an LLM (`run_pdf`).
+        self._pdf_reading: _PdfReading | None = None
+        # Token usage of the PDF readings made in this run (cached readings cost nothing), per model.
+        self._pdf_read_usage: dict[str, list[dict]] = {}
         # Built lazily: a .bib/.tex run must never construct a GROBID client, let alone contact it.
         self._grobid_client = grobid
         self._owns_grobid = grobid is None
@@ -589,8 +707,8 @@ class AuditPipeline:
         return await self._audit_all(report, progress=progress)
 
     async def run_pdf(self, pdf_path: str | Path, *, progress: bool = False) -> AuditReport:
-        """Audit a PDF: from the BibTeX records it embeds, if any, otherwise from GROBID's
-        extraction of its reference list and in-text citations.
+        """Audit a PDF: from the BibTeX records it embeds, if any, otherwise from its printed
+        reference list as read by an LLM (`pdf_extractor = "llm"`, the default) or by GROBID.
 
         A sibling of `run` rather than an extra optional parameter on it — the two inputs need
         different arguments, and an `isinstance`/`None`-sniffing signature would make every existing
@@ -598,6 +716,9 @@ class AuditPipeline:
         """
         report: AuditReport | None = None
         fallback_notes: list[str] = []
+        # Per document: a pipeline that audits several PDFs must not re-read one against another's.
+        self._pdf_reading = None
+        self._pdf_read_usage = {}
         if self.config.use_embedded_references:
             embedded = read_embedded_references(pdf_path)
             if embedded.bib_text is not None:
@@ -609,8 +730,7 @@ class AuditPipeline:
                     )
             elif embedded.problem is not None:
                 fallback_notes.append(
-                    f"{embedded.problem}; the references were extracted from the typeset text by "
-                    "GROBID instead"
+                    f"{embedded.problem}; the references were extracted from the typeset text instead"
                 )
 
         if report is not None:
@@ -619,7 +739,16 @@ class AuditPipeline:
                 # as an issue on every entry.
                 report.notes.append(
                     "citation alignment was not checked: the embedded records carry no citing "
-                    "sentences; re-run with --ignore-embedded to take them from GROBID"
+                    "sentences; re-run with --ignore-embedded --pdf-extractor grobid to take them "
+                    "from GROBID"
+                )
+        elif self.config.pdf_extractor == "llm":
+            report = await self._read_pdf_with_llm(Path(pdf_path))
+            report.notes.extend(fallback_notes)
+            if self.config.check_alignment:
+                report.notes.append(
+                    "citation alignment was not checked: the language-model reading has no citing "
+                    "sentences; re-run with --pdf-extractor grobid to take them from GROBID"
                 )
         else:
             parsed = await build_pdf_parse_report(pdf_path, client=self._grobid())
@@ -630,7 +759,245 @@ class AuditPipeline:
             self._citation_contexts = parsed.contexts
             self._contexts_available = parsed.contexts_available
         await self.preflight()
-        return await self._audit_all(report, progress=progress)
+        report = await self._audit_all(report, progress=progress)
+        if self._pdf_reading is not None:
+            await self._reread_flagged(report)
+        return report
+
+    # ---------------------------------------------------------------------------------------------
+    # PDF references read by an LLM (`pdf.llm_refs`)
+    # ---------------------------------------------------------------------------------------------
+
+    async def _llm_reading(self, reading: _PdfReading, model: str) -> PrintedReferenceList:
+        """`model`'s reading of the PDF's reference list, from the cache when it holds one.
+
+        Only a reading that passes `list_problems` is cached, so a failed one is made afresh on the
+        next run. Raises LLMError when the model gives no answer.
+        """
+        if self.cache is not None:
+            stored = self.cache.get_pdf_extraction(reading.sha256, model, PDF_READ_SCHEMA_VERSION)
+            if stored is not None:
+                return PrintedReferenceList.model_validate_json(stored)
+        assert self.llm is not None  # checked by `_read_pdf_with_llm`
+        result, usage = await self.llm.read_pdf(
+            reading.pdf, model=model, instructions=PDF_READ_INSTRUCTIONS,
+            prompt=PDF_READ_PROMPT, schema_model=PrintedReferenceList,
+        )
+        self._pdf_read_usage.setdefault(model, []).append(usage)
+        if self.cache is not None and not list_problems(result):
+            self.cache.put_pdf_extraction(
+                reading.sha256, model, PDF_READ_SCHEMA_VERSION, result.model_dump_json()
+            )
+        return result
+
+    async def _try_reading(
+        self, reading: _PdfReading, model: str
+    ) -> tuple[PrintedReferenceList | None, list[str]]:
+        """(reading, why it cannot be used) — an API failure is a reason like any other."""
+        try:
+            result = await self._llm_reading(reading, model)
+        except LLMError as exc:
+            return None, [str(exc)]
+        return result, list_problems(result)
+
+    async def _read_pdf_with_llm(self, pdf: Path) -> AuditReport:
+        """Read the PDF's reference list with `pdf_extraction_model`, escalating to
+        `pdf_escalation_model` when that reading cannot be used, and build the parse report.
+
+        Raises `PdfReadError` when neither reading can be used, and `EmptyBibliographyError` when
+        the document has no reference list (a 'no list' answer is confirmed by the escalation model,
+        since it ends the audit). Never returns a partial list.
+        """
+        import hashlib
+
+        first, second = self.config.pdf_extraction_model, self.config.pdf_escalation_model
+        if self.llm is None:
+            raise PdfReadError(
+                f"reading the references of {pdf.name} with a language model needs the OpenAI API: "
+                "set openai_api_key and do not pass --no-llm, or use --pdf-extractor grobid"
+            )
+        notes: list[str] = []
+        try:
+            text_layer: str | None = pdf_text_layer(pdf)
+        except Exception as exc:  # noqa: BLE001 — pypdf raises many types; reported, never swallowed
+            text_layer = None
+            notes.append(f"the PDF's text could not be read ({type(exc).__name__}: {exc}), so DOIs "
+                         "were not checked against it")
+        if text_layer is not None and len(text_layer.strip()) <= 200:
+            notes.append("the PDF has almost no text layer (a scan?), so DOIs were not checked "
+                         "against it")
+        reading = _PdfReading(pdf=pdf, sha256=hashlib.sha256(pdf.read_bytes()).hexdigest(),
+                              text_layer=text_layer, primary_model=first)
+        self._pdf_reading = reading
+
+        # @cpt-begin:cpt-referenceaudit-flow-pdf-input-audit-pdf:p1:inst-llm-read
+        result, reasons = await self._try_reading(reading, first)
+        first_found_none = result is not None and not reasons and not result.has_reference_list
+        if result is None or reasons or first_found_none:
+            why_first = reasons or ["it found no reference list"]
+            confirm, why_second = await self._try_reading(reading, second)
+            if why_second:
+                raise PdfReadError(
+                    f"the reference list of {pdf.name} could not be read: "
+                    f"{first}: {'; '.join(why_first)}; {second}: {'; '.join(why_second)}"
+                )
+            assert confirm is not None
+            if not confirm.has_reference_list:
+                if result is None or first_found_none:
+                    raise EmptyBibliographyError(
+                        f"no reference list in {pdf.name}: {second} found none"
+                        + (f", and {first} found none either" if first_found_none
+                           else f" ({first} gave no reading: {'; '.join(why_first)})")
+                        + ". Is it a document with a bibliography?"
+                    )
+                raise PdfReadError(
+                    f"the models disagree about {pdf.name}: {first} read a reference list it could "
+                    f"not complete ({'; '.join(why_first)}), {second} found no reference list"
+                )
+            result, reading.primary_model = confirm, second
+            notes.append(f"{first}'s reading of the reference list was not used "
+                         f"({'; '.join(why_first)}); the list was read by {second}")
+        # @cpt-end:cpt-referenceaudit-flow-pdf-input-audit-pdf:p1:inst-llm-read
+
+        entries = to_entries(result, read_by=reading.primary_model)
+        issues: dict[str, list[str]] = {}
+        # @cpt-begin:cpt-referenceaudit-flow-pdf-input-audit-pdf:p1:inst-llm-doi-checks
+        entries = await self._check_dois(reading, entries, issues)
+        # @cpt-end:cpt-referenceaudit-flow-pdf-input-audit-pdf:p1:inst-llm-doi-checks
+        return build_llm_parse_report(pdf, entries, issues, notes)
+
+    async def _second_reading(
+        self, reading: _PdfReading
+    ) -> tuple[list[BibEntry], dict[str, list[str]]] | None:
+        """The escalation model's entries and their DOI problems — made once per document. None when
+        it cannot be used; `reading.second_error` then says why."""
+        if reading.second is None and reading.second_error is None:
+            model = self.config.pdf_escalation_model
+            result, reasons = await self._try_reading(reading, model)
+            if reasons or result is None or not result.has_reference_list:
+                reading.second_error = "; ".join(reasons) or "it found no reference list"
+            else:
+                entries = to_entries(result, read_by=model)
+                reading.second = (entries, doi_problems(entries, reading.text_layer))
+        return reading.second
+
+    # @cpt-algo:cpt-referenceaudit-algo-pdf-input-llm-escalation:p1
+    async def _check_dois(
+        self, reading: _PdfReading, entries: list[BibEntry], issues: dict[str, list[str]]
+    ) -> list[BibEntry]:
+        """Apply the DOI checks before any entry is audited, re-reading the entries they flag.
+
+        A flagged entry is replaced by the escalation model's reading of it when that reading has no
+        DOI problem; otherwise it is kept, with the problem as an issue. Either way it is not re-read
+        again after the audit.
+        """
+        problems = doi_problems(entries, reading.text_layer)
+        if not problems:
+            return entries
+        second_model = self.config.pdf_escalation_model
+        if reading.primary_model == second_model:
+            for key, found in problems.items():
+                issues.setdefault(key, []).extend(found)
+            return entries
+        second = await self._second_reading(reading)
+        out: list[BibEntry] = []
+        for entry in entries:
+            found = problems.get(entry.key)
+            if not found:
+                out.append(entry)
+                continue
+            reading.reread.add(entry.key)
+            if second is None:
+                issues.setdefault(entry.key, []).extend(
+                    found + [f"could not be re-read with {second_model}: {reading.second_error}"]
+                )
+                out.append(entry)
+                continue
+            second_entries, second_problems = second
+            other = counterpart(entry, second_entries)
+            if other is None:
+                issues.setdefault(entry.key, []).extend(
+                    found + [f"{second_model} has no reading of this reference to compare with"]
+                )
+                out.append(entry)
+            elif second_problems.get(other.key):
+                issues.setdefault(entry.key, []).extend(
+                    found + [f"{second_model} read it with the same kind of problem "
+                             f"({'; '.join(second_problems[other.key])}), so it stands as read"]
+                )
+                out.append(entry)
+            else:
+                diffs = reading_differences(entry, other)
+                out.append(_as_reread(other, entry, (
+                    f"re-read with {second_model} because {'; '.join(found)}: "
+                    + ("; ".join(diffs) if diffs else "the same reading otherwise")
+                    + f". This is {second_model}'s reading"
+                )))
+        return out
+
+    async def _reread_flagged(self, report: AuditReport) -> None:
+        """After the audit, re-read each entry whose outcome a misreading can cause.
+
+        One reading by the escalation model serves every flagged entry of the document. Where it
+        reads the reference differently, its reading replaces the first and is audited in turn; where
+        it reads it the same, the finding stands and concerns the reference as printed.
+        """
+        reading = self._pdf_reading
+        second_model = self.config.pdf_escalation_model
+        if reading is None or reading.primary_model == second_model:
+            self._note_pdf_reading(report)
+            return
+        flagged = [(i, a, why) for i, a in enumerate(report.entries)
+                   if a.entry.key not in reading.reread and (why := _reread_reason(a))]
+        if flagged:
+            second = await self._second_reading(reading)
+            for i, audit, why in flagged:
+                reading.reread.add(audit.entry.key)
+                if second is None:
+                    audit.issues.append(
+                        f"could not be re-read with {second_model} after {why}: "
+                        f"{reading.second_error}"
+                    )
+                    continue
+                second_entries, second_problems = second
+                other = counterpart(audit.entry, second_entries)
+                if other is None:
+                    audit.issues.append(f"re-read with {second_model} after {why}: it has no "
+                                        "reading of this reference to compare with")
+                    continue
+                diffs = reading_differences(audit.entry, other)
+                if not diffs:
+                    audit.issues.append(f"re-read with {second_model} after {why}: the same "
+                                        "reading, so the finding concerns the reference as printed")
+                    continue
+                entry = _as_reread(other, audit.entry, (
+                    f"re-read with {second_model} after {why} in {reading.primary_model}'s "
+                    f"reading: {'; '.join(diffs)}. This is {second_model}'s reading"
+                ))
+                redo = EntryAudit(
+                    entry=entry, issues=_parse_issues(entry) + second_problems.get(other.key, [])
+                )
+                await self._audit_entry(redo)
+                report.entries[i] = redo
+            report.summary["verdicts"] = _verdict_summary(report)
+            report.summary["entries_with_issues"] = sum(1 for a in report.entries if a.issues)
+        self._note_pdf_reading(report)
+
+    def _note_pdf_reading(self, report: AuditReport) -> None:
+        """Record who read the references and what the re-reads did, for machine consumers."""
+        reading = self._pdf_reading
+        if reading is None:
+            return
+        report.summary["pdf_reading"] = {
+            "list_read_by": reading.primary_model,
+            "escalation_model": self.config.pdf_escalation_model,
+            "entries_reread": len(reading.reread),
+            "entries_from_escalation_model": sum(
+                1 for a in report.entries
+                if a.entry.raw_fields.get("pdf_read_by") == self.config.pdf_escalation_model
+            ),
+            "usage": self._pdf_read_usage,
+        }
 
     async def _audit_all(self, report: AuditReport, *, progress: bool) -> AuditReport:
         tasks = [asyncio.ensure_future(self._audit_entry(a)) for a in report.entries]

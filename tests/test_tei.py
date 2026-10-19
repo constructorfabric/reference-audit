@@ -251,7 +251,7 @@ def test_biblstruct_without_xml_id_falls_back_to_position():
 
 def test_printed_reference_number_is_recorded():
     refs = parse_tei(_tei(back=_listbibl(_ARTICLE, _CHAPTER, _BOOK)))
-    assert [e.raw_fields["grobid_ref_index"] for e in refs.entries] == ["1", "2", "3"]
+    assert [e.raw_fields["pdf_ref_index"] for e in refs.entries] == ["1", "2", "3"]
 
 
 # ---------------------------------------------------------------- per-record extraction failures
@@ -266,7 +266,7 @@ def test_title_less_reference_reports_why_and_keeps_the_raw_string():
     assert any("no title" in r for r in reasons)
     # The raw reference is quoted so a human can find it in the PDF.
     assert any("unreadable scan" in r for r in reasons)
-    assert entry.raw_fields["grobid_raw"].startswith("R. Laughlin")
+    assert entry.raw_fields["pdf_raw"].startswith("R. Laughlin")
 
 
 def test_author_less_reference_is_reported_but_still_audited():
@@ -443,7 +443,7 @@ def test_real_tei_recovers_a_known_reference_in_full():
     assert bagrov.venue.startswith("Proceedings of the National Academy")
     assert bagrov.year == 2020
     assert "Bagrov" in bagrov.authors[0]
-    assert bagrov.raw_fields["grobid_ref_index"].isdigit()
+    assert bagrov.raw_fields["pdf_ref_index"].isdigit()
 
 
 def test_real_tei_keeps_two_similarly_titled_papers_distinct():

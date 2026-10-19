@@ -83,6 +83,11 @@ The pinned numbers are a **regression floor for the recorded GROBID image and bi
 a fidelity claim for arbitrary PDFs**: these bibliographies were typeset by BibTeX from clean data,
 which is materially easier than what real-world PDFs contain.
 
+The language-model reader, the default extractor, is not part of this pytest oracle: its calls are
+metered and not deterministic. It was measured on these documents and on hand-transcribed conference
+abstracts by `benchmarks/llm_pdf_refs.py` (results: [LLM reference extraction vs
+GROBID](archive/llm-pdf-references.md)); rerun that harness after changing `pdf/llm_refs.py`.
+
 ## Benchmarking on HALLMARK
 
 Verdict accuracy is measured on [HALLMARK](https://github.com/rpatrik96/hallmark), a
@@ -99,7 +104,9 @@ src/reference_audit/
   parsing/     # .bib / .tex / identifier parsing; latex.py = LaTeX → Unicode for .bib values;
                #   entities.py = HTML character references; context.py = the shared sentence definition
                #   docx.py = native Word source records + CITATION fields (stdlib ZIP/XML, offline)
-  pdf/         # PDF input: grobid.py (the only network module — one client, one named error per
+  pdf/         # PDF input: llm_refs.py (the language-model reader's schema, list and DOI checks, and
+               #   mapping to BibEntry; pure — the call is llm.client.LLMClient.read_pdf);
+               #   grobid.py (the only network module here — one client, one named error per
                #   failure mode) + tei.py (pure TEI -> BibEntry / CitationContext mapping) +
                #   embedded.py (the BibTeX records a PDF embeds, and the printed-title check)
   sources/     # modular adapters: Crossref, OpenAlex, Semantic Scholar, arXiv, DBLP, Open Library,
@@ -111,7 +118,8 @@ src/reference_audit/
                #   searchable words of a title (shared by every all-words title search)
   matching/    # candidate pooling, feature scoring, author-name matching (names.py), LLM
                #   adjudication of undecided candidates, SAME-OBJECT clustering, verdicts, web check
-  llm/         # OpenAI structured output (pydantic schemas): adjudication, field and alignment prompts
+  llm/         # OpenAI structured output (pydantic schemas): adjudication, field and alignment prompts,
+               #   and LLMClient.read_pdf (a PDF read through the Responses API)
   cache/       # SQLite memoization of DB/LLM calls (errors never cached)
   alignmentcheck.py # --check-citations: citing context vs. the cited work's abstract
   bookcheck.py # Open Library edition resolution (cited vs. latest edition)
@@ -133,6 +141,9 @@ benchmarks/
   README.md    # the HALLMARK benchmark: setup, subcommands, mappings, results, test_hidden
   hallmark_bench.py # HALLMARK harness: audit a blind split, map verdicts to labels, run HALLMARK's
                     #   evaluator, write submissions (needs the pinned checkout in benchmarks/.hallmark)
+  llm_pdf_refs.py   # reference-list extraction by OpenAI models vs GROBID, scored on the TeX
+                    #   roundtrips and hand-transcribed PDFs (docs/archive/llm-pdf-references.md);
+                    #   its v3 schema is the product's (pdf/llm_refs.py)
   submissions/hallmark/ # HALLMARK submission files (predictions JSONL + manifest), one per split
   hallmark_label_errors.md # dev_public entries labelled VALID that are hallucinated, with evidence
 tests/

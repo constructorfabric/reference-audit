@@ -9,11 +9,13 @@ this input path and invalidates earlier whole-entry verdicts.
 For each entry the tool runs a funnel that prefers cheap, deterministic evidence and only escalates
 to an LLM when needed:
 
-1. **Parse** the input — either the `.bib` (resolving `\cite`/`\nocite` in the `.tex`, when one is given), or a PDF, from
-   which a locally-run [GROBID](https://github.com/grobidOrg/grobid) extracts both the printed
-   reference list and the in-text citation markers. A PDF that embeds the BibTeX records of its cited
-   works (as one made with the [AI4X template](pdf-input.md#pdfs-that-embed-their-references) does) is read from
-   those records instead, without GROBID. Either way, DOIs, ISBNs, arXiv ids, OpenAlex Work
+1. **Parse** the input — either the `.bib` (resolving `\cite`/`\nocite` in the `.tex`, when one is given), or a PDF,
+   whose printed reference list a language model reads (or, with `--pdf-extractor grobid`, from which
+   a locally-run [GROBID](https://github.com/grobidOrg/grobid) extracts both the reference list and the
+   in-text citation markers). A PDF that embeds the BibTeX records of its cited works (as one made
+   with the [AI4X template](pdf-input.md#pdfs-that-embed-their-references) does) is read from those
+   records instead. Pipeline **0.31** makes the language model the default PDF reader and adds its
+   re-read of flagged entries, invalidating earlier whole-entry verdicts. Either way, DOIs, ISBNs, arXiv ids, OpenAlex Work
    ids (an `openalex.org/W…` URL becomes a first-class identifier) and Google Books volume ids (a
    `books.google.…/books?id=…` URL) are normalized identically, and everything below is unchanged.
    An entry with no `url` field takes its URL from `howpublished` or `note`, where `@misc` entries

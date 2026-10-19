@@ -10,10 +10,12 @@ run prints a prominent warning. See [Word input](word-input.md).
   has no suitable Python.
 - Optional: an OpenAI API key (or a key for an OpenAI-compatible endpoint), for the LLM
   adjudication step. Without one, entries whose candidates the formal rules cannot settle are
-  reported under `UNABLE TO VERIFY` with the reason, never guessed.
+  reported under `UNABLE TO VERIFY` with the reason, never guessed. **PDF input needs it** by
+  default: a language model reads the PDF's reference list (see [Auditing a PDF](pdf-input.md)).
 - Optional: a Chrome/Chromium binary, to render cited web pages that are JavaScript single-page apps
   (see [How it works](how-it-works.md)). Without one, such entries are left unresolved.
-- **For PDF input only:** a running GROBID. It is not managed by this tool — start one with:
+- **For PDF input with `--pdf-extractor grobid` only:** a running GROBID. It is not managed by this
+  tool — start one with:
   ```bash
   podman run -d --replace --name grobid -p 8070:8070 docker.io/grobid/grobid:0.9.1-crf
   ```
@@ -69,7 +71,13 @@ unpaywall_email = "you@example.org"     # used as that contact when crossref_mai
 openlibrary_email = "you@example.org"   # sent in the User-Agent on Open Library requests (polite identification)
 google_books_api_key = "..."            # Google Books per-project quota (the keyless endpoint shares a global daily quota that is routinely exhausted)
 
-# Optional — only used for PDF input; overridable per-run with --grobid
+# Optional — PDF input. Who reads a PDF's references: "llm" (default) or "grobid"; per run with
+# --pdf-extractor. The language model reads every PDF; the escalation model re-reads a list that fails
+# its checks and the entries the audit flags.
+# pdf_extractor = "llm"
+# pdf_extraction_model = "gpt-6-luna"
+# pdf_escalation_model = "gpt-6.1-sol"
+# Only used with pdf_extractor = "grobid"; overridable per-run with --grobid
 grobid_url = "http://localhost:8070"
 
 # Optional — read Semantic Scholar, OpenAlex and DBLP from a local ClickHouse mirror instead of their

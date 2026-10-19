@@ -128,11 +128,17 @@ When that evidence is unavailable, retain the identified work and report the ven
    model default unless `LLM_TEMPERATURE` is set (gpt-6-luna accepts only its default).
 5. Use `uv` to manage Python dependencies.
 6. Python code is a module in `src/`, without relative imports and `sys.path.append`.
-7. PDF input is extracted by a locally-run GROBID, which the auditor talks to but does not manage. The
-   HTTP call and the TEI→model mapping are separate modules, so the mapping — where extraction
-   correctness actually lives — is verifiable offline from recorded TEI. Extraction quality is measured
-   against test documents compiled from their own `.bib`, which makes that `.bib` ground truth. A PDF
-   that embeds the BibTeX records of its cited works (the AI4X template's) is read from them instead.
+7. PDF input is read by a language model by default (`gpt-6-luna`, configurable): it transcribes the
+   printed reference list into a constrained schema, and a stronger model (`gpt-6.1-sol`) re-reads a
+   list that is incomplete by its own account, DOIs absent from the PDF's text, and entries whose
+   audit ends in 'no match', a contradiction or an error a misreading can cause. This sends the PDF to
+   the OpenAI API and gives no in-text citations. Alternatively (`--pdf-extractor grobid`), a
+   locally-run GROBID extracts the list and the in-text citations; the auditor talks to it but does not
+   manage it. Either way the network call and the mapping to records are separate modules, so the
+   mapping is verifiable offline. Extraction quality is measured against test documents compiled from
+   their own `.bib`, which makes that `.bib` ground truth, and against hand-transcribed third-party
+   PDFs. A PDF that embeds the BibTeX records of its cited works (the AI4X template's) is read from
+   them instead.
 
 ## Traceability
 
