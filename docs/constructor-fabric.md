@@ -13,7 +13,8 @@ Concretely:
   ([`features/parsing.md`](../architecture/features/parsing.md),
   [`features/identification.md`](../architecture/features/identification.md),
   [`features/citation-alignment.md`](../architecture/features/citation-alignment.md),
-  [`features/pdf-input.md`](../architecture/features/pdf-input.md)). These are the source of
+  [`features/pdf-input.md`](../architecture/features/pdf-input.md),
+  [`features/word-input.md`](../architecture/features/word-input.md)). These are the source of
   truth for what the system is meant to do.
 - **Code traceability** links implementation back to those artifacts via `@cpt-*` markers in
   `src/`, so each governed requirement maps to the code that fulfills it. Both the offline parse

@@ -8,6 +8,7 @@
   - [2.2 Identification & Verdict - HIGH](#22-identification--verdict---high)
   - [2.3 Citation Alignment - MEDIUM](#23-citation-alignment---medium)
   - [2.4 PDF Input - HIGH](#24-pdf-input---high)
+  - [2.5 Word Input - HIGH](#25-word-input---high)
 - [3. Feature Dependencies](#3-feature-dependencies)
 
 <!-- /toc -->
@@ -264,12 +265,34 @@ instruction-level `@cpt` traceability into `pipeline.py`, `matching/`, and `cach
 
 ---
 
+### 2.5 [Word Input](features/word-input.md) - HIGH
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-feature-word-input`
+
+- **Purpose**: Audit native Word bibliography records without conversion or a service.
+  **IMPLEMENTED and tested; not yet instruction-level @cpt-traced.**
+- **Depends On**: `cpt-referenceaudit-feature-parsing`, `cpt-referenceaudit-feature-identification`
+- **Scope**: Native source metadata; simple/complex/grouped citation fields; citing contexts;
+  standalone CLI dispatch and offline reports; per-source parse failure isolation; a prominent
+  structured-only stderr warning and scope notes; original AI4X Word fixture regression.
+- **Out of scope**: Free-form references, third-party citation manager fields, legacy `.doc`, and
+  checking bibliography field display text against source records. Free-form references may be
+  missed even when structured sources are present; every Word run must warn about this.
+- **Requirements Covered**:
+  - [ ] `p1` - `cpt-referenceaudit-fr-audit-word`
+- **Domain Model Entities**: BibEntry, CitationContext, UnparsedEntry, AuditReport
+- **Design Components**: Extends `cpt-referenceaudit-component-parsing` and
+  `cpt-referenceaudit-component-report-cli`; the Word extension is not separately traced.
+- **API**: `parsing.docx.parse_docx`, `pipeline.build_docx_parse_report`,
+  `AuditPipeline.run_docx`, `pipeline.run_docx_audit`
+
 ## 3. Feature Dependencies
 
 ```text
 cpt-referenceaudit-feature-parsing
     ↓
     ├─→ cpt-referenceaudit-feature-pdf-input
+    ├─→ cpt-referenceaudit-feature-word-input (also reuses identification)
     ├─→ cpt-referenceaudit-feature-identification
     │       ↓
     └─────→ cpt-referenceaudit-feature-citation-alignment

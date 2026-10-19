@@ -1,10 +1,11 @@
 """What the positional CLI arguments mean. Pure and side-effect-free, so it is directly testable.
 
-Three input shapes are supported, distinguished by file extension:
+Four input shapes are supported, distinguished by file extension:
 
     reference-audit audit references.bib              # a bibliography on its own
     reference-audit audit main.tex references.bib     # with the manuscript that cites it
     reference-audit audit paper.pdf                   # GROBID extracts both from the PDF
+    reference-audit audit paper.docx                  # Word's structured bibliography + fields
 
 The manuscript only adds citation bookkeeping (cited / uncited / missing entries) and the citing
 sentences `--check-citations` needs; identification reads the `.bib` alone.
@@ -49,13 +50,33 @@ class PdfInput:
         return self.pdf_path
 
 
-AuditInput = TexBibInput | PdfInput
+@dataclass(frozen=True)
+class DocxInput:
+    """A Word document containing native structured bibliography sources."""
+
+    docx_path: Path
+
+    @property
+    def anchor(self) -> Path:
+        return self.docx_path
+
+
+AuditInput = TexBibInput | PdfInput | DocxInput
 
 
 def resolve_input(first: Path, second: Path | None) -> AuditInput:
     """Classify the positional arguments, or explain why they cannot be."""
     a = first.suffix.lower()
     b = second.suffix.lower() if second is not None else None
+
+    if a == ".docx" or b == ".docx":
+        word = first if a == ".docx" else second
+        if second is not None:
+            raise InvalidInputError(
+                f"a .docx is the whole input: its structured bibliography and citation fields "
+                f"are read together. Run 'reference-audit audit {word.name}' on its own."
+            )
+        return DocxInput(first)
 
     if a == ".pdf":
         if second is not None:
@@ -83,7 +104,8 @@ def resolve_input(first: Path, second: Path | None) -> AuditInput:
             )
         raise InvalidInputError(
             f"expected 'audit <references.bib>', 'audit <main.tex> <references.bib>' or "
-            f"'audit <paper.pdf>', but got a single {a or 'extension-less'} file ({first.name})."
+            f"'audit <paper.pdf>' or 'audit <paper.docx>', but got a single "
+            f"{a or 'extension-less'} file ({first.name})."
         )
 
     if a == ".bib" and b in _TEX_SUFFIXES:

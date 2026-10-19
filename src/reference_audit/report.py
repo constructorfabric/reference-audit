@@ -154,6 +154,7 @@ def render_text(report: AuditReport) -> str:
         header = {
             "pdf": "Reference audit — references extracted from PDF",
             "pdf_embedded": "Reference audit — references embedded in PDF",
+            "docx": "Reference audit — structured Word bibliography",
         }.get(report.input_kind, "Reference audit")
     else:
         header = "Reference audit — parse summary (no network)"
@@ -215,13 +216,15 @@ def render_text(report: AuditReport) -> str:
     # Entries the .bib parser could not read were never checked. They lead the findings: a reader who
     # skipped this section would take the report as covering the whole bibliography.
     if report.unparsed:
+        label = "WORD SOURCES" if report.input_kind == "docx" else ".bib ENTRIES"
         lines.append(
-            f"UNPARSEABLE .bib ENTRIES ({len(report.unparsed)}) — could not be read, so not checked:"
+            f"UNPARSEABLE {label} ({len(report.unparsed)}) — could not be read, so not checked:"
         )
         lines.append("")
         for u in report.unparsed:
             kind = f"[{u.entry_type}] " if u.entry_type else ""
-            lines.append(f"{kind}{u.key}  (line {u.line})")
+            location = f"  (line {u.line})" if u.line else ""
+            lines.append(f"{kind}{u.key}{location}")
             lines.append(f"    ⚠ {u.reason}")
             lines.append("")
 

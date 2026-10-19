@@ -20,6 +20,7 @@
   - [5.2 Identification & Verdict (implemented)](#52-identification--verdict-implemented)
   - [5.3 Citation Alignment](#53-citation-alignment)
   - [5.4 PDF Input](#54-pdf-input)
+  - [5.5 Word Input](#55-word-input)
 - [6. Non-Functional Requirements](#6-non-functional-requirements)
   - [6.1 NFR Inclusions](#61-nfr-inclusions)
   - [6.2 NFR Exclusions](#62-nfr-exclusions)
@@ -290,6 +291,29 @@ against the printed reference list, unless the user asks for extraction.
 
 **Actors**: `cpt-referenceaudit-actor-author`, `cpt-referenceaudit-actor-ai-agent`, `cpt-referenceaudit-actor-grobid`
 
+### 5.5 Word Input
+
+#### Audit native Word bibliography sources
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-fr-audit-word`
+
+The system **MUST** accept standalone `.docx` input containing native Word bibliography sources,
+map structured metadata and native `CITATION` fields to the shared entry/context models offline,
+and reuse ordinary per-record auditing. All stored sources are audited, including uncited ones.
+Missing/duplicate Tags and unreadable source records **MUST** be logged and reported independently;
+unreadable packages/XML/field structure and absent structured sources **MUST** fail explicitly.
+Citedness **MUST** be unknown when no native citation fields exist. Every Word run **MUST** print
+a prominent stderr warning that only structured bibliography is processed and free-form references
+are not checked and may be missed even in mixed documents; report notes **MUST** retain the scope.
+Formatted bibliography text and third-party citation manager fields are unsupported.
+
+**Status**: IMPLEMENTED with offline tests, including the original AI4X Word template; not yet
+instruction-level `@cpt`-traced. See [Word Input](features/word-input.md).
+
+**Rationale**: Word-authored papers can expose reliable metadata without text extraction or services.
+
+**Actors**: `cpt-referenceaudit-actor-author`, `cpt-referenceaudit-actor-ai-agent`
+
 ## 6. Non-Functional Requirements
 
 ### 6.1 NFR Inclusions
@@ -466,6 +490,27 @@ Contracts this library expects from external systems.
 - **GROBID unreachable / failing / the PDF unparseable**: the run stops with the specific reason and the command to start the service; no partial bibliography is reported.
 - **No reference list found in the TEI**: the run stops with "nothing to audit" rather than reporting a clean bill of health.
 - **No in-text marker links to a bibliography entry**: citedness is reported as unknown and no reference is listed as uncited.
+
+#### Audit a Word document
+
+- [ ] `p1` - **ID**: `cpt-referenceaudit-usecase-audit-word`
+
+**Actor**: `cpt-referenceaudit-actor-author`
+
+**Preconditions**: A `.docx` containing native Word structured bibliography sources is available.
+
+**Main Flow**:
+1. The author runs `reference-audit audit paper.docx`, optionally with `--no-network`.
+2. The CLI prints the structured-only scope warning to stderr before reading the file.
+3. The system reads source records and native citation fields and reports parse failures per source.
+4. The system returns the parse-only or full shared audit report with scope notes.
+
+**Postconditions**: Structured sources are accounted for without claiming coverage of free-form text.
+
+**Alternative Flows**:
+- No structured sources, corrupt XML or broken fields: explicit input error, no guessed extraction.
+- No native citation fields: citedness unknown; uncited claims suppressed.
+- A malformed source: reported as unparsed while other sources continue.
 
 ## 9. Acceptance Criteria
 

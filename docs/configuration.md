@@ -2,6 +2,10 @@
 
 ## Requirements
 
+Word `.docx` input needs only native structured bibliography records; no Office installation or
+GROBID is required. **Free-form Word references are not checked and may be missed.** Every Word
+run prints a prominent warning. See [Word input](word-input.md).
+
 - [`uv`](https://docs.astral.sh/uv/). It installs Python 3.14, which the tool needs, if your system
   has no suitable Python.
 - Optional: an OpenAI API key (or a key for an OpenAI-compatible endpoint), for the LLM

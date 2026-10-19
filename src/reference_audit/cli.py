@@ -1,7 +1,7 @@
 """`reference-audit` command-line interface (Typer).
 
 `audit` runs the async pipeline (parse + identify, cached) over a `.bib` (optionally with the `.tex`
-that cites it) or a single PDF. `--no-network` gives the parse-only report (for a PDF only when it embeds the BibTeX records
+that cites it), a structured Word `.docx`, or a single PDF. `--no-network` gives the parse-only report (for a PDF only when it embeds the BibTeX records
 of its references — otherwise its reference list comes from an HTTP call to GROBID, so there is no
 offline parse for it).
 """
@@ -14,14 +14,19 @@ from pathlib import Path
 import typer
 
 from reference_audit.config import AuditConfig, UserConfigError
-from reference_audit.inputs import InvalidInputError, PdfInput, default_cache_path, resolve_input
+from reference_audit.inputs import (
+    DocxInput, InvalidInputError, PdfInput, default_cache_path, resolve_input,
+)
+from reference_audit.parsing.docx import DOCX_SCOPE_WARNING, DocxInputError
 from reference_audit.pdf.embedded import read_embedded_references
 from reference_audit.pdf.grobid import GrobidError
 from reference_audit.pipeline import (
     EmptyBibliographyError,
+    build_docx_parse_report,
     build_embedded_parse_report,
     build_parse_report,
     run_audit,
+    run_docx_audit,
     run_pdf_audit,
 )
 from reference_audit.report import render_json, render_text
@@ -29,7 +34,7 @@ from reference_audit.sources.clickhouse import ClickHouseUnavailableError
 
 app = typer.Typer(
     add_completion=False,
-    help="Audit .bib/.tex or PDF references: identify artifacts, screen for hallucinations.",
+    help="Audit .bib/.tex, PDF or Word .docx references: identify artifacts, screen for hallucinations.",
 )
 
 
@@ -45,7 +50,7 @@ def audit(
         exists=True,
         dir_okay=False,
         help="Bibliography .bib to audit, or the manuscript .tex followed by its .bib, or a .pdf "
-             "whose references GROBID extracts.",
+             "whose references GROBID extracts, or a .docx with Word bibliography sources.",
     ),
     bib: Path | None = typer.Argument(
         None,
@@ -66,7 +71,7 @@ def audit(
     ),
     fresh: bool = typer.Option(False, "--fresh", help="Ignore cached results and re-query."),
     cache: Path | None = typer.Option(
-        None, "--cache", help="Cache DB path (default: <bib_dir>/.reference_audit/cache.db)."
+        None, "--cache", help="Cache DB path (default: <input_dir>/.reference_audit/cache.db)."
     ),
     model: str | None = typer.Option(None, "--model", help="LLM model override."),
     backend: str | None = typer.Option(
@@ -91,7 +96,7 @@ def audit(
              "ignore | warn | error (default: PARTIAL_AUTHORS, else warn).",
     ),
 ) -> None:
-    """Audit a .bib (optionally with the .tex that cites it), or a PDF on its own.
+    """Audit a .bib (optionally with its .tex), a PDF, or a Word .docx on its own.
 
     The .tex adds citation bookkeeping (uncited entries, citations missing from the .bib) and the
     citing sentences --check-citations needs; without it the entries are identified all the same.
@@ -100,6 +105,9 @@ def audit(
     needed — unless the PDF embeds the BibTeX records of its cited works (the AI4X template does),
     which are then audited instead. Either way each reference is identified and screened for
     hallucinations.
+
+    A .docx supplies its native Word bibliography sources and CITATION fields directly, including
+    offline with --no-network. No Word installation or GROBID service is needed for it.
     """
     if fmt not in ("text", "json", "both"):
         raise typer.BadParameter("format must be one of: text, json, both")
@@ -122,6 +130,12 @@ def audit(
     except InvalidInputError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
+    if isinstance(source, DocxInput):
+        typer.secho(
+            "\n" + "=" * 86 + "\n" + DOCX_SCOPE_WARNING + "\n" + "=" * 86 + "\n",
+            fg=typer.colors.YELLOW, bold=True, err=True,
+        )
+
     embedded_bib: str | None = None
     if no_network and isinstance(source, PdfInput):
         # A PDF that embeds its references' BibTeX records parses offline. Any other PDF needs
@@ -142,7 +156,9 @@ def audit(
         embedded_bib = embedded.bib_text
 
     try:
-        if no_network and embedded_bib is not None:
+        if no_network and isinstance(source, DocxInput):
+            report = build_docx_parse_report(source.docx_path)
+        elif no_network and embedded_bib is not None:
             report = build_embedded_parse_report(source.pdf_path, embedded_bib)
         elif no_network:
             report = build_parse_report(source.tex_path, source.bib_path)
@@ -170,11 +186,15 @@ def audit(
                 "fresh": fresh,
                 "progress": sys.stderr.isatty(),
             }
-            if isinstance(source, PdfInput):
+            if isinstance(source, DocxInput):
+                report = run_docx_audit(source.docx_path, **common)
+            elif isinstance(source, PdfInput):
                 report = run_pdf_audit(source.pdf_path, **common)
             else:
                 report = run_audit(source.tex_path, source.bib_path, **common)
-    except (EmptyBibliographyError, GrobidError, ClickHouseUnavailableError, UserConfigError) as exc:
+    except (
+        EmptyBibliographyError, DocxInputError, GrobidError, ClickHouseUnavailableError, UserConfigError,
+    ) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 

@@ -1,5 +1,11 @@
 # How it works
 
+Word `.docx` input reads native bibliography source records and `CITATION` fields into the same
+entry/context models before the identification funnel. **Only the structured bibliography is
+checked; free-form references are not checked and may be missed.** Every Word run prints this
+warning and retains it in report notes. See [Word input](word-input.md). Pipeline **0.29** adds
+this input path and invalidates earlier whole-entry verdicts.
+
 For each entry the tool runs a funnel that prefers cheap, deterministic evidence and only escalates
 to an LLM when needed:
 

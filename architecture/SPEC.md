@@ -9,7 +9,8 @@
 
 ## Project Goals
 
-The auditor takes as input `.bib` and `.tex` files, and applies a series of checks on them. The
+The auditor takes `.bib` (optionally with `.tex`), PDF, or Word `.docx` with native structured
+bibliography sources, and applies a series of checks on them. The
 checks are intended to be used:
 
 1. Manually by the paper authors to ensure the absolute best quality of their references.
@@ -22,7 +23,15 @@ checks are intended to be used:
 The audited input is either a `.bib` bibliography with the `.tex` that cites it, or the paper's PDF on
 its own — for mass automated processing the PDF is usually all that exists. A PDF is converted to the
 same reference and citation records the authored sources produce, so every step below is identical
-regardless of which arrived.
+regardless of which arrived. A Word `.docx` is also a standalone input: authored native Word
+bibliography sources and `CITATION` fields supply the records and contexts offline.
+
+**Word scope warning:** every Word audit MUST prominently warn that only the structured
+bibliography is checked. Free-form / manually typed references are not checked and may be missed,
+even when structured records are present. The warning MUST go to stderr and report notes so JSON
+stdout remains valid. No structured sources is an explicit input failure; malformed individual
+sources are logged and reported independently. Formatted bibliography display text and third-party
+citation manager fields are outside the Word importer. See [Word input](../docs/word-input.md).
 
 ### 1. Which exact artifact does the reference point to?
 

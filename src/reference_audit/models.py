@@ -464,6 +464,8 @@ class AuditReport(BaseModel):
     # there is no manuscript to link citations from, so citedness is unknown.
     # `pdf_embedded`: the entries are the BibTeX records the PDF embeds for its cited works
     # (`pdf.embedded`) — authored source like a .bib, every one of them cited, no citing contexts.
-    input_kind: Literal["tex_bib", "pdf", "pdf_embedded"] = "tex_bib"
+    # `docx`: native Word source records; keys are source Tags and contexts come from CITATION
+    # fields. UnparsedEntry.line is 0 because XML source records have no manuscript line number.
+    input_kind: Literal["tex_bib", "pdf", "pdf_embedded", "docx"] = "tex_bib"
     citation_linking: Literal["available", "unavailable", "not_applicable"] = "available"
     notes: list[str] = Field(default_factory=list)

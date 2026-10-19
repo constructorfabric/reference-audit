@@ -98,6 +98,7 @@ subcommands, the verdict-to-label mappings, the results so far, and how to run o
 src/reference_audit/
   parsing/     # .bib / .tex / identifier parsing; latex.py = LaTeX → Unicode for .bib values;
                #   entities.py = HTML character references; context.py = the shared sentence definition
+               #   docx.py = native Word source records + CITATION fields (stdlib ZIP/XML, offline)
   pdf/         # PDF input: grobid.py (the only network module — one client, one named error per
                #   failure mode) + tei.py (pure TEI -> BibEntry / CitationContext mapping) +
                #   embedded.py (the BibTeX records a PDF embeds, and the printed-title check)
@@ -121,7 +122,7 @@ src/reference_audit/
   report.py    # text / JSON rendering
   config.py    # AuditConfig (model, keys, thresholds) and the settings files it reads
   models.py    # pydantic domain models
-  inputs.py    # which input shape the CLI arguments name (a .bib, optionally after its .tex, or a .pdf)
+  inputs.py    # CLI input shapes: .bib, .tex + .bib, .pdf, or structured Word .docx
   cli.py       # command-line entry point (Typer)
 .github/workflows/ # tests.yml = the offline test suite on push/PR; python-publish.yml = PyPI release
 architecture/  # governed specification & design (SPEC, PRD, DESIGN, DECOMPOSITION, features)
@@ -139,6 +140,8 @@ tests/
                #   plus the auxiliary LaTeX sources needed to compile them (see each SOURCES.md)
   fixtures/tei/# recorded GROBID output + provenance, so the mapper is verifiable offline
   fixtures/embedded/ # an AI4X-template PDF that embeds its references' BibTeX records, + its sources
+  fixtures/docx/     # actual Office-edited AI4X Word template, provenance, font/template notices
+  test_docx.py       # Word mapping, field/error handling, warning/CLI contract + AI4X regression
   fixtures/dblp/     # a recorded DBLP SPARQL response + provenance
   fixtures/hallmark/v1.2/ # copied public corpus, MIT license, provenance, label reviews, source snapshots
   hallmark_cases.py # validated corpus loader; strips labels before an audit

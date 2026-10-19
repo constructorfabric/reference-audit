@@ -48,6 +48,12 @@ path = "architecture/features/pdf-input.md"
 kind = "FEATURE"
 traceability = "FULL"
 
+[[systems.artifacts]]
+name = "Word Input Feature"
+path = "architecture/features/word-input.md"
+kind = "FEATURE"
+traceability = "FULL"
+
 [[systems.codebase]]
 name = "Reference Audit Source"
 path = "src/reference_audit"

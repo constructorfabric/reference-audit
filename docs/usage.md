@@ -1,12 +1,12 @@
 # Usage
 
-Three input forms — a bibliography on its own, a manuscript with its bibliography, or a PDF on its
-own:
+Four input forms — a bibliography, a manuscript with its bibliography, a PDF, or a Word document:
 
 ```bash
 reference-audit audit <references.bib> [options]
 reference-audit audit <main.tex> <references.bib> [options]
 reference-audit audit <paper.pdf> [options]
+reference-audit audit <paper.docx> [options]
 ```
 
 (From a clone of the repository rather than an installed tool, prefix the commands with `uv run`.)
@@ -14,6 +14,12 @@ reference-audit audit <paper.pdf> [options]
 They are mutually exclusive: a PDF *is* the whole input, since GROBID extracts both its reference list
 and its in-text citations (or the PDF embeds its references' BibTeX records), so passing a `.bib`
 alongside one is rejected. PDF input needs a running GROBID; see [Auditing a PDF](pdf-input.md).
+
+Word `.docx` is also a standalone input and needs no GROBID or Word installation.
+**WARNING: Only Word's native structured bibliography is checked. Free-form / manually typed
+references are not checked and may be missed, including in documents containing structured
+sources.** A prominent warning is printed to stderr on every Word audit, and retained in report
+notes. See [Auditing Word documents](word-input.md) for supported sources and citation fields.
 
 The `.tex` is optional. Every entry of the `.bib` is identified and checked either way; the
 manuscript adds:
@@ -83,7 +89,7 @@ NO ISSUES (18) — verified, nothing to fix:
 | `--no-llm` | Formal-only: skip LLM adjudication for fully deterministic output (useful in CI). |
 | `--check-citations` | Advisory: for each in-text citation of a matched reference, check the citing context against the cited work's **abstract** (needs the LLM). See [Citation alignment](#citation-alignment---check-citations). |
 | `--fresh` | Ignore results cached before this run and re-query everything; new results overwrite the old ones. Nothing is deleted, so other bibliographies sharing the cache DB keep their cached results. |
-| `--cache PATH` | Cache DB location. Default: `.reference_audit/cache.db` beside the `.bib` (or the `.pdf`). |
+| `--cache PATH` | Cache DB location. Default: `.reference_audit/cache.db` beside the `.bib`, `.pdf`, or `.docx`. |
 | `--model NAME` | Override the LLM model (default `gpt-6-luna`). |
 | `--grobid URL` | GROBID base URL for PDF input. Default `http://localhost:8070` (or `GROBID_URL`). |
 | `--ignore-embedded` | For a PDF that embeds the BibTeX records of its cited works, extract the references with GROBID anyway. See [PDFs that embed their references](pdf-input.md#pdfs-that-embed-their-references). |
@@ -91,7 +97,7 @@ NO ISSUES (18) — verified, nothing to fix:
 | `--fail-on hallucinated\|multiple\|contradiction` | Exit non-zero if any entry gets that verdict — for gating submissions in CI. Any other value is rejected before the audit starts, and so is combining it with `--no-network` (the parse-only report has no verdicts to check). |
 | `--partial-authors ignore\|warn\|error` | How to report a cited author list that names only some of the work's authors without `and others`: not at all, as `uncertain` (default), or as an `error`. Default `PARTIAL_AUTHORS`, else `warn`. |
 
-`--no-network` applies to `.bib` input (with or without its `.tex`), and to a PDF that embeds the BibTeX records of its
+`--no-network` applies to structured Word `.docx` input, `.bib` input (with or without its `.tex`), and to a PDF that embeds the BibTeX records of its
 references. Any other PDF's reference list comes from an HTTP call to GROBID, so there is no offline
 parse path for it, and combining the two is rejected rather than quietly redefining what the flag
 promises.

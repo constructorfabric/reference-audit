@@ -41,6 +41,19 @@ behind a package boundary so the offline parse slice stays dependency-light and 
 stages stay swappable. Each entry is audited in isolation: a failure on one reference leaves it
 `unresolved` (retried next run) and never aborts the others.
 
+The native Word front end (`parsing/docx.py`, `build_docx_parse_report`, `AuditPipeline.run_docx`,
+`run_docx_audit`) reads OOXML ZIP/XML locally and maps sources through `entry_from_fields`.
+Simple/complex `CITATION` fields (including grouped tags and split runs) share `sentence_span`
+with the existing front ends. Bibliography field results and tracked deletions are excluded.
+Source errors become logged `UnparsedEntry` records; invalid packages/XML/field structure fail
+the input. `AuditReport.input_kind="docx"` carries provenance; absent native fields make linking
+unavailable. All stored sources are audited, with missing/uncited bookkeeping by Tag.
+Every Word CLI run prints a large structured-only warning to stderr, also retained in report notes:
+free-form references are not checked and may be missed in mixed documents. Displayed references
+are not cross-checked against source XML. XML parts have a 32 MiB limit and DTDs are rejected.
+This extension is implemented and tested, including the actual AI4X template, but not yet
+instruction-level `@cpt`-traced. Pipeline **0.29** invalidates verdicts before this new input path.
+
 ### 1.2 Architecture Drivers
 
 Requirements that significantly influence architecture decisions.
@@ -56,6 +69,7 @@ Requirements that significantly influence architecture decisions.
 | `cpt-referenceaudit-fr-best-version-canonical` | `matching` ranks versions (published > preprint, later editions) and `report` emits the canonical reference. |
 | `cpt-referenceaudit-fr-citation-alignment` | The `alignment` component pairs each citing context (from `parsing`) with the matched artifact's abstract and classifies it via `llm`; advisory, never changing the verdict. |
 | `cpt-referenceaudit-fr-audit-pdf` | The `pdf` component (a thin GROBID HTTP client plus a pure TEI mapper) turns a PDF into the same `BibEntry` / `CitationContext` records the `.bib`/`.tex` front end produces, so everything downstream is unchanged. |
+| `cpt-referenceaudit-fr-audit-word` | The offline Word parser reads native source records and fields, then reuses shared entry construction, sentence extraction and per-entry auditing; the CLI and report disclose structured-only coverage. |
 
 #### NFR Allocation
 

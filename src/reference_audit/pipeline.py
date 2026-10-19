@@ -61,6 +61,7 @@ from reference_audit.fieldcheck import (
 )
 from reference_audit.alignmentcheck import alignment_note, resolve_alignment_findings
 from reference_audit.parsing.bib import parse_bib, parse_bib_text
+from reference_audit.parsing.docx import DOCX_SCOPE_WARNING, DocxParse, parse_docx
 from reference_audit.parsing.tex import parse_cited_keys, parse_citation_contexts
 from reference_audit.sources.base import SourceAdapter
 from reference_audit.versioning import better_version_notes
@@ -206,6 +207,52 @@ def build_parse_report(tex_path: str | Path | None, bib_path: str | Path) -> Aud
         notes=notes,
     )
     # @cpt-end:cpt-referenceaudit-flow-parsing-build-report:p1:inst-build-report
+
+
+def _docx_report(path: str | Path, parsed: DocxParse) -> AuditReport:
+    if not parsed.entries and not parsed.unparsed:
+        raise EmptyBibliographyError(f"No bibliography sources found in {path}")
+    linking = parsed.citation_fields > 0
+    keys = {e.key for e in parsed.entries}
+    unread = {u.key for u in parsed.unparsed}
+    audits: list[EntryAudit] = []
+    by_type: dict[str, int] = {}
+    for entry in parsed.entries:
+        entry.cited = entry.key in parsed.cited_keys
+        audits.append(EntryAudit(
+            entry=entry, issues=_parse_issues(entry) + parsed.context_failures.get(entry.key, []),
+        ))
+        by_type[entry.entry_type.value] = by_type.get(entry.entry_type.value, 0) + 1
+    uncited = sorted(keys - parsed.cited_keys) if linking else []
+    missing = sorted(parsed.cited_keys - keys - unread)
+    notes = [
+        DOCX_SCOPE_WARNING.replace("\n", " "),
+        f"references were read from the structured Word bibliography in {Path(path).name}; "
+        "source Tags are the entry keys, and all stored sources are audited, including uncited ones",
+        "bibliography field display text is not cross-checked against the stored source records; "
+        "update Word fields before submission",
+    ]
+    if not linking:
+        notes.append(
+            "no native Word CITATION fields were found, so cited/uncited bookkeeping is "
+            "unavailable; plain-text or third-party citation markers are not interpreted"
+        )
+    return AuditReport(
+        entries=audits, unparsed=parsed.unparsed, uncited=uncited, cited_but_missing=missing,
+        input_kind="docx", citation_linking="available" if linking else "unavailable", notes=notes,
+        summary={
+            "total_entries": len(audits), "cited": sum(a.entry.cited for a in audits),
+            "uncited": len(uncited), "cited_but_missing": len(missing),
+            "unparsed": len(parsed.unparsed), "commented_twins": 0, "missing_includes": 0,
+            "entries_with_issues": sum(bool(a.issues) for a in audits), "by_type": by_type,
+            "citation_markers": parsed.citation_fields,
+        },
+    )
+
+
+def build_docx_parse_report(docx_path: str | Path) -> AuditReport:
+    """Offline report from Word's authored bibliography XML and citation fields."""
+    return _docx_report(docx_path, parse_docx(docx_path))
 
 
 @dataclass
@@ -526,6 +573,19 @@ class AuditPipeline:
                     "citation alignment was not checked: without the .tex there are no citing "
                     "sentences; pass the manuscript before the .bib to check them"
                 )
+        return await self._audit_all(report, progress=progress)
+
+    async def run_docx(self, docx_path: str | Path, *, progress: bool = False) -> AuditReport:
+        """Read Word sources once and feed them to the shared independent per-entry pipeline."""
+        parsed = parse_docx(docx_path)
+        report = _docx_report(docx_path, parsed)
+        self._citation_contexts = parsed.contexts
+        self._contexts_available = parsed.citation_fields > 0
+        if self.config.check_alignment and not self._contexts_available:
+            report.notes.append(
+                "citation alignment was not checked: no native Word CITATION fields were found"
+            )
+        await self.preflight()
         return await self._audit_all(report, progress=progress)
 
     async def run_pdf(self, pdf_path: str | Path, *, progress: bool = False) -> AuditReport:
@@ -1747,3 +1807,15 @@ def run_pdf_audit(
 ) -> AuditReport:
     """Synchronous entry point for a PDF input — the `run_audit` counterpart used by the CLI."""
     return _run_sync(lambda p: p.run_pdf(pdf_path, progress=progress), config, cache_path, fresh)
+
+
+def run_docx_audit(
+    docx_path: str | Path,
+    *,
+    config: AuditConfig | None = None,
+    cache_path: str | Path | None = None,
+    fresh: bool = False,
+    progress: bool = False,
+) -> AuditReport:
+    """Synchronous entry point for a Word input, sharing the ordinary cache and verdict stages."""
+    return _run_sync(lambda p: p.run_docx(docx_path, progress=progress), config, cache_path, fresh)

@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/github/license/constructorfabric/reference-audit)](LICENSE)
 
 Audit the references in a paper. Given a `.bib` bibliography and the `.tex` that cites it — or just
-the paper's **PDF** — `reference-audit` figures out **which real-world document each reference
+the paper's **PDF** or **Word `.docx` with a structured bibliography** — `reference-audit` figures out **which real-world document each reference
 actually points to** and flags ones that don't match anything real (hallucinated references).
 
 For every entry it returns one of four verdicts:
@@ -43,6 +43,12 @@ Pass the manuscript before the `.bib` (`reference-audit audit paper.tex referenc
 find entries that are never cited and `\cite` keys with no entry. With only a PDF, see
 [Auditing a PDF](docs/pdf-input.md).
 
+For Word documents (including the AI4X template), run `reference-audit audit paper.docx`.
+**WARNING: Word audits check only Word's native structured bibliography. Free-form / manually
+typed references are not checked and may be missed, even when structured sources are also present.**
+Every Word run prints this warning prominently. See [Auditing Word documents](docs/word-input.md)
+for supported fields and limits; `--no-network` works without Word or GROBID.
+
 No accounts or keys are needed for a first run. The report opens with the two lists that matter
 most:
 
@@ -55,7 +61,7 @@ Below them, `ISSUES` and `FORMATTING NITS & ADVISORIES` list wrong or missing fi
 better versions to cite. [Reading the output](docs/usage.md#reading-the-output) explains every
 line. Add `--format json` for a machine-readable report.
 
-Results are cached in `.reference_audit/cache.db` beside the `.bib`, so a re-run after you fix some
+Results are cached in `.reference_audit/cache.db` beside the `.bib`, `.pdf`, or `.docx`, so a re-run after you fix some
 entries only re-checks what changed and what failed last time.
 
 Settings and API keys go in `~/.config/reference-audit/config.toml`. Keep the file private
@@ -111,6 +117,8 @@ even when a key is configured.
 - [Installation and configuration](docs/configuration.md): requirements, installation, and every
   setting.
 - [Auditing a PDF](docs/pdf-input.md): GROBID extraction, and PDFs that embed their references.
+- [Auditing Word documents](docs/word-input.md): native structured bibliography and citation fields,
+  with a prominent warning that free-form references are not checked.
 - [Local ClickHouse backend](docs/clickhouse-backend.md): reading Semantic Scholar, OpenAlex and
   DBLP from a local mirror.
 - [Development](docs/development.md): tests, the PDF extraction oracle, benchmarking, and the project
