@@ -104,9 +104,34 @@ openai_api_key = "sk-..."
 # model = "..."                          # default: gpt-6-luna; or pass --model per run
 ```
 
-The LLM also enables `--check-citations`, which checks each citing sentence against the cited
-work's abstract. LLM answers are cached like everything else. Use `--no-llm` for a deterministic run
-even when a key is configured.
+The LLM also enables [`--check-citations`](#checking-what-citations-claim). LLM answers are cached
+like everything else. Use `--no-llm` for a deterministic run even when a key is configured.
+
+## Checking what citations claim
+
+A reference can be real and still be cited for something its source never says. With an LLM
+configured, `--check-citations` checks each citing sentence against the cited work's abstract:
+
+```bash
+reference-audit audit paper.tex references.bib --check-citations
+```
+
+Only references that resolve to exactly one work are checked. Each citation gets one of four labels:
+
+- **`supported`**: the abstract backs the claim.
+- **`contradicted`**: the abstract says the opposite. This is reported as an issue
+  (*citation may misrepresent the source*) and quotes the abstract.
+- **`not_in_abstract`**: the abstract does not mention the claim. An abstract is only a summary, so
+  this is an advisory note, not a finding of misuse.
+- **`unverifiable`**: no abstract could be found, or the LLM was unavailable or failed. The report
+  says so and nothing is guessed.
+
+The check reads abstracts only, never full text, and it never changes a reference's verdict. It
+needs citing sentences, which come from the `.tex`, from a Word document's citation fields, or from
+a PDF read with GROBID. A lone `.bib` or a PDF read by the language model has none, and the report
+says that alignment was not checked. `--format json` carries every finding under
+`alignment_findings`, with its evidence quote and confidence. See
+[Citation alignment](docs/usage.md#citation-alignment---check-citations) for details.
 
 ## Documentation
 
